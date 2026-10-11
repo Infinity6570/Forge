@@ -51,6 +51,7 @@ export const AssistantTaskProvider = {
   deepseek: 'deepseek',
   gemini: 'gemini',
   openrouter: 'openrouter',
+  ollama: 'ollama',
 } as const;
 
 /**
@@ -128,6 +129,7 @@ export const TaskInputProvider = {
   deepseek: 'deepseek',
   gemini: 'gemini',
   openrouter: 'openrouter',
+  ollama: 'ollama',
 } as const;
 
 export interface TaskInput {
@@ -307,12 +309,14 @@ export const AssistantSettingsProvider = {
   deepseek: 'deepseek',
   gemini: 'gemini',
   openrouter: 'openrouter',
+  ollama: 'ollama',
 } as const;
 
 export interface AssistantSettings {
   provider: AssistantSettingsProvider;
   modelId: string;
   fallbackModelId: string;
+  ollamaBaseUrl: string;
   localSetupAllowed: boolean;
   providerSettingsAllowed: boolean;
   hasOpenaiKey: boolean;
@@ -331,6 +335,7 @@ export const AssistantSettingsInputProvider = {
   deepseek: 'deepseek',
   gemini: 'gemini',
   openrouter: 'openrouter',
+  ollama: 'ollama',
 } as const;
 
 export interface AssistantSettingsInput {
@@ -346,6 +351,8 @@ export interface AssistantSettingsInput {
      * @pattern ^$|^[A-Za-z0-9][A-Za-z0-9._:/-]{0,119}$
      */
   fallbackModelId?: string;
+  /** @maxLength 500 */
+  ollamaBaseUrl?: string;
   /**
      * @maxLength 1000
      * @nullable

@@ -14,4 +14,5 @@ export const AssistantSettingsProvider = {
   deepseek: 'deepseek',
   gemini: 'gemini',
   openrouter: 'openrouter',
+  ollama: 'ollama',
 } as const;

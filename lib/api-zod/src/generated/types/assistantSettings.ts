@@ -11,6 +11,7 @@ export interface AssistantSettings {
   provider: AssistantSettingsProvider;
   modelId: string;
   fallbackModelId: string;
+  ollamaBaseUrl: string;
   localSetupAllowed: boolean;
   providerSettingsAllowed: boolean;
   hasOpenaiKey: boolean;

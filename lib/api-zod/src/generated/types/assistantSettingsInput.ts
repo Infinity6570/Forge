@@ -20,6 +20,8 @@ export interface AssistantSettingsInput {
      * @pattern ^$|^[A-Za-z0-9][A-Za-z0-9._:/-]{0,119}$
      */
   fallbackModelId?: string;
+  /** @maxLength 500 */
+  ollamaBaseUrl?: string;
   /**
      * @maxLength 1000
      * @nullable

@@ -532,7 +532,7 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/TaskLog"
-        provider: { type: string, enum: [openai, deepseek, gemini, openrouter] }
+        provider: { type: string, enum: [openai, deepseek, gemini, openrouter, ollama] }
         modelId: { type: string }
         recommendationKind: { type: ["string", "null"], enum: [complexity, fallback, null] }
         recommendationReason: { type: ["string", "null"] }
@@ -563,7 +563,7 @@ components:
         objective: { type: string, minLength: 1, maxLength: 12000 }
         provider:
           type: string
-          enum: [openai, deepseek, gemini, openrouter]
+          enum: [openai, deepseek, gemini, openrouter, ollama]
         modelId:
           type: string
           maxLength: 120
@@ -693,11 +693,12 @@ components:
         appId: { type: string, format: uuid }
     AssistantSettings:
       type: object
-      required: [provider, modelId, fallbackModelId, localSetupAllowed, providerSettingsAllowed, hasOpenaiKey, hasDeepseekKey, hasGeminiKey, hasOpenrouterKey, codeRunnerEnabled, appPreviewsEnabled]
+      required: [provider, modelId, fallbackModelId, ollamaBaseUrl, localSetupAllowed, providerSettingsAllowed, hasOpenaiKey, hasDeepseekKey, hasGeminiKey, hasOpenrouterKey, codeRunnerEnabled, appPreviewsEnabled]
       properties:
-        provider: { type: string, enum: [openai, deepseek, gemini, openrouter] }
+        provider: { type: string, enum: [openai, deepseek, gemini, openrouter, ollama] }
         modelId: { type: string }
         fallbackModelId: { type: string }
+        ollamaBaseUrl: { type: string }
         localSetupAllowed: { type: boolean }
         providerSettingsAllowed: { type: boolean }
         hasOpenaiKey: { type: boolean }
@@ -710,9 +711,10 @@ components:
       type: object
       required: [provider, modelId]
       properties:
-        provider: { type: string, enum: [openai, deepseek, gemini, openrouter] }
+        provider: { type: string, enum: [openai, deepseek, gemini, openrouter, ollama] }
         modelId: { type: string, minLength: 1, maxLength: 120, pattern: '^[A-Za-z0-9][A-Za-z0-9._:/-]{0,119}$' }
         fallbackModelId: { type: string, maxLength: 120, pattern: '^$|^[A-Za-z0-9][A-Za-z0-9._:/-]{0,119}$' }
+        ollamaBaseUrl: { type: string, maxLength: 500 }
         openaiApiKey: { type: ["string", "null"], maxLength: 1000 }
         deepseekApiKey: { type: ["string", "null"], maxLength: 1000 }
         geminiApiKey: { type: ["string", "null"], maxLength: 1000 }

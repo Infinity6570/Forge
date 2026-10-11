@@ -77,7 +77,7 @@ def track_active_task(task_id: str, running: asyncio.Task[None]) -> None:
     running.add_done_callback(clear_if_current)
 SCHEDULER = AsyncIOScheduler(timezone="UTC")
 MODEL_OPTIONS = {
-    "openai": {"gpt-4.1-mini", "gpt-4.1", "gpt-4.1-nano"},
+    "openai": {"gpt-4o", "gpt-4o-mini", "o3-mini", "gpt-4.1-mini", "gpt-4.1", "gpt-4.1-nano"},
     "deepseek": {"deepseek-chat", "deepseek-reasoner"},
     "gemini": {
         "gemini-2.5-flash",
@@ -93,9 +93,11 @@ MODEL_OPTIONS = {
         "anthropic/claude-sonnet-5.5",
         "anthropic/claude-opus-5.5",
     },
+    "ollama": {"qwen2.5-coder", "llama3.3", "deepseek-r1"},
 }
 MODEL_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,119}$")
 GEMINI_MODEL_ID_PATTERN = re.compile(r"^(?:models/)?gemini-[A-Za-z0-9][A-Za-z0-9._-]*$")
+DEFAULT_OLLAMA_BASE_URL = "http://localhost:11434/v1"
 KEY_NAMES = {
     "openai": "OPENAI_API_KEY",
     "deepseek": "DEEPSEEK_API_KEY",
@@ -103,10 +105,11 @@ KEY_NAMES = {
     "openrouter": "OPENROUTER_API_KEY",
 }
 DEFAULT_MODELS = {
-    "openai": "gpt-4.1-mini",
+    "openai": "gpt-4o-mini",
     "deepseek": "deepseek-chat",
     "gemini": "gemini-2.5-flash",
     "openrouter": "deepseek/deepseek-chat",
+    "ollama": "qwen2.5-coder",
 }
 ALLOWED_SUFFIXES = {".pdf", ".txt", ".md", ".csv", ".json", ".docx"}
 PRIVATE_WORKSPACE_ENTRIES = {"assistant.db", "uploads", "notes", "preview-runtime", "workspace-export.zip"}
@@ -578,6 +581,7 @@ def get_settings(local_allowed: bool, provider_settings_allowed: bool) -> dict[s
             if GEMINI_MODEL_ID_PATTERN.fullmatch(os.getenv("GEMINI_FALLBACK_MODEL", "").strip())
             else ""
         ),
+        "ollamaBaseUrl": os.getenv("OLLAMA_BASE_URL", DEFAULT_OLLAMA_BASE_URL),
         "localSetupAllowed": local_allowed,
         "providerSettingsAllowed": provider_settings_allowed,
         "hasOpenaiKey": bool(os.getenv("OPENAI_API_KEY")),
@@ -639,6 +643,8 @@ def classify_task_complexity(objective: str, selected_file_count: int = 0) -> st
 
 
 def recommended_model_for(provider: str) -> tuple[str, str, str]:
+    if provider == "ollama":
+        return "ollama", "deepseek-r1", "Ollama DeepSeek R1"
     if provider == "deepseek":
         return "deepseek", "deepseek-reasoner", "DeepSeek Reasoner"
     if provider == "gemini":
@@ -654,6 +660,7 @@ def is_budget_model(provider: str, model: str) -> bool:
         "deepseek": {"deepseek-chat"},
         "gemini": {"gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-3.5-flash-lite"},
         "openrouter": {"deepseek/deepseek-chat", "anthropic/claude-haiku-5.5"},
+        "ollama": {"qwen2.5-coder", "llama3.3"},
     }
     return model in budget_models.get(provider, set())
 
@@ -707,9 +714,10 @@ class NoteInput(BaseModel):
 
 
 class SettingsInput(BaseModel):
-    provider: str = Field(pattern="^(openai|deepseek|gemini|openrouter)$")
+    provider: str = Field(pattern="^(openai|deepseek|gemini|openrouter|ollama)$")
     modelId: str = Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,119}$")
     fallbackModelId: str | None = Field(default=None, max_length=120)
+    ollamaBaseUrl: str | None = Field(default=None, max_length=500)
     openaiApiKey: str | None = Field(default=None, max_length=1000)
     deepseekApiKey: str | None = Field(default=None, max_length=1000)
     geminiApiKey: str | None = Field(default=None, max_length=1000)
@@ -719,7 +727,34 @@ class SettingsInput(BaseModel):
 
 
 def credential_for(provider: str) -> str | None:
-    return os.getenv(KEY_NAMES[provider])
+    if provider == "ollama":
+        try:
+            validate_ollama_base_url(os.getenv("OLLAMA_BASE_URL", DEFAULT_OLLAMA_BASE_URL))
+        except ValueError:
+            return None
+        return "ollama"
+    key_name = KEY_NAMES.get(provider)
+    return os.getenv(key_name) if key_name else None
+
+
+def validate_ollama_base_url(value: str | None) -> str:
+    candidate = (value or DEFAULT_OLLAMA_BASE_URL).strip()
+    parsed = urlparse(candidate)
+    if (
+        parsed.scheme not in {"http", "https"}
+        or parsed.hostname not in {"localhost", "127.0.0.1", "::1"}
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.query
+        or parsed.fragment
+        or parsed.path.rstrip("/") != "/v1"
+    ):
+        raise ValueError("Use a localhost Ollama OpenAI-compatible URL ending in /v1.")
+    try:
+        parsed.port
+    except ValueError as error:
+        raise ValueError("The Ollama URL has an invalid port.") from error
+    return f"{parsed.scheme}://{parsed.netloc}{parsed.path.rstrip('/')}"
 
 
 def redact_provider_keys(message: str) -> str:
@@ -731,6 +766,13 @@ def redact_provider_keys(message: str) -> str:
 
 
 def create_llm_client(provider: str) -> AsyncOpenAI:
+    if provider == "ollama":
+        return AsyncOpenAI(
+            api_key="ollama",
+            base_url=validate_ollama_base_url(os.getenv("OLLAMA_BASE_URL", DEFAULT_OLLAMA_BASE_URL)),
+            timeout=90,
+            max_retries=2,
+        )
     key = credential_for(provider)
     if not key:
         raise RuntimeError(f"No {provider.title()} API key is configured. Open provider settings to add one.")
@@ -1794,17 +1836,23 @@ async def list_tasks() -> list[dict[str, Any]]:
 
 
 @app.post("/api/assistant/tasks", status_code=201)
-async def create_task(body: TaskInput) -> dict[str, Any]:
+async def create_task(body: TaskInput, request: Request) -> dict[str, Any]:
     provider = body.provider or os.getenv("AGENT_PROVIDER", "deepseek")
     if provider not in MODEL_OPTIONS:
-        raise HTTPException(status_code=422, detail="Choose OpenAI, DeepSeek, Gemini, or OpenRouter.")
+        raise HTTPException(status_code=422, detail="Choose a supported AI provider.")
     model = body.modelId or os.getenv("AGENT_MODEL", DEFAULT_MODELS[provider])
-    if provider in {"gemini", "deepseek"}:
-        if not MODEL_ID_PATTERN.fullmatch(model):
-            raise HTTPException(status_code=422, detail=f"That {provider.title()} model ID is not valid.")
-    elif model not in MODEL_OPTIONS[provider]:
-        raise HTTPException(status_code=422, detail="That model is not available for the selected provider.")
-    if not credential_for(provider):
+    if not MODEL_ID_PATTERN.fullmatch(model) or (
+        provider == "gemini" and not GEMINI_MODEL_ID_PATTERN.fullmatch(model)
+    ):
+        raise HTTPException(status_code=422, detail=f"That {provider.title()} model ID is not valid.")
+    if provider == "ollama":
+        if not is_local_setup_allowed(request):
+            raise HTTPException(status_code=403, detail="Ollama is available only from a localhost copy.")
+        try:
+            validate_ollama_base_url(os.getenv("OLLAMA_BASE_URL", DEFAULT_OLLAMA_BASE_URL))
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+    elif not credential_for(provider):
         raise HTTPException(status_code=400, detail=f"Add a {provider.title()} API key in Settings before starting a task.")
     reason = classify_task_complexity(body.objective, len(body.fileIds))
     recommendation_kind = "complexity" if reason else None
@@ -2204,7 +2252,17 @@ async def update_settings(body: SettingsInput, request: Request) -> dict[str, An
             status_code=403,
             detail="Unrestricted Python app previews can only be enabled from a localhost copy.",
         )
+    if body.provider == "ollama" and not local_allowed:
+        raise HTTPException(status_code=403, detail="Ollama is available only from a localhost copy.")
     fallback_model = (body.fallbackModelId or "").strip()
+    ollama_base_url = None
+    if body.ollamaBaseUrl is not None or body.provider == "ollama":
+        try:
+            ollama_base_url = validate_ollama_base_url(
+                body.ollamaBaseUrl or os.getenv("OLLAMA_BASE_URL", DEFAULT_OLLAMA_BASE_URL)
+            )
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
     if body.provider == "gemini" and not GEMINI_MODEL_ID_PATTERN.fullmatch(body.modelId):
         raise HTTPException(status_code=422, detail="That Gemini model ID is not valid.")
     if body.provider == "gemini" and fallback_model and not GEMINI_MODEL_ID_PATTERN.fullmatch(fallback_model):
@@ -2215,14 +2273,17 @@ async def update_settings(body: SettingsInput, request: Request) -> dict[str, An
         "GEMINI_API_KEY": body.geminiApiKey,
         "OPENROUTER_API_KEY": body.openrouterApiKey,
     }
-    pending_key = values[KEY_NAMES[body.provider]]
-    if not credential_for(body.provider) and not (pending_key and pending_key.strip()):
+    required_key_name = KEY_NAMES.get(body.provider)
+    pending_key = values.get(required_key_name) if required_key_name else None
+    if body.provider != "ollama" and not credential_for(body.provider) and not (pending_key and pending_key.strip()):
         raise HTTPException(status_code=400, detail=f"Add a {body.provider.title()} API key before selecting this provider.")
     for key, value in values.items():
         if value is not None and value.strip():
             set_key(str(ENV_FILE), key, value.strip(), quote_mode="always")
     set_key(str(ENV_FILE), "AGENT_PROVIDER", body.provider, quote_mode="never")
     set_key(str(ENV_FILE), "AGENT_MODEL", body.modelId, quote_mode="always")
+    if ollama_base_url is not None:
+        set_key(str(ENV_FILE), "OLLAMA_BASE_URL", ollama_base_url, quote_mode="always")
     if body.provider == "gemini" and body.fallbackModelId is not None:
         set_key(str(ENV_FILE), "GEMINI_FALLBACK_MODEL", fallback_model, quote_mode="always")
     set_key(str(ENV_FILE), "RUN_LOCAL_CODE", str(body.codeRunnerEnabled).lower(), quote_mode="never")

@@ -14,4 +14,5 @@ export const TaskInputProvider = {
   deepseek: 'deepseek',
   gemini: 'gemini',
   openrouter: 'openrouter',
+  ollama: 'ollama',
 } as const;
