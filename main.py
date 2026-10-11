@@ -176,12 +176,13 @@ def db_one(sql: str, values: tuple[Any, ...] = ()) -> sqlite3.Row | None:
     return rows[0] if rows else None
 
 
-def db_run(sql: str, values: tuple[Any, ...] = ()) -> None:
+def db_run(sql: str, values: tuple[Any, ...] = ()) -> int:
     with DB_LOCK:
         connection = connect_db()
         try:
-            connection.execute(sql, values)
+            cursor = connection.execute(sql, values)
             connection.commit()
+            return cursor.rowcount
         finally:
             connection.close()
 
@@ -1395,10 +1396,11 @@ async def choose_task_model(task_id: str, body: TaskModelChoiceInput) -> dict[st
     if not provider or not model or not credential_for(provider):
         raise HTTPException(status_code=400, detail="The selected provider API key is not available.")
     now = utc_now()
-    db_run(
+    updated = db_run(
         "UPDATE tasks SET provider=?,model_id=?,status='queued',current_step=?,"
         "recommendation_kind=NULL,recommendation_reason=NULL,recommended_provider=NULL,"
-        "recommended_model_id=NULL,updated_at=? WHERE id=?",
+        "recommended_model_id=NULL,updated_at=? "
+        "WHERE id=? AND status='awaiting_confirmation' AND recommendation_kind='complexity'",
         (
             provider,
             model,
@@ -1407,6 +1409,8 @@ async def choose_task_model(task_id: str, body: TaskModelChoiceInput) -> dict[st
             task_id,
         ),
     )
+    if updated != 1:
+        raise HTTPException(status_code=409, detail="This task is not waiting for a model choice.")
     choice = "recommended model" if body.switchToRecommendation else "current model"
     log_task(task_id, f"User chose to continue with the {choice}: {model}.", "info")
     file_ids = parse_json(row["file_ids_json"], [])
