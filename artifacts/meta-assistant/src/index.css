@@ -590,4 +590,62 @@ body { min-width: 320px; }
   .border.hover-elevate:not(.no-hover-interaction-elevate)::after {
     inset: -1px;
   }
+
+  .reminder-toast {
+    position: fixed;
+    z-index: 1000;
+    right: 22px;
+    bottom: 22px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: min(390px, calc(100vw - 32px));
+    padding: 15px 16px;
+    border: 1px solid #d8c79f;
+    border-radius: 14px;
+    background: #fffdf7;
+    color: #26342f;
+    box-shadow: 0 14px 44px #18221d2b;
+    animation: reminder-pop 220ms ease-out;
+  }
+
+  .reminder-toast-icon {
+    display: grid;
+    flex: 0 0 36px;
+    width: 36px;
+    height: 36px;
+    place-items: center;
+    border-radius: 11px;
+    background: #f6ebd1;
+    color: #8b672a;
+  }
+
+  .reminder-toast > div {
+    display: grid;
+    flex: 1;
+    gap: 3px;
+    min-width: 0;
+  }
+
+  .reminder-toast > div strong {
+    font-size: 12px;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+  }
+
+  .reminder-toast > div span {
+    overflow: hidden;
+    font-size: 14px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  @keyframes reminder-pop {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .reminder-toast { animation: none; }
+  }
 }

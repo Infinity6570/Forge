@@ -247,6 +247,48 @@ paths:
       responses:
         "204":
           description: File deleted
+  /assistant/settings:
+    get:
+      operationId: getAssistantSettings
+      tags: [assistant]
+      summary: Read model selection and credential presence
+      responses:
+        "200":
+          description: Assistant settings without exposing credential values
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantSettings"
+    put:
+      operationId: updateAssistantSettings
+      tags: [assistant]
+      summary: Update local model configuration
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssistantSettingsInput"
+      responses:
+        "200":
+          description: Settings saved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantSettings"
+  /assistant/workspace.zip:
+    get:
+      operationId: downloadAssistantWorkspace
+      tags: [assistant]
+      summary: Download uploaded source files and notes as a zip archive
+      responses:
+        "200":
+          description: Workspace zip archive
+          content:
+            application/zip:
+              schema:
+                type: string
+                format: binary
 components:
   schemas:
     HealthStatus:
@@ -375,4 +417,25 @@ components:
         file:
           type: string
           format: binary
+    AssistantSettings:
+      type: object
+      required: [provider, modelId, localSetupAllowed, hasOpenaiKey, hasGeminiKey, hasOpenrouterKey, codeRunnerEnabled]
+      properties:
+        provider: { type: string, enum: [openai, gemini, openrouter] }
+        modelId: { type: string }
+        localSetupAllowed: { type: boolean }
+        hasOpenaiKey: { type: boolean }
+        hasGeminiKey: { type: boolean }
+        hasOpenrouterKey: { type: boolean }
+        codeRunnerEnabled: { type: boolean }
+    AssistantSettingsInput:
+      type: object
+      required: [provider, modelId]
+      properties:
+        provider: { type: string, enum: [openai, gemini, openrouter] }
+        modelId: { type: string, maxLength: 120 }
+        openaiApiKey: { type: ["string", "null"], maxLength: 1000 }
+        geminiApiKey: { type: ["string", "null"], maxLength: 1000 }
+        openrouterApiKey: { type: ["string", "null"], maxLength: 1000 }
+        codeRunnerEnabled: { type: boolean }
 

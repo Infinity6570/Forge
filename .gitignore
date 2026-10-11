@@ -47,3 +47,12 @@ Thumbs.db
 # Replit
 .cache/
 .local/
+
+# Local-only assistant data and credentials
+.env
+.env.*
+!.env.example
+/workspace/
+__pycache__/
+*.py[cod]
+.pythonlibs/

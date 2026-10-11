@@ -1,45 +1,29 @@
-# [Project name]
+# Universal Meta-Agent Assistant
 
-_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
+Personal assistant dashboard for local AI tasks, reminders, workspace files, and notes.
 
-## Run & Operate
+## Run and validate
 
-- `pnpm --filter @workspace/api-server run dev` — run the API server (port 5000)
-- `pnpm run typecheck` — full typecheck across all packages
-- `pnpm run build` — typecheck + build all packages
-- `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
-- `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
-- Required env: `DATABASE_URL` — Postgres connection string
+- Replit API preview: `pnpm --filter @workspace/api-server run dev`
+- Local app: install `requirements.txt`, then run `python main.py` and open `http://localhost:8000`
+- Validate: `pnpm run typecheck`
+- Rebuild API client and schemas: `pnpm --filter @workspace/api-spec run codegen`
+- Build portable frontend assets: `pnpm --filter @workspace/meta-assistant run build`, then copy `artifacts/meta-assistant/dist/public` to `static/app`
 
-## Stack
+## Stack and source of truth
 
-- pnpm workspaces, Node.js 24, TypeScript 5.9
-- API: Express 5
-- DB: PostgreSQL + Drizzle ORM
-- Validation: Zod (`zod/v4`), `drizzle-zod`
-- API codegen: Orval (from OpenAPI spec)
-- Build: esbuild (CJS bundle)
+- Frontend: React, Vite, TypeScript in `artifacts/meta-assistant/`
+- Portable backend: FastAPI in root `main.py`
+- Local persistence: SQLite and workspace files under `workspace/`
+- API contract: `lib/api-spec/openapi.yaml`
+- Python dependencies: `requirements.txt`
+- UI assets served by the portable backend: `static/app/`
 
-## Where things live
+## Product and architecture rules
 
-_Populate as you build — short repo map plus pointers to the source-of-truth file for DB schema, API contracts, theme files, etc._
-
-## Architecture decisions
-
-_Populate as you build — non-obvious choices a reader couldn't infer from the code (3-5 bullets)._
-
-## Product
-
-_Describe the high-level user-facing capabilities of this app once they exist._
-
-## User preferences
-
-_Populate as you build — explicit user instructions worth remembering across sessions._
-
-## Gotchas
-
-_Populate as you build — sharp edges, "always run X before Y" rules._
-
-## Pointers
-
-- See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and package details
+- The exported app must run locally with `python main.py`.
+- Do not use Replit-managed AI integrations or credits. Use only standard local provider variables: `OPENAI_API_KEY`, `GEMINI_API_KEY`, and `OPENROUTER_API_KEY`.
+- Provider keys belong in the local `.env` file, not in SQLite. The settings write endpoint must remain limited to loopback requests and must never return key values.
+- Keep the `.env` file out of source control, static serving, and workspace exports.
+- The optional Python runner is disabled by default, requires explicit local opt-in, and must remain disabled in Replit.
+- This is a single-user local app; do not publish it as a public service without adding authentication and per-user storage.

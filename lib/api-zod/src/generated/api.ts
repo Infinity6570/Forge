@@ -289,3 +289,56 @@ export const DeleteAssistantFileParams = zod.object({
 export const DeleteAssistantFileResponse = zod.void()
 
 
+/**
+ * @summary Read model selection and credential presence
+ */
+export const GetAssistantSettingsResponse = zod.object({
+  "provider": zod.enum(['openai', 'gemini', 'openrouter']),
+  "modelId": zod.string(),
+  "localSetupAllowed": zod.boolean(),
+  "hasOpenaiKey": zod.boolean(),
+  "hasGeminiKey": zod.boolean(),
+  "hasOpenrouterKey": zod.boolean(),
+  "codeRunnerEnabled": zod.boolean()
+})
+
+
+/**
+ * @summary Update local model configuration
+ */
+export const updateAssistantSettingsBodyModelIdMax = 120;
+
+export const updateAssistantSettingsBodyOpenaiApiKeyMax = 1000;
+
+export const updateAssistantSettingsBodyGeminiApiKeyMax = 1000;
+
+export const updateAssistantSettingsBodyOpenrouterApiKeyMax = 1000;
+
+
+
+export const UpdateAssistantSettingsBody = zod.object({
+  "provider": zod.enum(['openai', 'gemini', 'openrouter']),
+  "modelId": zod.string().max(updateAssistantSettingsBodyModelIdMax),
+  "openaiApiKey": zod.string().max(updateAssistantSettingsBodyOpenaiApiKeyMax).nullish(),
+  "geminiApiKey": zod.string().max(updateAssistantSettingsBodyGeminiApiKeyMax).nullish(),
+  "openrouterApiKey": zod.string().max(updateAssistantSettingsBodyOpenrouterApiKeyMax).nullish(),
+  "codeRunnerEnabled": zod.boolean().optional()
+})
+
+export const UpdateAssistantSettingsResponse = zod.object({
+  "provider": zod.enum(['openai', 'gemini', 'openrouter']),
+  "modelId": zod.string(),
+  "localSetupAllowed": zod.boolean(),
+  "hasOpenaiKey": zod.boolean(),
+  "hasGeminiKey": zod.boolean(),
+  "hasOpenrouterKey": zod.boolean(),
+  "codeRunnerEnabled": zod.boolean()
+})
+
+
+/**
+ * @summary Download uploaded source files and notes as a zip archive
+ */
+export const DownloadAssistantWorkspaceResponse = zod.unknown()
+
+

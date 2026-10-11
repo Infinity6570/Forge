@@ -171,3 +171,53 @@ export interface FileUploadInput {
   file: Blob;
 }
 
+export type AssistantSettingsProvider = typeof AssistantSettingsProvider[keyof typeof AssistantSettingsProvider];
+
+
+export const AssistantSettingsProvider = {
+  openai: 'openai',
+  gemini: 'gemini',
+  openrouter: 'openrouter',
+} as const;
+
+export interface AssistantSettings {
+  provider: AssistantSettingsProvider;
+  modelId: string;
+  localSetupAllowed: boolean;
+  hasOpenaiKey: boolean;
+  hasGeminiKey: boolean;
+  hasOpenrouterKey: boolean;
+  codeRunnerEnabled: boolean;
+}
+
+export type AssistantSettingsInputProvider = typeof AssistantSettingsInputProvider[keyof typeof AssistantSettingsInputProvider];
+
+
+export const AssistantSettingsInputProvider = {
+  openai: 'openai',
+  gemini: 'gemini',
+  openrouter: 'openrouter',
+} as const;
+
+export interface AssistantSettingsInput {
+  provider: AssistantSettingsInputProvider;
+  /** @maxLength 120 */
+  modelId: string;
+  /**
+     * @maxLength 1000
+     * @nullable
+     */
+  openaiApiKey?: string | null;
+  /**
+     * @maxLength 1000
+     * @nullable
+     */
+  geminiApiKey?: string | null;
+  /**
+     * @maxLength 1000
+     * @nullable
+     */
+  openrouterApiKey?: string | null;
+  codeRunnerEnabled?: boolean;
+}
+

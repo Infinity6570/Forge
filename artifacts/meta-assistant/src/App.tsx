@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent, ReactNode } from 'react';
 import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
 import { Link, Route, Router as WouterRouter, Switch, useLocation } from 'wouter';
@@ -27,7 +27,7 @@ import type { AssistantFile, AssistantNote, AssistantTask, AssistantTimer } from
 import {
   Activity, AlertCircle, ArrowDownToLine, ArrowRight, Bell, BookOpen, Check, CheckCircle2,
   CircleHelp, Clock3, FileText, FolderOpen, Gauge, HardDrive, Layers3,
-  LoaderCircle, LockKeyhole, Menu, MoreHorizontal, Plus, RefreshCw, Search,
+  KeyRound, LoaderCircle, LockKeyhole, Menu, MoreHorizontal, Plus, RefreshCw, Search,
   Send, Settings2, ShieldCheck, Sparkles, StopCircle, Trash2, Upload, X, Zap,
 } from 'lucide-react';
 import { ErrorBoundary } from '@/components/error-boundary';
@@ -125,6 +125,59 @@ function QuickSidebarStatus() {
     <div><span className="quick-status-icon"><Activity size={14} /></span><span>In progress</span><strong>{isLoading ? '—' : data?.activeTasks ?? 0}</strong></div>
     <div><span className="quick-status-icon amber"><Bell size={14} /></span><span>Reminders</span><strong>{isLoading ? '—' : data?.activeTimers ?? 0}</strong></div>
   </div>;
+}
+
+function ReminderNotifications() {
+  const [notice, setNotice] = useState<{ id: string; label: string }>();
+  const seen = useRef(new Set<string>());
+  const audio = useRef<AudioContext | undefined>(undefined);
+  useEffect(() => {
+    const unlockAudio = () => {
+      if (!audio.current && window.AudioContext) audio.current = new AudioContext();
+      if (audio.current?.state === 'suspended') void audio.current.resume();
+    };
+    window.addEventListener('pointerdown', unlockAudio, { once: true });
+    const poll = async () => {
+      try {
+        const response = await fetch('/api/assistant/timers');
+        if (!response.ok) return;
+        const timers = await response.json() as AssistantTimer[];
+        for (const timer of timers) {
+          const justFired = Date.now() - new Date(timer.scheduledFor).getTime() < 5 * 60_000;
+          if (timer.status !== 'fired' || !justFired || seen.current.has(timer.id)) continue;
+          seen.current.add(timer.id);
+          setNotice({ id: timer.id, label: timer.label });
+          if ('Notification' in window && Notification.permission === 'granted') {
+            new Notification('Assistant reminder', { body: timer.label });
+          }
+          if (audio.current) {
+            try {
+              await audio.current.resume();
+              const oscillator = audio.current.createOscillator();
+              const gain = audio.current.createGain();
+              oscillator.type = 'sine';
+              oscillator.frequency.value = 740;
+              gain.gain.value = 0.16;
+              oscillator.connect(gain);
+              gain.connect(audio.current.destination);
+              oscillator.start();
+              oscillator.stop(audio.current.currentTime + 0.45);
+            } catch { /* Browsers may block audio until the user interacts. */ }
+          }
+          window.setTimeout(() => setNotice((current) => current?.id === timer.id ? undefined : current), 10_000);
+        }
+      } catch { /* Timer polling is best effort; the reminder list remains available. */ }
+    };
+    void poll();
+    const interval = window.setInterval(() => { void poll(); }, 4_000);
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener('pointerdown', unlockAudio);
+      void audio.current?.close();
+    };
+  }, []);
+  if (!notice) return null;
+  return <div className="reminder-toast" role="alert" aria-live="assertive"><span className="reminder-toast-icon"><Bell size={17} /></span><div><strong>Reminder</strong><span>{notice.label}</span></div><button className="icon-button" aria-label="Dismiss reminder alert" onClick={() => setNotice(undefined)}><X size={16} /></button></div>;
 }
 
 function TaskStatusLine({ task, compact = false, onClick }: { task: AssistantTask; compact?: boolean; onClick?: () => void }) {
@@ -271,7 +324,7 @@ function WorkspacePage() {
   const removeNote = (note: AssistantNote) => { if (window.confirm(`Delete “${note.title}”? This cannot be undone.`)) deleteNote.mutate({ id: note.id }, { onSuccess: () => { qc.invalidateQueries({ queryKey: getListAssistantNotesQueryKey() }); qc.invalidateQueries({ queryKey: getGetAssistantDashboardQueryKey() }); } }); };
   const removeFile = (file: AssistantFile) => { if (window.confirm(`Delete “${file.name}”? This cannot be undone.`)) deleteFile.mutate({ id: file.id }, { onSuccess: () => { qc.invalidateQueries({ queryKey: getListAssistantFilesQueryKey() }); qc.invalidateQueries({ queryKey: getGetAssistantDashboardQueryKey() }); } }); };
   return <AppShell page="workspace"><div className="content-page enter">
-    <PageHeading eyebrow="REFERENCE LIBRARY" title="Workspace" description="Files and notes your agent can draw on when the context matters." right={<><label className={`button button-quiet ${uploading ? 'disabled' : ''}`} htmlFor="workspace-upload" data-testid="button-upload-file"><Upload size={15} />{uploading ? 'Uploading…' : 'Upload file'}<input id="workspace-upload" type="file" hidden disabled={uploading} onChange={(e) => { void onUpload(e.currentTarget.files?.[0]); e.currentTarget.value = ''; }} /></label><button className="button button-primary" onClick={() => setNoteOpen(true)} data-testid="button-new-note"><Plus size={16} /> New note</button></>} />
+    <PageHeading eyebrow="REFERENCE LIBRARY" title="Workspace" description="Files and notes your agent can draw on when the context matters." right={<><a className="button button-quiet" href="/api/assistant/workspace.zip" download data-testid="button-download-workspace"><ArrowDownToLine size={15} /> Download ZIP</a><label className={`button button-quiet ${uploading ? 'disabled' : ''}`} htmlFor="workspace-upload" data-testid="button-upload-file"><Upload size={15} />{uploading ? 'Uploading…' : 'Upload file'}<input id="workspace-upload" type="file" hidden disabled={uploading} onChange={(e) => { void onUpload(e.currentTarget.files?.[0]); e.currentTarget.value = ''; }} /></label><button className="button button-primary" onClick={() => setNoteOpen(true)} data-testid="button-new-note"><Plus size={16} /> New note</button></>} />
     <div className="library-intro"><div className="library-graphic"><div className="graphic-file"><FileText size={22} /></div><div className="graphic-note"><BookOpen size={19} /></div><div className="graphic-orbit" /></div><div><strong>A little context goes a long way.</strong><p>Keep source material and useful details close. Your agent can reference uploaded files and saved notes in future work.</p></div></div>
     {uploadError && <div className="inline-error"><AlertCircle size={15} />{uploadError}<button onClick={() => setUploadError('')} aria-label="Dismiss upload error"><X size={14} /></button></div>}
     <section className="panel library-panel"><div className="library-toolbar"><div className="library-tabs"><button onClick={() => setTab('files')} className={tab === 'files' ? 'active' : ''} data-testid="tab-files"><FileText size={15} /> Files <span>{filesQuery.data?.length ?? 0}</span></button><button onClick={() => setTab('notes')} className={tab === 'notes' ? 'active' : ''} data-testid="tab-notes"><BookOpen size={15} /> Notes <span>{notesQuery.data?.length ?? 0}</span></button></div><label className="search-box"><Search size={15} /><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={`Search ${tab}`} aria-label={`Search ${tab}`} data-testid="input-search-library" /></label></div>
@@ -284,30 +337,127 @@ function WorkspacePage() {
 }
 
 function SettingsPage() {
-  const [model, setModel] = useState('balanced');
+  const [provider, setProvider] = useState<'openai' | 'gemini' | 'openrouter'>('openai');
+  const [modelId, setModelId] = useState('gpt-4.1-mini');
+  const [credentialStatus, setCredentialStatus] = useState<{
+    provider: 'openai' | 'gemini' | 'openrouter';
+    modelId: string;
+    localSetupAllowed: boolean;
+    hasOpenaiKey: boolean;
+    hasGeminiKey: boolean;
+    hasOpenrouterKey: boolean;
+    codeRunnerEnabled: boolean;
+  }>();
+  const [providerModalOpen, setProviderModalOpen] = useState(false);
+  const [apiKeys, setApiKeys] = useState({ openaiApiKey: '', geminiApiKey: '', openrouterApiKey: '' });
+  const [codeRunnerEnabled, setCodeRunnerEnabled] = useState(false);
+  const [providerSaving, setProviderSaving] = useState(false);
+  const [providerError, setProviderError] = useState('');
+  const [providerSaved, setProviderSaved] = useState(false);
   const [confirmBeforeActions, setConfirmBeforeActions] = useState(true);
   const [allowExternalResearch, setAllowExternalResearch] = useState(true);
   const [includeFiles, setIncludeFiles] = useState(true);
   const [saved, setSaved] = useState(false);
   const onSetting = (setter: (value: boolean) => void, value: boolean) => { setter(value); setSaved(false); };
-  const models = [
-    { id: 'balanced', name: 'Balanced', detail: 'A thoughtful mix of speed and depth.', descriptor: 'DEFAULT', color: 'sage' },
-    { id: 'precise', name: 'Deep focus', detail: 'More careful reasoning for complex work.', descriptor: 'THOROUGH', color: 'gold' },
-    { id: 'swift', name: 'Quick response', detail: 'Lighter work, returned sooner.', descriptor: 'FAST', color: 'blue' },
-  ];
+  const models = {
+    openai: [
+      { id: 'gpt-4.1-mini', name: 'GPT-4.1 mini', detail: 'A fast general-purpose model.', descriptor: 'BALANCED', color: 'sage' },
+      { id: 'gpt-4.1', name: 'GPT-4.1', detail: 'More capacity for complex tasks.', descriptor: 'DEEP FOCUS', color: 'gold' },
+      { id: 'gpt-4.1-nano', name: 'GPT-4.1 nano', detail: 'A lighter option for quick work.', descriptor: 'QUICK', color: 'blue' },
+    ],
+    gemini: [
+      { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash', detail: 'Fast, general-purpose reasoning.', descriptor: 'BALANCED', color: 'sage' },
+      { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro', detail: 'More capacity for complex tasks.', descriptor: 'DEEP FOCUS', color: 'gold' },
+    ],
+    openrouter: [
+      { id: 'anthropic/claude-haiku-5.5', name: 'Claude Haiku 5.5', detail: 'A fast model for everyday tasks.', descriptor: 'QUICK', color: 'blue' },
+      { id: 'anthropic/claude-sonnet-5.5', name: 'Claude Sonnet 5.5', detail: 'A balanced model for broader work.', descriptor: 'BALANCED', color: 'sage' },
+      { id: 'anthropic/claude-opus-5.5', name: 'Claude Opus 5.5', detail: 'More capacity for demanding tasks.', descriptor: 'DEEP FOCUS', color: 'gold' },
+    ],
+  };
+  useEffect(() => {
+    let active = true;
+    fetch('/api/assistant/settings')
+      .then(async (response) => {
+        if (!response.ok) throw new Error('Could not load provider settings.');
+        return response.json();
+      })
+      .then((data) => {
+        if (!active) return;
+        setCredentialStatus(data);
+        setProvider(data.provider);
+        setModelId(data.modelId);
+        setCodeRunnerEnabled(data.codeRunnerEnabled);
+      })
+      .catch(() => {
+        if (active) setProviderError('Provider settings could not be loaded.');
+      });
+    return () => { active = false; };
+  }, []);
+  const activeModels = models[provider];
+  const configured = provider === 'openai'
+    ? credentialStatus?.hasOpenaiKey
+    : provider === 'gemini'
+      ? credentialStatus?.hasGeminiKey
+      : credentialStatus?.hasOpenrouterKey;
+  const saveProviderSettings = async () => {
+    setProviderSaving(true);
+    setProviderError('');
+    setProviderSaved(false);
+    const payload: Record<string, unknown> = { provider, modelId, codeRunnerEnabled };
+    for (const [field, value] of Object.entries(apiKeys)) {
+      if (value.trim()) payload[field] = value.trim();
+    }
+    try {
+      const response = await fetch('/api/assistant/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify(payload),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.detail || 'Settings could not be saved.');
+      setCredentialStatus(result);
+      setApiKeys({ openaiApiKey: '', geminiApiKey: '', openrouterApiKey: '' });
+      setProviderSaved(true);
+    } catch (error) {
+      setProviderError(error instanceof Error ? error.message : 'Settings could not be saved.');
+    } finally {
+      setProviderSaving(false);
+    }
+  };
   return <AppShell page="settings"><div className="content-page settings-page enter">
     <PageHeading eyebrow="AGENT CONFIGURATION" title="Preferences" description="Choose how your agent works and where it should pause for your approval." />
-    <section className="settings-section model-section"><div className="settings-section-heading"><div className="section-symbol"><Zap size={17} /></div><div><h2>Model selection</h2><p>Pick the working style that fits the job.</p></div><span className="connection-state"><span className="online-pip" />CONNECTED</span></div>
-      <div className="model-options">{models.map((item) => <button className={`model-option ${model === item.id ? 'chosen' : ''}`} key={item.id} onClick={() => { setModel(item.id); setSaved(false); }} data-testid={`button-model-${item.id}`}><span className={`model-mark ${item.color}`}>{item.id === 'balanced' ? <Layers3 size={17} /> : item.id === 'precise' ? <Search size={17} /> : <Zap size={17} />}</span><span className="model-copy"><strong>{item.name} {item.id === 'balanced' && <span className="recommended">RECOMMENDED</span>}</strong><span>{item.detail}</span></span><span className="model-descriptor">{item.descriptor}</span><span className={`radio-mark ${model === item.id ? 'checked' : ''}`}>{model === item.id && <Check size={12} />}</span></button>)}</div><p className="settings-footnote"><LockKeyhole size={13} /> Model availability is managed by your workspace.</p>
+    <section className="settings-section model-section"><div className="settings-section-heading"><div className="section-symbol"><Zap size={17} /></div><div><h2>Model selection</h2><p>Choose a provider and working model for new tasks.</p></div><button className="button button-quiet button-small" onClick={() => { setProviderError(''); setProviderModalOpen(true); }} data-testid="button-configure-provider"><KeyRound size={14} /> Configure provider</button></div>
+      <label className="form-label provider-select-label">Provider<select value={provider} onChange={(event) => { const next = event.target.value as typeof provider; setProvider(next); setModelId(models[next][0].id); }} data-testid="select-model-provider"><option value="openai">OpenAI</option><option value="gemini">Google Gemini</option><option value="openrouter">OpenRouter (Anthropic)</option></select></label>
+      <div className="model-options">{activeModels.map((item) => <button className={`model-option ${modelId === item.id ? 'chosen' : ''}`} key={item.id} onClick={() => { setModelId(item.id); setSaved(false); }} data-testid={`button-model-${item.id}`}><span className={`model-mark ${item.color}`}>{item.descriptor === 'QUICK' ? <Zap size={17} /> : item.descriptor === 'DEEP FOCUS' ? <Search size={17} /> : <Layers3 size={17} />}</span><span className="model-copy"><strong>{item.name} {item.descriptor === 'BALANCED' && <span className="recommended">BALANCED</span>}</strong><span>{item.detail}</span></span><span className="model-descriptor">{item.descriptor}</span><span className={`radio-mark ${modelId === item.id ? 'checked' : ''}`}>{modelId === item.id && <Check size={12} />}</span></button>)}</div>
+      <p className="settings-footnote"><LockKeyhole size={13} /> {configured ? 'Provider key configured on this machine.' : 'Add a provider key to run tasks.'} Keys are never sent back to the browser.</p>
+    </section>
+    <section className="settings-section safety-section"><div className="settings-section-heading"><div className="section-symbol amber"><ShieldCheck size={18} /></div><div><h2>Local code runner</h2><p>Optional Python execution in the local workspace, disabled by default.</p></div></div>
+      <div className="setting-row"><div className="setting-row-icon"><KeyRound size={16} /></div><div className="setting-copy"><strong>Allow short Python runs</strong><span>Local-only and off by default. If enabled, generated code can access files and run commands with your account's normal computer permissions.</span></div><button className={`switch ${codeRunnerEnabled ? 'on' : ''}`} role="switch" aria-checked={codeRunnerEnabled} onClick={() => { setCodeRunnerEnabled(!codeRunnerEnabled); setProviderSaved(false); }} aria-label="Allow local Python code runner" data-testid="switch-local-code-runner"><span /></button></div>
+      <div className="setting-row"><div className="setting-row-icon"><Bell size={16} /></div><div className="setting-copy"><strong>Desktop notifications</strong><span>Show browser notifications when a scheduled reminder fires.</span></div><button className="button button-quiet button-small" onClick={() => { if ('Notification' in window) void Notification.requestPermission(); }} data-testid="button-enable-notifications">Enable alerts</button></div>
+      {!credentialStatus?.localSetupAllowed && <p className="settings-footnote"><LockKeyhole size={13} /> Provider keys and the local code runner can only be configured from localhost after export.</p>}
     </section>
     <section className="settings-section safety-section"><div className="settings-section-heading"><div className="section-symbol amber"><ShieldCheck size={18} /></div><div><h2>Safety &amp; permissions</h2><p>Make your boundaries explicit. Change these any time.</p></div></div>
       <div className="setting-row"><div className="setting-row-icon"><CheckCircle2 size={16} /></div><div className="setting-copy"><strong>Confirm before consequential actions</strong><span>Pause and ask before an action that changes or sends something.</span></div><button className={`switch ${confirmBeforeActions ? 'on' : ''}`} role="switch" aria-checked={confirmBeforeActions} onClick={() => onSetting(setConfirmBeforeActions, !confirmBeforeActions)} aria-label="Confirm before consequential actions" data-testid="switch-confirm-actions"><span /></button></div>
       <div className="setting-row"><div className="setting-row-icon"><Search size={16} /></div><div className="setting-copy"><strong>Allow external research</strong><span>Let the agent consult public sources when research needs it.</span></div><button className={`switch ${allowExternalResearch ? 'on' : ''}`} role="switch" aria-checked={allowExternalResearch} onClick={() => onSetting(setAllowExternalResearch, !allowExternalResearch)} aria-label="Allow external research" data-testid="switch-external-research"><span /></button></div>
       <div className="setting-row"><div className="setting-row-icon"><FileText size={16} /></div><div className="setting-copy"><strong>Use workspace files as context</strong><span>Allow saved documents and notes to inform relevant tasks.</span></div><button className={`switch ${includeFiles ? 'on' : ''}`} role="switch" aria-checked={includeFiles} onClick={() => onSetting(setIncludeFiles, !includeFiles)} aria-label="Use workspace files as context" data-testid="switch-workspace-context"><span /></button></div>
     </section>
-    <div className="settings-save-row"><div className="save-state">{saved && <><CheckCircle2 size={15} /> Preferences updated for this session.</>}</div><button className="button button-primary" onClick={() => setSaved(true)} data-testid="button-save-settings"><Check size={15} /> Save preferences</button></div>
+    <div className="settings-save-row"><div className="save-state">{saved && <><CheckCircle2 size={15} /> Preferences updated for this session.</>}{providerSaved && <><CheckCircle2 size={15} /> Provider settings saved locally.</>}</div><button className="button button-primary" disabled={!credentialStatus?.localSetupAllowed || providerSaving} onClick={() => { setSaved(true); void saveProviderSettings(); }} data-testid="button-save-settings"><Check size={15} /> Save preferences</button></div>
     <div className="settings-note"><LockKeyhole size={15} /><div><strong>Your work stays yours.</strong><p>These controls guide the agent; it will never claim to have completed work until a task reports an outcome.</p></div></div>
     <TimersManager />
+    {providerModalOpen && <Modal title="Connect an AI provider" onClose={() => setProviderModalOpen(false)}><form className="form-stack" onSubmit={(event) => { event.preventDefault(); void saveProviderSettings(); }}>
+      <p className="modal-description">Keys are saved to the local .env file only. This form is disabled in Replit and works after you run the exported app on localhost.</p>
+      <label className="form-label">Default provider<select value={provider} onChange={(event) => { const next = event.target.value as typeof provider; setProvider(next); setModelId(models[next][0].id); }} data-testid="select-settings-provider"><option value="openai">OpenAI</option><option value="gemini">Google Gemini</option><option value="openrouter">OpenRouter</option></select></label>
+      <label className="form-label">Default model<select value={modelId} onChange={(event) => setModelId(event.target.value)} data-testid="select-settings-model">{models[provider].map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+      <label className="form-label">OpenAI API key <span className="optional-label">{credentialStatus?.hasOpenaiKey ? 'configured — leave blank to keep' : 'optional'}</span><input type="password" autoComplete="new-password" value={apiKeys.openaiApiKey} onChange={(event) => setApiKeys({ ...apiKeys, openaiApiKey: event.target.value })} placeholder="sk-…" disabled={!credentialStatus?.localSetupAllowed} data-testid="input-openai-api-key" /></label>
+      <label className="form-label">Gemini API key <span className="optional-label">{credentialStatus?.hasGeminiKey ? 'configured — leave blank to keep' : 'optional'}</span><input type="password" autoComplete="new-password" value={apiKeys.geminiApiKey} onChange={(event) => setApiKeys({ ...apiKeys, geminiApiKey: event.target.value })} placeholder="Enter your Gemini key" disabled={!credentialStatus?.localSetupAllowed} data-testid="input-gemini-api-key" /></label>
+      <label className="form-label">OpenRouter API key <span className="optional-label">{credentialStatus?.hasOpenrouterKey ? 'configured — leave blank to keep' : 'optional'}</span><input type="password" autoComplete="new-password" value={apiKeys.openrouterApiKey} onChange={(event) => setApiKeys({ ...apiKeys, openrouterApiKey: event.target.value })} placeholder="sk-or-…" disabled={!credentialStatus?.localSetupAllowed} data-testid="input-openrouter-api-key" /></label>
+      {providerError && <p className="field-error" role="alert">{providerError}</p>}
+      {!credentialStatus?.localSetupAllowed && <p className="inline-error"><LockKeyhole size={14} /> Open this project at localhost after export to enter keys. The Replit preview cannot save them.</p>}
+      {providerSaved && <p className="save-state"><CheckCircle2 size={15} /> Saved to the local .env file. Key values are not shown again.</p>}
+      <div className="modal-actions"><button type="button" className="button button-quiet" onClick={() => setProviderModalOpen(false)}>Close</button><button type="submit" className="button button-primary" disabled={providerSaving || !credentialStatus?.localSetupAllowed} data-testid="button-save-provider">{providerSaving ? 'Saving…' : 'Save provider settings'}</button></div>
+    </form></Modal>}
   </div></AppShell>;
 }
 
@@ -319,6 +469,7 @@ function TimersManager() {
   const [open, setOpen] = useState(false);
   const [label, setLabel] = useState('');
   const [kind, setKind] = useState<'countdown' | 'alarm'>('countdown');
+  const [recurrence, setRecurrence] = useState<'none' | 'daily' | 'weekly'>('none');
   const [when, setWhen] = useState('');
   const [error, setError] = useState('');
   const onCreate = (event: FormEvent) => {
@@ -327,12 +478,12 @@ function TimersManager() {
     const date = new Date(when);
     if (Number.isNaN(date.getTime()) || date.getTime() <= Date.now()) { setError('Choose a time in the future.'); return; }
     setError('');
-    createTimer.mutate({ data: { label: label.trim(), kind, scheduledFor: date.toISOString() } }, { onSuccess: () => { setOpen(false); setLabel(''); setWhen(''); qc.invalidateQueries({ queryKey: getListAssistantTimersQueryKey() }); qc.invalidateQueries({ queryKey: getGetAssistantDashboardQueryKey() }); }, onError: () => setError('Reminder could not be set. Try again.') });
+    createTimer.mutate({ data: { label: label.trim(), kind, scheduledFor: date.toISOString(), recurrence } }, { onSuccess: () => { setOpen(false); setLabel(''); setWhen(''); setRecurrence('none'); qc.invalidateQueries({ queryKey: getListAssistantTimersQueryKey() }); qc.invalidateQueries({ queryKey: getGetAssistantDashboardQueryKey() }); }, onError: () => setError('Reminder could not be set. Try again.') });
   };
   const timers = timerQuery.data ?? [];
   return <section className="settings-section reminders-section"><div className="settings-section-heading"><div className="section-symbol amber"><Bell size={17} /></div><div><h2>Reminders</h2><p>Keep a time-sensitive nudge where you can see it.</p></div><button className="button button-quiet button-small" onClick={() => setOpen(true)} data-testid="button-add-reminder"><Plus size={14} /> Add reminder</button></div>
     {timerQuery.isLoading ? <Skeleton rows={2} /> : timerQuery.isError ? <QueryProblem retry={() => timerQuery.refetch()} /> : timers.length ? <div className="reminder-list">{timers.map((timer: AssistantTimer) => <div className="reminder-row" key={timer.id}><span className={`reminder-icon ${timer.kind}`}><Clock3 size={16} /></span><div className="reminder-copy"><strong>{timer.label}</strong><span>{timer.kind} <i /> {formatDate(timer.scheduledFor)}</span></div><StatusPill status={timer.status} />{timer.status !== 'dismissed' && <button className="icon-button danger-hover" aria-label={`Dismiss ${timer.label}`} onClick={() => deleteTimer.mutate({ id: timer.id }, { onSuccess: () => { qc.invalidateQueries({ queryKey: getListAssistantTimersQueryKey() }); qc.invalidateQueries({ queryKey: getGetAssistantDashboardQueryKey() }); } })} data-testid={`button-delete-timer-${timer.id}`}><X size={16} /></button>}</div>)}</div> : <div className="empty-inline"><Clock3 size={16} /><span>No reminders set. Add one when a task needs a nudge.</span></div>}
-    {open && <Modal title="Add a reminder" onClose={() => setOpen(false)}><form className="form-stack" onSubmit={onCreate}><label className="form-label">What should you remember?<input value={label} onChange={(e) => setLabel(e.target.value)} maxLength={200} placeholder="Follow up on the proposal" autoFocus data-testid="input-reminder-label" /></label><div className="form-label">Reminder type<div className="segmented-control"><button type="button" className={kind === 'countdown' ? 'selected' : ''} onClick={() => setKind('countdown')} data-testid="button-kind-countdown"><Clock3 size={14} /> Countdown</button><button type="button" className={kind === 'alarm' ? 'selected' : ''} onClick={() => setKind('alarm')} data-testid="button-kind-alarm"><Bell size={14} /> Scheduled</button></div></div><label className="form-label">When<input type="datetime-local" value={when} onChange={(e) => setWhen(e.target.value)} data-testid="input-reminder-time" /></label>{error && <p className="field-error">{error}</p>}<div className="modal-actions"><button type="button" className="button button-quiet" onClick={() => setOpen(false)}>Cancel</button><button className="button button-primary" disabled={createTimer.isPending} data-testid="button-save-reminder">{createTimer.isPending ? 'Setting…' : <><Bell size={14} /> Set reminder</>}</button></div></form></Modal>}
+    {open && <Modal title="Add a reminder" onClose={() => setOpen(false)}><form className="form-stack" onSubmit={onCreate}><label className="form-label">What should you remember?<input value={label} onChange={(e) => setLabel(e.target.value)} maxLength={200} placeholder="Follow up on the proposal" autoFocus data-testid="input-reminder-label" /></label><div className="form-label">Reminder type<div className="segmented-control"><button type="button" className={kind === 'countdown' ? 'selected' : ''} onClick={() => setKind('countdown')} data-testid="button-kind-countdown"><Clock3 size={14} /> Countdown</button><button type="button" className={kind === 'alarm' ? 'selected' : ''} onClick={() => setKind('alarm')} data-testid="button-kind-alarm"><Bell size={14} /> Scheduled</button></div></div><label className="form-label">When<input type="datetime-local" value={when} onChange={(e) => setWhen(e.target.value)} data-testid="input-reminder-time" /></label><label className="form-label">Repeat<select value={recurrence} onChange={(e) => setRecurrence(e.target.value as typeof recurrence)} data-testid="select-reminder-recurrence"><option value="none">Does not repeat</option><option value="daily">Daily</option><option value="weekly">Weekly</option></select></label>{error && <p className="field-error">{error}</p>}<div className="modal-actions"><button type="button" className="button button-quiet" onClick={() => setOpen(false)}>Cancel</button><button className="button button-primary" disabled={createTimer.isPending} data-testid="button-save-reminder">{createTimer.isPending ? 'Setting…' : <><Bell size={14} /> Set reminder</>}</button></div></form></Modal>}
   </section>;
 }
 
@@ -348,7 +499,7 @@ function Router() {
 }
 
 function App() {
-  return <QueryClientProvider client={queryClient}><TooltipProvider><WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, '')}><Router /></WouterRouter><Toaster /></TooltipProvider></QueryClientProvider>;
+  return <QueryClientProvider client={queryClient}><TooltipProvider><ReminderNotifications /><WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, '')}><Router /></WouterRouter><Toaster /></TooltipProvider></QueryClientProvider>;
 }
 
 export default App;

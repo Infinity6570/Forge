@@ -22,6 +22,8 @@ import type {
 import type {
   AssistantFile,
   AssistantNote,
+  AssistantSettings,
+  AssistantSettingsInput,
   AssistantTask,
   AssistantTimer,
   DashboardSummary,
@@ -1234,4 +1236,246 @@ export const useDeleteAssistantFile = <TError = ErrorType<unknown>,
       > => {
       return useMutation(getDeleteAssistantFileMutationOptions(options));
     }
+
+export const getGetAssistantSettingsUrl = () => {
+
+
+
+
+  return `/api/assistant/settings`
+}
+
+/**
+ * @summary Read model selection and credential presence
+ */
+export const getAssistantSettings = async ( options?: Parameters<typeof customFetch>[1]): Promise<AssistantSettings> => {
+
+  return customFetch<AssistantSettings>(getGetAssistantSettingsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetAssistantSettingsQueryKey = () => {
+    return [
+    `/api/assistant/settings`
+    ] as const;
+    }
+
+
+export const getGetAssistantSettingsQueryOptions = <TData = Awaited<ReturnType<typeof getAssistantSettings>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAssistantSettings>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetAssistantSettingsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getAssistantSettings>>> = ({ signal }) => getAssistantSettings({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getAssistantSettings>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetAssistantSettingsQueryResult = NonNullable<Awaited<ReturnType<typeof getAssistantSettings>>>
+export type GetAssistantSettingsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Read model selection and credential presence
+ */
+
+export function useGetAssistantSettings<TData = Awaited<ReturnType<typeof getAssistantSettings>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAssistantSettings>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetAssistantSettingsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getUpdateAssistantSettingsUrl = () => {
+
+
+
+
+  return `/api/assistant/settings`
+}
+
+/**
+ * @summary Update local model configuration
+ */
+export const updateAssistantSettings = async (assistantSettingsInput: AssistantSettingsInput, options?: Parameters<typeof customFetch>[1]): Promise<AssistantSettings> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<AssistantSettings>(getUpdateAssistantSettingsUrl(),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(assistantSettingsInput)
+  }
+);}
+
+
+
+
+
+export const getUpdateAssistantSettingsMutationKey = () => ['updateAssistantSettings'] as const;
+
+export const getUpdateAssistantSettingsMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateAssistantSettings>>, TError,UpdateAssistantSettingsMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateAssistantSettings>>, TError,UpdateAssistantSettingsMutationVariables, TContext> => {
+
+const mutationKey = getUpdateAssistantSettingsMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateAssistantSettings>>, UpdateAssistantSettingsMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  updateAssistantSettings(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateAssistantSettingsMutationResult = NonNullable<Awaited<ReturnType<typeof updateAssistantSettings>>>
+    export type UpdateAssistantSettingsMutationBody = BodyType<AssistantSettingsInput>
+    export type UpdateAssistantSettingsMutationError = ErrorType<unknown>
+    export type UpdateAssistantSettingsMutationVariables = {data: BodyType<AssistantSettingsInput>}
+
+    /**
+ * @summary Update local model configuration
+ */
+export const useUpdateAssistantSettings = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateAssistantSettings>>, TError,UpdateAssistantSettingsMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateAssistantSettings>>,
+        TError,
+        UpdateAssistantSettingsMutationVariables,
+        TContext
+      > => {
+      return useMutation(getUpdateAssistantSettingsMutationOptions(options));
+    }
+
+export const getDownloadAssistantWorkspaceUrl = () => {
+
+
+
+
+  return `/api/assistant/workspace.zip`
+}
+
+/**
+ * @summary Download uploaded source files and notes as a zip archive
+ */
+export const downloadAssistantWorkspace = async ( options?: Parameters<typeof customFetch>[1]): Promise<Blob> => {
+
+  return customFetch<Blob>(getDownloadAssistantWorkspaceUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getDownloadAssistantWorkspaceQueryKey = () => {
+    return [
+    `/api/assistant/workspace.zip`
+    ] as const;
+    }
+
+
+export const getDownloadAssistantWorkspaceQueryOptions = <TData = Awaited<ReturnType<typeof downloadAssistantWorkspace>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof downloadAssistantWorkspace>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getDownloadAssistantWorkspaceQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof downloadAssistantWorkspace>>> = ({ signal }) => downloadAssistantWorkspace({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof downloadAssistantWorkspace>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type DownloadAssistantWorkspaceQueryResult = NonNullable<Awaited<ReturnType<typeof downloadAssistantWorkspace>>>
+export type DownloadAssistantWorkspaceQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Download uploaded source files and notes as a zip archive
+ */
+
+export function useDownloadAssistantWorkspace<TData = Awaited<ReturnType<typeof downloadAssistantWorkspace>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof downloadAssistantWorkspace>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getDownloadAssistantWorkspaceQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
 

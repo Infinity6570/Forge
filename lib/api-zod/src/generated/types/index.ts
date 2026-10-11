@@ -8,6 +8,10 @@
 
 export * from './assistantFile';
 export * from './assistantNote';
+export * from './assistantSettings';
+export * from './assistantSettingsInput';
+export * from './assistantSettingsInputProvider';
+export * from './assistantSettingsProvider';
 export * from './assistantTask';
 export * from './assistantTaskStatus';
 export * from './assistantTimer';
