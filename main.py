@@ -47,13 +47,20 @@ ACTIVE_TASKS: dict[str, asyncio.Task[None]] = {}
 SCHEDULER = AsyncIOScheduler(timezone="UTC")
 MODEL_OPTIONS = {
     "openai": {"gpt-4.1-mini", "gpt-4.1", "gpt-4.1-nano"},
-    "gemini": {"gemini-2.5-flash", "gemini-2.5-pro"},
+    "gemini": {
+        "gemini-2.5-flash",
+        "gemini-2.5-pro",
+        "gemini-2.5-flash-lite",
+        "gemini-3.5-flash-lite",
+        "gemini-3.8-flash",
+    },
     "openrouter": {
         "anthropic/claude-haiku-5.5",
         "anthropic/claude-sonnet-5.5",
         "anthropic/claude-opus-5.5",
     },
 }
+MODEL_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,119}$")
 KEY_NAMES = {
     "openai": "OPENAI_API_KEY",
     "gemini": "GEMINI_API_KEY",
@@ -229,33 +236,69 @@ def is_loopback_request(request: Request) -> bool:
     return remote_is_local and host in {"localhost", "127.0.0.1", "::1"}
 
 
-def require_local(request: Request) -> None:
-    if is_replit_runtime() or not is_loopback_request(request):
-        raise HTTPException(
-            status_code=403,
-            detail="This action is available only in a local copy of the app.",
-        )
-
-
 def is_replit_runtime() -> bool:
     return any(os.getenv(name) for name in ("REPL_ID", "REPLIT_DEV_DOMAIN", "REPLIT_DOMAINS"))
+
+
+def is_local_setup_allowed(request: Request) -> bool:
+    return not is_replit_runtime() and is_loopback_request(request)
+
+
+def _host_name(value: str | None) -> str | None:
+    if not value:
+        return None
+    parsed = urlparse(value if "://" in value else f"//{value}")
+    return parsed.hostname.lower() if parsed.hostname else None
+
+
+def is_same_origin_preview_request(request: Request) -> bool:
+    origin = request.headers.get("origin")
+    parsed_origin = urlparse(origin or "")
+    if parsed_origin.scheme not in {"http", "https"} or not parsed_origin.hostname:
+        return False
+    origin_host = parsed_origin.hostname.lower()
+
+    forwarded_hosts = {
+        host
+        for header in ("x-forwarded-host", "host")
+        for host in [_host_name((request.headers.get(header) or "").split(",", 1)[0].strip())]
+        if host
+    }
+    if origin_host in forwarded_hosts:
+        return True
+
+    configured_domains = {
+        host
+        for name in ("REPLIT_DEV_DOMAIN", "REPLIT_DOMAINS")
+        for domain in re.split(r"[,;\s]+", os.getenv(name, ""))
+        for host in [_host_name(domain.strip())]
+        if host
+    }
+    return origin_host in configured_domains
+
+
+def can_manage_provider_settings(request: Request) -> bool:
+    if not is_replit_runtime():
+        return is_loopback_request(request)
+    return is_same_origin_preview_request(request)
 
 
 def local_code_runner_available() -> bool:
     return not is_replit_runtime() and os.getenv("RUN_LOCAL_CODE", "false").lower() == "true"
 
 
-def get_settings(local_allowed: bool) -> dict[str, Any]:
+def get_settings(local_allowed: bool, provider_settings_allowed: bool) -> dict[str, Any]:
     provider = os.getenv("AGENT_PROVIDER", "openai")
     if provider not in MODEL_OPTIONS:
         provider = "openai"
     model = os.getenv("AGENT_MODEL", DEFAULT_MODELS[provider])
-    if model not in MODEL_OPTIONS[provider]:
+    if not MODEL_ID_PATTERN.fullmatch(model):
         model = DEFAULT_MODELS[provider]
     return {
         "provider": provider,
         "modelId": model,
         "localSetupAllowed": local_allowed,
+        "providerSettingsAllowed": provider_settings_allowed,
         "hasOpenaiKey": bool(os.getenv("OPENAI_API_KEY")),
         "hasGeminiKey": bool(os.getenv("GEMINI_API_KEY")),
         "hasOpenrouterKey": bool(os.getenv("OPENROUTER_API_KEY")),
@@ -285,7 +328,7 @@ class NoteInput(BaseModel):
 
 class SettingsInput(BaseModel):
     provider: str = Field(pattern="^(openai|gemini|openrouter)$")
-    modelId: str = Field(min_length=1, max_length=120)
+    modelId: str = Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,119}$")
     openaiApiKey: str | None = Field(default=None, max_length=1000)
     geminiApiKey: str | None = Field(default=None, max_length=1000)
     openrouterApiKey: str | None = Field(default=None, max_length=1000)
@@ -299,7 +342,7 @@ def credential_for(provider: str) -> str | None:
 def create_llm_client(provider: str) -> AsyncOpenAI:
     key = credential_for(provider)
     if not key:
-        raise RuntimeError(f"No {provider.title()} API key is configured. Open Settings on localhost to add one.")
+        raise RuntimeError(f"No {provider.title()} API key is configured. Open provider settings to add one.")
     if provider == "gemini":
         return AsyncOpenAI(
             api_key=key,
@@ -811,14 +854,23 @@ async def delete_file(file_id: str) -> None:
 
 @app.get("/api/assistant/settings")
 async def read_settings(request: Request) -> dict[str, Any]:
-    return get_settings(not is_replit_runtime() and is_loopback_request(request))
+    in_replit = is_replit_runtime()
+    return get_settings(
+        is_local_setup_allowed(request),
+        in_replit or is_loopback_request(request),
+    )
 
 
 @app.put("/api/assistant/settings")
 async def update_settings(body: SettingsInput, request: Request) -> dict[str, Any]:
-    require_local(request)
-    if body.modelId not in MODEL_OPTIONS[body.provider]:
-        raise HTTPException(status_code=422, detail="That model is not available for the selected provider.")
+    if not can_manage_provider_settings(request):
+        raise HTTPException(
+            status_code=403,
+            detail="Provider settings can only be changed from this app's preview or a local copy.",
+        )
+    local_allowed = is_local_setup_allowed(request)
+    if body.codeRunnerEnabled and not local_allowed:
+        raise HTTPException(status_code=403, detail="The local code runner is available only in a local copy.")
     values = {
         "OPENAI_API_KEY": body.openaiApiKey,
         "GEMINI_API_KEY": body.geminiApiKey,
@@ -831,11 +883,11 @@ async def update_settings(body: SettingsInput, request: Request) -> dict[str, An
         if value is not None and value.strip():
             set_key(str(ENV_FILE), key, value.strip(), quote_mode="always")
     set_key(str(ENV_FILE), "AGENT_PROVIDER", body.provider, quote_mode="never")
-    set_key(str(ENV_FILE), "AGENT_MODEL", body.modelId, quote_mode="never")
+    set_key(str(ENV_FILE), "AGENT_MODEL", body.modelId, quote_mode="always")
     set_key(str(ENV_FILE), "RUN_LOCAL_CODE", str(body.codeRunnerEnabled).lower(), quote_mode="never")
     os.chmod(ENV_FILE, 0o600)
     load_dotenv(ENV_FILE, override=True)
-    return get_settings(True)
+    return get_settings(local_allowed, True)
 
 
 @app.get("/api/assistant/workspace.zip")

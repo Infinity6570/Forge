@@ -11,6 +11,7 @@ export interface AssistantSettings {
   provider: AssistantSettingsProvider;
   modelId: string;
   localSetupAllowed: boolean;
+  providerSettingsAllowed: boolean;
   hasOpenaiKey: boolean;
   hasGeminiKey: boolean;
   hasOpenrouterKey: boolean;

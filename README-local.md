@@ -28,9 +28,10 @@ provider API key you configure. It does not use Replit AI Integrations.
 ## Local data and API keys
 
 - SQLite history and workspace files live in `workspace/`.
-- Provider keys are saved only to the local `.env` file with owner-only file
-  permissions. The Settings API accepts keys only from a loopback connection
-  and never returns their values.
+- Provider keys are saved in the `.env` file for the environment running the
+  app. Local changes require a loopback connection; Replit preview changes
+  require a same-origin request. The API never returns key values, and the file
+  is excluded from Git.
 - OpenAI, Gemini, and OpenRouter use their standard provider APIs through an
   OpenAI-compatible client. You supply and pay for your own provider account.
 - The Python runner is disabled by default. If enabled in local Settings, model
@@ -40,6 +41,7 @@ provider API key you configure. It does not use Replit AI Integrations.
 
 ## Important
 
-Do not publish this personal assistant as a public service. Its local settings
-screen refuses remote key changes, but task history and workspace data are
-designed for one local user rather than a multi-user deployment.
+Do not publish or share this personal assistant as a public service. The Replit
+preview settings modal writes keys into that Replit workspace's `.env` file;
+task history and workspace data are designed for one user, not a multi-user
+deployment.

@@ -23,7 +23,8 @@ Personal assistant dashboard for local AI tasks, reminders, workspace files, and
 
 - The exported app must run locally with `python main.py`.
 - Do not use Replit-managed AI integrations or credits. Use only standard local provider variables: `OPENAI_API_KEY`, `GEMINI_API_KEY`, and `OPENROUTER_API_KEY`.
-- Provider keys belong in the local `.env` file, not in SQLite. The settings write endpoint must remain limited to loopback requests and must never return key values.
+- Provider keys belong in the `.env` file for the running environment, not in SQLite. The settings endpoint must never return key values; local changes require loopback access and Replit preview changes require a same-origin request.
+- The provider settings modal is intentionally editable in Replit preview. Its keys are stored in that Replit workspace's ignored `.env` file; tell users this before they enter keys.
 - Keep the `.env` file out of source control, static serving, and workspace exports.
 - The optional Python runner is disabled by default, requires explicit local opt-in, and must remain disabled in Replit.
 - This is a single-user local app; do not publish it as a public service without adding authentication and per-user storage.

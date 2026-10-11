@@ -184,6 +184,7 @@ export interface AssistantSettings {
   provider: AssistantSettingsProvider;
   modelId: string;
   localSetupAllowed: boolean;
+  providerSettingsAllowed: boolean;
   hasOpenaiKey: boolean;
   hasGeminiKey: boolean;
   hasOpenrouterKey: boolean;
@@ -201,7 +202,11 @@ export const AssistantSettingsInputProvider = {
 
 export interface AssistantSettingsInput {
   provider: AssistantSettingsInputProvider;
-  /** @maxLength 120 */
+  /**
+     * @minLength 1
+     * @maxLength 120
+     * @pattern ^[A-Za-z0-9][A-Za-z0-9._:/-]{0,119}$
+     */
   modelId: string;
   /**
      * @maxLength 1000

@@ -336,13 +336,23 @@ function WorkspacePage() {
   </div></AppShell>;
 }
 
+const GEMINI_MODEL_IDS = new Set([
+  'gemini-2.5-flash',
+  'gemini-2.5-pro',
+  'gemini-2.5-flash-lite',
+  'gemini-3.5-flash-lite',
+  'gemini-3.8-flash',
+]);
+
 function SettingsPage() {
   const [provider, setProvider] = useState<'openai' | 'gemini' | 'openrouter'>('openai');
   const [modelId, setModelId] = useState('gpt-4.1-mini');
+  const [customModelId, setCustomModelId] = useState('');
   const [credentialStatus, setCredentialStatus] = useState<{
     provider: 'openai' | 'gemini' | 'openrouter';
     modelId: string;
     localSetupAllowed: boolean;
+    providerSettingsAllowed: boolean;
     hasOpenaiKey: boolean;
     hasGeminiKey: boolean;
     hasOpenrouterKey: boolean;
@@ -366,8 +376,11 @@ function SettingsPage() {
       { id: 'gpt-4.1-nano', name: 'GPT-4.1 nano', detail: 'A lighter option for quick work.', descriptor: 'QUICK', color: 'blue' },
     ],
     gemini: [
-      { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash', detail: 'Fast, general-purpose reasoning.', descriptor: 'BALANCED', color: 'sage' },
-      { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro', detail: 'More capacity for complex tasks.', descriptor: 'DEEP FOCUS', color: 'gold' },
+      { id: 'gemini-2.5-flash', name: 'gemini-2.5-flash', detail: 'Default · Balanced', descriptor: 'BALANCED', color: 'sage' },
+      { id: 'gemini-2.5-pro', name: 'gemini-2.5-pro', detail: 'High reasoning', descriptor: 'DEEP FOCUS', color: 'gold' },
+      { id: 'gemini-2.5-flash-lite', name: 'gemini-2.5-flash-lite', detail: 'Cost-effective · Reliable fallback', descriptor: 'QUICK', color: 'blue' },
+      { id: 'gemini-3.5-flash-lite', name: 'gemini-3.5-flash-lite', detail: 'Ultra-fast · High throughput', descriptor: 'QUICK', color: 'blue' },
+      { id: 'gemini-3.8-flash', name: 'gemini-3.8-flash', detail: 'Latest agentic and coding model', descriptor: 'DEEP FOCUS', color: 'gold' },
     ],
     openrouter: [
       { id: 'anthropic/claude-haiku-5.5', name: 'Claude Haiku 5.5', detail: 'A fast model for everyday tasks.', descriptor: 'QUICK', color: 'blue' },
@@ -387,6 +400,7 @@ function SettingsPage() {
         setCredentialStatus(data);
         setProvider(data.provider);
         setModelId(data.modelId);
+        setCustomModelId(data.provider === 'gemini' && !GEMINI_MODEL_IDS.has(data.modelId) ? data.modelId : '');
         setCodeRunnerEnabled(data.codeRunnerEnabled);
       })
       .catch(() => {
@@ -404,7 +418,8 @@ function SettingsPage() {
     setProviderSaving(true);
     setProviderError('');
     setProviderSaved(false);
-    const payload: Record<string, unknown> = { provider, modelId, codeRunnerEnabled };
+    const selectedModelId = provider === 'gemini' && customModelId.trim() ? customModelId.trim() : modelId;
+    const payload: Record<string, unknown> = { provider, modelId: selectedModelId, codeRunnerEnabled };
     for (const [field, value] of Object.entries(apiKeys)) {
       if (value.trim()) payload[field] = value.trim();
     }
@@ -418,6 +433,7 @@ function SettingsPage() {
       const result = await response.json();
       if (!response.ok) throw new Error(result.detail || 'Settings could not be saved.');
       setCredentialStatus(result);
+      setModelId(selectedModelId);
       setApiKeys({ openaiApiKey: '', geminiApiKey: '', openrouterApiKey: '' });
       setProviderSaved(true);
     } catch (error) {
@@ -429,34 +445,35 @@ function SettingsPage() {
   return <AppShell page="settings"><div className="content-page settings-page enter">
     <PageHeading eyebrow="AGENT CONFIGURATION" title="Preferences" description="Choose how your agent works and where it should pause for your approval." />
     <section className="settings-section model-section"><div className="settings-section-heading"><div className="section-symbol"><Zap size={17} /></div><div><h2>Model selection</h2><p>Choose a provider and working model for new tasks.</p></div><button className="button button-quiet button-small" onClick={() => { setProviderError(''); setProviderModalOpen(true); }} data-testid="button-configure-provider"><KeyRound size={14} /> Configure provider</button></div>
-      <label className="form-label provider-select-label">Provider<select value={provider} onChange={(event) => { const next = event.target.value as typeof provider; setProvider(next); setModelId(models[next][0].id); }} data-testid="select-model-provider"><option value="openai">OpenAI</option><option value="gemini">Google Gemini</option><option value="openrouter">OpenRouter (Anthropic)</option></select></label>
-      <div className="model-options">{activeModels.map((item) => <button className={`model-option ${modelId === item.id ? 'chosen' : ''}`} key={item.id} onClick={() => { setModelId(item.id); setSaved(false); }} data-testid={`button-model-${item.id}`}><span className={`model-mark ${item.color}`}>{item.descriptor === 'QUICK' ? <Zap size={17} /> : item.descriptor === 'DEEP FOCUS' ? <Search size={17} /> : <Layers3 size={17} />}</span><span className="model-copy"><strong>{item.name} {item.descriptor === 'BALANCED' && <span className="recommended">BALANCED</span>}</strong><span>{item.detail}</span></span><span className="model-descriptor">{item.descriptor}</span><span className={`radio-mark ${modelId === item.id ? 'checked' : ''}`}>{modelId === item.id && <Check size={12} />}</span></button>)}</div>
-      <p className="settings-footnote"><LockKeyhole size={13} /> {configured ? 'Provider key configured on this machine.' : 'Add a provider key to run tasks.'} Keys are never sent back to the browser.</p>
+      <label className="form-label provider-select-label">Provider<select value={provider} onChange={(event) => { const next = event.target.value as typeof provider; setProvider(next); setModelId(models[next][0].id); setCustomModelId(''); }} data-testid="select-model-provider"><option value="openai">OpenAI</option><option value="gemini">Google Gemini</option><option value="openrouter">OpenRouter (Anthropic)</option></select></label>
+      <div className="model-options">{activeModels.map((item) => <button className={`model-option ${modelId === item.id && !customModelId ? 'chosen' : ''}`} key={item.id} onClick={() => { setModelId(item.id); setCustomModelId(''); setSaved(false); }} data-testid={`button-model-${item.id}`}><span className={`model-mark ${item.color}`}>{item.descriptor === 'QUICK' ? <Zap size={17} /> : item.descriptor === 'DEEP FOCUS' ? <Search size={17} /> : <Layers3 size={17} />}</span><span className="model-copy"><strong>{item.name} {item.descriptor === 'BALANCED' && <span className="recommended">BALANCED</span>}</strong><span>{item.detail}</span></span><span className="model-descriptor">{item.descriptor}</span><span className={`radio-mark ${modelId === item.id && !customModelId ? 'checked' : ''}`}>{modelId === item.id && !customModelId && <Check size={12} />}</span></button>)}</div>
+      {provider === 'gemini' && customModelId && <p className="settings-footnote">Custom Gemini model active: <strong>{customModelId}</strong></p>}
+      <p className="settings-footnote"><LockKeyhole size={13} /> {configured ? 'Provider key configured.' : 'Add a provider key to run tasks.'} Keys are never sent back to the browser.</p>
     </section>
     <section className="settings-section safety-section"><div className="settings-section-heading"><div className="section-symbol amber"><ShieldCheck size={18} /></div><div><h2>Local code runner</h2><p>Optional Python execution in the local workspace, disabled by default.</p></div></div>
-      <div className="setting-row"><div className="setting-row-icon"><KeyRound size={16} /></div><div className="setting-copy"><strong>Allow short Python runs</strong><span>Local-only and off by default. If enabled, generated code can access files and run commands with your account's normal computer permissions.</span></div><button className={`switch ${codeRunnerEnabled ? 'on' : ''}`} role="switch" aria-checked={codeRunnerEnabled} onClick={() => { setCodeRunnerEnabled(!codeRunnerEnabled); setProviderSaved(false); }} aria-label="Allow local Python code runner" data-testid="switch-local-code-runner"><span /></button></div>
+      <div className="setting-row"><div className="setting-row-icon"><KeyRound size={16} /></div><div className="setting-copy"><strong>Allow short Python runs</strong><span>Local-only and off by default. If enabled, generated code can access files and run commands with your account's normal computer permissions.</span></div><button className={`switch ${codeRunnerEnabled ? 'on' : ''}`} role="switch" aria-checked={codeRunnerEnabled} disabled={!credentialStatus?.localSetupAllowed} onClick={() => { setCodeRunnerEnabled(!codeRunnerEnabled); setProviderSaved(false); }} aria-label="Allow local Python code runner" data-testid="switch-local-code-runner"><span /></button></div>
       <div className="setting-row"><div className="setting-row-icon"><Bell size={16} /></div><div className="setting-copy"><strong>Desktop notifications</strong><span>Show browser notifications when a scheduled reminder fires.</span></div><button className="button button-quiet button-small" onClick={() => { if ('Notification' in window) void Notification.requestPermission(); }} data-testid="button-enable-notifications">Enable alerts</button></div>
-      {!credentialStatus?.localSetupAllowed && <p className="settings-footnote"><LockKeyhole size={13} /> Provider keys and the local code runner can only be configured from localhost after export.</p>}
+      {!credentialStatus?.localSetupAllowed && <p className="settings-footnote"><LockKeyhole size={13} /> The local code runner can only be enabled from a localhost copy of the app.</p>}
     </section>
     <section className="settings-section safety-section"><div className="settings-section-heading"><div className="section-symbol amber"><ShieldCheck size={18} /></div><div><h2>Safety &amp; permissions</h2><p>Make your boundaries explicit. Change these any time.</p></div></div>
       <div className="setting-row"><div className="setting-row-icon"><CheckCircle2 size={16} /></div><div className="setting-copy"><strong>Confirm before consequential actions</strong><span>Pause and ask before an action that changes or sends something.</span></div><button className={`switch ${confirmBeforeActions ? 'on' : ''}`} role="switch" aria-checked={confirmBeforeActions} onClick={() => onSetting(setConfirmBeforeActions, !confirmBeforeActions)} aria-label="Confirm before consequential actions" data-testid="switch-confirm-actions"><span /></button></div>
       <div className="setting-row"><div className="setting-row-icon"><Search size={16} /></div><div className="setting-copy"><strong>Allow external research</strong><span>Let the agent consult public sources when research needs it.</span></div><button className={`switch ${allowExternalResearch ? 'on' : ''}`} role="switch" aria-checked={allowExternalResearch} onClick={() => onSetting(setAllowExternalResearch, !allowExternalResearch)} aria-label="Allow external research" data-testid="switch-external-research"><span /></button></div>
       <div className="setting-row"><div className="setting-row-icon"><FileText size={16} /></div><div className="setting-copy"><strong>Use workspace files as context</strong><span>Allow saved documents and notes to inform relevant tasks.</span></div><button className={`switch ${includeFiles ? 'on' : ''}`} role="switch" aria-checked={includeFiles} onClick={() => onSetting(setIncludeFiles, !includeFiles)} aria-label="Use workspace files as context" data-testid="switch-workspace-context"><span /></button></div>
     </section>
-    <div className="settings-save-row"><div className="save-state">{saved && <><CheckCircle2 size={15} /> Preferences updated for this session.</>}{providerSaved && <><CheckCircle2 size={15} /> Provider settings saved locally.</>}</div><button className="button button-primary" disabled={!credentialStatus?.localSetupAllowed || providerSaving} onClick={() => { setSaved(true); void saveProviderSettings(); }} data-testid="button-save-settings"><Check size={15} /> Save preferences</button></div>
+    <div className="settings-save-row"><div className="save-state">{saved && <><CheckCircle2 size={15} /> Preferences updated for this session.</>}{providerSaved && <><CheckCircle2 size={15} /> Provider settings saved.</>}</div><button className="button button-primary" disabled={!credentialStatus?.providerSettingsAllowed || providerSaving} onClick={() => { setSaved(true); void saveProviderSettings(); }} data-testid="button-save-settings"><Check size={15} /> Save preferences</button></div>
     <div className="settings-note"><LockKeyhole size={15} /><div><strong>Your work stays yours.</strong><p>These controls guide the agent; it will never claim to have completed work until a task reports an outcome.</p></div></div>
     <TimersManager />
     {providerModalOpen && <Modal title="Connect an AI provider" onClose={() => setProviderModalOpen(false)}><form className="form-stack" onSubmit={(event) => { event.preventDefault(); void saveProviderSettings(); }}>
-      <p className="modal-description">Keys are saved to the local .env file only. This form is disabled in Replit and works after you run the exported app on localhost.</p>
-      <label className="form-label">Default provider<select value={provider} onChange={(event) => { const next = event.target.value as typeof provider; setProvider(next); setModelId(models[next][0].id); }} data-testid="select-settings-provider"><option value="openai">OpenAI</option><option value="gemini">Google Gemini</option><option value="openrouter">OpenRouter</option></select></label>
-      <label className="form-label">Default model<select value={modelId} onChange={(event) => setModelId(event.target.value)} data-testid="select-settings-model">{models[provider].map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
-      <label className="form-label">OpenAI API key <span className="optional-label">{credentialStatus?.hasOpenaiKey ? 'configured — leave blank to keep' : 'optional'}</span><input type="password" autoComplete="new-password" value={apiKeys.openaiApiKey} onChange={(event) => setApiKeys({ ...apiKeys, openaiApiKey: event.target.value })} placeholder="sk-…" disabled={!credentialStatus?.localSetupAllowed} data-testid="input-openai-api-key" /></label>
-      <label className="form-label">Gemini API key <span className="optional-label">{credentialStatus?.hasGeminiKey ? 'configured — leave blank to keep' : 'optional'}</span><input type="password" autoComplete="new-password" value={apiKeys.geminiApiKey} onChange={(event) => setApiKeys({ ...apiKeys, geminiApiKey: event.target.value })} placeholder="Enter your Gemini key" disabled={!credentialStatus?.localSetupAllowed} data-testid="input-gemini-api-key" /></label>
-      <label className="form-label">OpenRouter API key <span className="optional-label">{credentialStatus?.hasOpenrouterKey ? 'configured — leave blank to keep' : 'optional'}</span><input type="password" autoComplete="new-password" value={apiKeys.openrouterApiKey} onChange={(event) => setApiKeys({ ...apiKeys, openrouterApiKey: event.target.value })} placeholder="sk-or-…" disabled={!credentialStatus?.localSetupAllowed} data-testid="input-openrouter-api-key" /></label>
+      <p className="modal-description">Keys are saved to the .env file for the environment running this app and are never returned to the browser. In Replit they stay in this workspace; in a local copy they stay on your PC.</p>
+      <label className="form-label">Default provider<select value={provider} onChange={(event) => { const next = event.target.value as typeof provider; setProvider(next); setModelId(models[next][0].id); setCustomModelId(''); }} data-testid="select-settings-provider"><option value="openai">OpenAI</option><option value="gemini">Google Gemini</option><option value="openrouter">OpenRouter</option></select></label>
+      <label className="form-label">Default model<select value={customModelId.trim() || modelId} onChange={(event) => { setModelId(event.target.value); setCustomModelId(''); }} data-testid="select-settings-model">{customModelId.trim() && !models[provider].some((item) => item.id === customModelId.trim()) && <option value={customModelId.trim()}>{customModelId.trim()} (custom)</option>}{models[provider].map((item) => <option key={item.id} value={item.id}>{item.id} — {item.detail}</option>)}</select></label>
+      {provider === 'gemini' && <label className="form-label">Custom Model ID <span className="optional-label">Optional; overrides the selected model. Use an available fallback if a request returns 429 or 503.</span><input type="text" autoComplete="off" spellCheck={false} value={customModelId} onChange={(event) => { setCustomModelId(event.target.value); setProviderSaved(false); }} placeholder="e.g. gemini-3.1-pro-preview" data-testid="input-custom-model-id" /></label>}
+      <label className="form-label">OpenAI API key <span className="optional-label">{credentialStatus?.hasOpenaiKey ? 'configured — leave blank to keep' : 'optional'}</span><input type="password" autoComplete="new-password" value={apiKeys.openaiApiKey} onChange={(event) => setApiKeys({ ...apiKeys, openaiApiKey: event.target.value })} placeholder="sk-…" disabled={!credentialStatus?.providerSettingsAllowed} data-testid="input-openai-api-key" /></label>
+      <label className="form-label">Gemini API key <span className="optional-label">{credentialStatus?.hasGeminiKey ? 'configured — leave blank to keep' : 'optional'}</span><input type="password" autoComplete="new-password" value={apiKeys.geminiApiKey} onChange={(event) => setApiKeys({ ...apiKeys, geminiApiKey: event.target.value })} placeholder="Enter your Gemini key" disabled={!credentialStatus?.providerSettingsAllowed} data-testid="input-gemini-api-key" /></label>
+      <label className="form-label">OpenRouter API key <span className="optional-label">{credentialStatus?.hasOpenrouterKey ? 'configured — leave blank to keep' : 'optional'}</span><input type="password" autoComplete="new-password" value={apiKeys.openrouterApiKey} onChange={(event) => setApiKeys({ ...apiKeys, openrouterApiKey: event.target.value })} placeholder="sk-or-…" disabled={!credentialStatus?.providerSettingsAllowed} data-testid="input-openrouter-api-key" /></label>
       {providerError && <p className="field-error" role="alert">{providerError}</p>}
-      {!credentialStatus?.localSetupAllowed && <p className="inline-error"><LockKeyhole size={14} /> Open this project at localhost after export to enter keys. The Replit preview cannot save them.</p>}
-      {providerSaved && <p className="save-state"><CheckCircle2 size={15} /> Saved to the local .env file. Key values are not shown again.</p>}
-      <div className="modal-actions"><button type="button" className="button button-quiet" onClick={() => setProviderModalOpen(false)}>Close</button><button type="submit" className="button button-primary" disabled={providerSaving || !credentialStatus?.localSetupAllowed} data-testid="button-save-provider">{providerSaving ? 'Saving…' : 'Save provider settings'}</button></div>
+      {providerSaved && <p className="save-state"><CheckCircle2 size={15} /> Saved to the current .env file. Key values are not shown again.</p>}
+      <div className="modal-actions"><button type="button" className="button button-quiet" onClick={() => setProviderModalOpen(false)}>Close</button><button type="submit" className="button button-primary" disabled={providerSaving || !credentialStatus?.providerSettingsAllowed} data-testid="button-save-provider">{providerSaving ? 'Saving…' : 'Save provider settings'}</button></div>
     </form></Modal>}
   </div></AppShell>;
 }

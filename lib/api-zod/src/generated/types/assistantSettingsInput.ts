@@ -9,7 +9,11 @@ import type { AssistantSettingsInputProvider } from './assistantSettingsInputPro
 
 export interface AssistantSettingsInput {
   provider: AssistantSettingsInputProvider;
-  /** @maxLength 120 */
+  /**
+     * @minLength 1
+     * @maxLength 120
+     * @pattern ^[A-Za-z0-9][A-Za-z0-9._:/-]{0,119}$
+     */
   modelId: string;
   /**
      * @maxLength 1000

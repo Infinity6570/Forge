@@ -419,11 +419,12 @@ components:
           format: binary
     AssistantSettings:
       type: object
-      required: [provider, modelId, localSetupAllowed, hasOpenaiKey, hasGeminiKey, hasOpenrouterKey, codeRunnerEnabled]
+      required: [provider, modelId, localSetupAllowed, providerSettingsAllowed, hasOpenaiKey, hasGeminiKey, hasOpenrouterKey, codeRunnerEnabled]
       properties:
         provider: { type: string, enum: [openai, gemini, openrouter] }
         modelId: { type: string }
         localSetupAllowed: { type: boolean }
+        providerSettingsAllowed: { type: boolean }
         hasOpenaiKey: { type: boolean }
         hasGeminiKey: { type: boolean }
         hasOpenrouterKey: { type: boolean }
@@ -433,7 +434,7 @@ components:
       required: [provider, modelId]
       properties:
         provider: { type: string, enum: [openai, gemini, openrouter] }
-        modelId: { type: string, maxLength: 120 }
+        modelId: { type: string, minLength: 1, maxLength: 120, pattern: '^[A-Za-z0-9][A-Za-z0-9._:/-]{0,119}$' }
         openaiApiKey: { type: ["string", "null"], maxLength: 1000 }
         geminiApiKey: { type: ["string", "null"], maxLength: 1000 }
         openrouterApiKey: { type: ["string", "null"], maxLength: 1000 }

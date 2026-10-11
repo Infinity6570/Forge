@@ -296,6 +296,7 @@ export const GetAssistantSettingsResponse = zod.object({
   "provider": zod.enum(['openai', 'gemini', 'openrouter']),
   "modelId": zod.string(),
   "localSetupAllowed": zod.boolean(),
+  "providerSettingsAllowed": zod.boolean(),
   "hasOpenaiKey": zod.boolean(),
   "hasGeminiKey": zod.boolean(),
   "hasOpenrouterKey": zod.boolean(),
@@ -308,6 +309,8 @@ export const GetAssistantSettingsResponse = zod.object({
  */
 export const updateAssistantSettingsBodyModelIdMax = 120;
 
+
+export const updateAssistantSettingsBodyModelIdRegExp = new RegExp('^[A-Za-z0-9][A-Za-z0-9._:/-]{0,119}$');
 export const updateAssistantSettingsBodyOpenaiApiKeyMax = 1000;
 
 export const updateAssistantSettingsBodyGeminiApiKeyMax = 1000;
@@ -318,7 +321,7 @@ export const updateAssistantSettingsBodyOpenrouterApiKeyMax = 1000;
 
 export const UpdateAssistantSettingsBody = zod.object({
   "provider": zod.enum(['openai', 'gemini', 'openrouter']),
-  "modelId": zod.string().max(updateAssistantSettingsBodyModelIdMax),
+  "modelId": zod.string().min(1).max(updateAssistantSettingsBodyModelIdMax).regex(updateAssistantSettingsBodyModelIdRegExp),
   "openaiApiKey": zod.string().max(updateAssistantSettingsBodyOpenaiApiKeyMax).nullish(),
   "geminiApiKey": zod.string().max(updateAssistantSettingsBodyGeminiApiKeyMax).nullish(),
   "openrouterApiKey": zod.string().max(updateAssistantSettingsBodyOpenrouterApiKeyMax).nullish(),
@@ -329,6 +332,7 @@ export const UpdateAssistantSettingsResponse = zod.object({
   "provider": zod.enum(['openai', 'gemini', 'openrouter']),
   "modelId": zod.string(),
   "localSetupAllowed": zod.boolean(),
+  "providerSettingsAllowed": zod.boolean(),
   "hasOpenaiKey": zod.boolean(),
   "hasGeminiKey": zod.boolean(),
   "hasOpenrouterKey": zod.boolean(),
