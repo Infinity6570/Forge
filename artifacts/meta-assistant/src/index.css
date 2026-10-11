@@ -1847,3 +1847,133 @@ html[data-theme="scifi"] .quick-status-icon.amber {
   border:1px solid #00f0ff33!important;
   border-radius:2px!important;
 }
+
+html[data-theme="scifi"] .filter-pills {
+  overflow-x:auto;
+  overflow-y:hidden;
+  scrollbar-width:thin;
+  scrollbar-color:rgba(0, 240, 255, 0.4) transparent;
+  overscroll-behavior-x:contain;
+}
+html[data-theme="scifi"] .filter-pills::-webkit-scrollbar { height:2px; background:transparent; }
+html[data-theme="scifi"] .filter-pills::-webkit-scrollbar-track { background:transparent; }
+html[data-theme="scifi"] .filter-pills::-webkit-scrollbar-thumb { background:rgba(0, 240, 255, 0.4); border-radius:0; }
+html[data-theme="scifi"] .filter-pills::-webkit-scrollbar-thumb:hover { background:#00f0ff; box-shadow:0 0 8px #00f0ff; }
+html[data-theme="scifi"] .filter-pills::-webkit-scrollbar-button { display:none; width:0; height:0; }
+html[data-theme="scifi"] .task-overview-strip .strip-icon {
+  background:#040914!important;
+  color:#00f0ff!important;
+  border:1px solid #00f0ff!important;
+  border-radius:2px!important;
+  box-shadow:0 0 10px #00f0ff22;
+}
+html[data-theme="scifi"] .provider-select-label,
+html[data-theme="scifi"] .model-choice-label {
+  display:grid;
+  gap:8px;
+  width:100%;
+  color:#8cb3c8!important;
+  font:10px var(--app-font-mono)!important;
+  letter-spacing:.12em;
+}
+html[data-theme="scifi"] .provider-hud-select {
+  appearance:none;
+  display:block;
+  width:100%;
+  min-width:0;
+  height:44px;
+  padding:0 42px 0 13px;
+  color:#e2f7ff!important;
+  background-color:#030712!important;
+  border:1px solid #00f0ff44!important;
+  border-radius:2px!important;
+  background-image:linear-gradient(45deg,transparent 50%,#00f0ff 50%),linear-gradient(135deg,#00f0ff 50%,transparent 50%);
+  background-position:calc(100% - 17px) 18px,calc(100% - 12px) 18px;
+  background-size:5px 5px,5px 5px;
+  background-repeat:no-repeat;
+  font:12px var(--app-font-mono)!important;
+  letter-spacing:.03em;
+  box-shadow:inset 0 0 14px #00f0ff08;
+  cursor:pointer;
+}
+html[data-theme="scifi"] .provider-hud-select:hover,
+html[data-theme="scifi"] .provider-hud-select:focus-visible {
+  outline:none;
+  border-color:#00f0ff!important;
+  box-shadow:0 0 0 2px #00f0ff18,0 0 14px #00f0ff22,inset 0 0 14px #00f0ff08;
+}
+html[data-theme="scifi"] .provider-hud-select option,
+html[data-theme="scifi"] .provider-hud-select optgroup {
+  color:#e2f7ff;
+  background:#030712;
+}
+html[data-theme="scifi"] .key-status {
+  display:inline-flex;
+  align-items:center;
+  margin-left:8px;
+  padding:2px 5px;
+  border:1px solid #ff456633;
+  color:#ff7993;
+  font:8px var(--app-font-mono);
+  letter-spacing:.06em;
+}
+html[data-theme="scifi"] .key-status.active {
+  border-color:#69f5a666;
+  color:#69f5a6;
+  box-shadow:0 0 7px #69f5a616;
+}
+html[data-theme="scifi"] .key-status.local {
+  border-color:#00f0ff66;
+  color:#00f0ff;
+  box-shadow:0 0 7px #00f0ff16;
+}
+html[data-theme="scifi"] .settings-page { display:flex; flex-direction:column; }
+html[data-theme="scifi"] .settings-page > .theme-settings { order:0; }
+html[data-theme="scifi"] .settings-page > .page-heading { order:1; }
+html[data-theme="scifi"] .settings-page > [data-testid="status-settings-loading"] { order:2; }
+html[data-theme="scifi"] .settings-page > [data-testid="status-settings-connection-error"] { order:3; }
+html[data-theme="scifi"] .settings-page > .key-vault { order:4; }
+html[data-theme="scifi"] .settings-page > .model-section { order:5; }
+html[data-theme="scifi"] .settings-page > .safety-section { order:6; }
+html[data-theme="scifi"] .settings-page > .settings-save-row { order:7; }
+html[data-theme="scifi"] .settings-page > .settings-note { order:8; }
+
+.settings-page { display:flex; flex-direction:column; }
+.settings-page > .theme-settings { order:0; }
+.settings-page > .page-heading { order:1; }
+.settings-page > [data-testid="status-settings-loading"] { order:2; }
+.settings-page > [data-testid="status-settings-connection-error"] { order:3; }
+.settings-page > .key-vault { order:4; }
+.settings-page > .model-section { order:5; }
+.settings-page > .safety-section { order:6; }
+.settings-page > .settings-save-row { order:7; }
+.settings-page > .settings-note { order:8; }
+.settings-page > .reminders-section { order:9; }
+.provider-select-label,.model-choice-label { display:grid; gap:8px; width:100%; }
+.provider-hud-select {
+  display:block;
+  width:100%;
+  min-width:0;
+  min-height:44px;
+  padding:0 42px 0 13px;
+  color:var(--text-primary);
+  background-color:var(--bg-panel);
+  border:1px solid color-mix(in srgb,var(--accent) 32%,transparent);
+  border-radius:3px;
+  font:12px var(--app-font-mono);
+}
+.provider-hud-select option,.provider-hud-select optgroup { color:var(--text-primary); background:var(--bg-panel); }
+.key-status {
+  display:inline-flex;
+  align-items:center;
+  margin-left:8px;
+  padding:2px 5px;
+  border:1px solid color-mix(in srgb,var(--error) 45%,transparent);
+  color:var(--error);
+  font:8px var(--app-font-mono);
+  letter-spacing:.06em;
+}
+.key-status.active,.key-status.local {
+  border-color:color-mix(in srgb,var(--status-done) 50%,transparent);
+  color:var(--status-done);
+}

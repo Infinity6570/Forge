@@ -2263,6 +2263,8 @@ async def update_settings(body: SettingsInput, request: Request) -> dict[str, An
             )
         except ValueError as error:
             raise HTTPException(status_code=422, detail=str(error)) from error
+    if not MODEL_ID_PATTERN.fullmatch(body.modelId):
+        raise HTTPException(status_code=422, detail="That model ID contains unsupported characters.")
     if body.provider == "gemini" and not GEMINI_MODEL_ID_PATTERN.fullmatch(body.modelId):
         raise HTTPException(status_code=422, detail="That Gemini model ID is not valid.")
     if body.provider == "gemini" and fallback_model and not GEMINI_MODEL_ID_PATTERN.fullmatch(fallback_model):

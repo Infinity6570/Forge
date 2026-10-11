@@ -409,13 +409,14 @@ function Dashboard() {
   const summary = useGetAssistantDashboard();
   const listTasks = useListAssistantTasks();
   const createTask = useCreateAssistantTask();
+  const settingsQuery = useGetAssistantSettings();
   const [objective, setObjective] = useState('');
   const [submitError, setSubmitError] = useState('');
   const [selectedTaskId, setSelectedTaskId] = useState<string>();
   const [attachments, setAttachments] = useState<AssistantFile[]>([]);
   const [uploadingAttachment, setUploadingAttachment] = useState(false);
   const [attachmentError, setAttachmentError] = useState('');
-  const [modelMode, setModelMode] = useState<'configured' | 'last-used'>('configured');
+  const [modelMode, setModelMode] = useState('configured');
   const attachmentInput = useRef<HTMLInputElement>(null);
   const details = useGetAssistantTask(selectedTaskId ?? '', { query: { enabled: !!selectedTaskId, queryKey: getGetAssistantTaskQueryKey(selectedTaskId ?? ''), refetchInterval: (query) => {
     const task = query.state.data;
@@ -437,7 +438,8 @@ function Dashboard() {
     const text = objective.trim();
     if (!text) return;
     setSubmitError('');
-    createTask.mutate({ data: { objective: text, ...(attachments.length ? { fileIds: attachments.map((file) => file.id) } : {}), ...(modelMode === 'last-used' && referenceModel ? { provider: referenceModel.provider, modelId: referenceModel.modelId } : {}) } }, {
+    const directModel = modelMode.startsWith('direct|') ? modelMode.split('|') : undefined;
+    createTask.mutate({ data: { objective: text, ...(attachments.length ? { fileIds: attachments.map((file) => file.id) } : {}), ...(directModel?.length === 3 ? { provider: directModel[1] as AssistantTask['provider'], modelId: directModel[2] } : modelMode === 'last-used' && referenceModel ? { provider: referenceModel.provider, modelId: referenceModel.modelId } : {}) } }, {
       onSuccess: (task) => {
         setObjective('');
         setAttachments([]);
@@ -487,7 +489,7 @@ function Dashboard() {
       <form onSubmit={submit}><div className="terminal-input-row"><span className="terminal-prompt" aria-hidden="true">USR@FORGE-6570:~$</span><textarea value={objective} onChange={(event) => setObjective(event.target.value)} placeholder="Describe what you want done…" maxLength={12000} rows={2} data-testid="input-objective" aria-label="Task objective" /></div>
         {attachments.length > 0 && <div className="task-attachments">{attachments.map((file) => <span className="attachment-chip" key={file.id}><FileText size={13} />{file.name}<button type="button" onClick={() => setAttachments((current) => current.filter((item) => item.id !== file.id))} aria-label={`Remove ${file.name}`} data-testid={`button-remove-attachment-${file.id}`}><X size={13} /></button></span>)}</div>}
         {attachmentError && <p className="field-error" role="alert">{attachmentError}</p>}
-        <div className="composer-bottom"><span>{submitError ? <span className="field-error">{submitError}</span> : <span>{objective.length.toLocaleString()} / 12,000 characters</span>}</span><div className="composer-actions"><label className="composer-model">Model<select value={modelMode} onChange={(event) => setModelMode(event.target.value as typeof modelMode)} aria-label="Task model tier" data-testid="select-task-model"><option value="configured">Configured default</option><option value="last-used" disabled={!referenceModel}>Last used · {referenceModel ? modelDisplayName(referenceModel.provider, referenceModel.modelId) : 'unavailable'}</option></select></label><input ref={attachmentInput} type="file" hidden onChange={(event) => { void attachFile(event.currentTarget.files?.[0]); }} data-testid="input-task-attachment" /><button type="button" className="button button-quiet submit-button" onClick={() => attachmentInput.current?.click()} disabled={uploadingAttachment} data-testid="button-attach-task-file"><Upload size={14} />{uploadingAttachment ? 'Uploading' : 'Attach'}</button><button className="button button-primary submit-button" disabled={!objective.trim() || isPending || uploadingAttachment} data-testid="button-submit-task">{isPending ? <LoaderCircle className="spin" size={16} /> : <Send size={15} />}{isPending ? 'Sending…' : 'Send'}</button></div></div></form>
+        <div className="composer-bottom"><span>{submitError ? <span className="field-error">{submitError}</span> : <span>{objective.length.toLocaleString()} / 12,000 characters</span>}</span><div className="composer-actions"><label className="composer-model">Model<select value={modelMode} onChange={(event) => setModelMode(event.target.value)} aria-label="Task model" data-testid="select-task-model"><option value="configured">Configured default · {settingsQuery.data ? modelDisplayName(settingsQuery.data.provider, settingsQuery.data.modelId) : 'loading'}</option><option value="last-used" disabled={!referenceModel}>Last used · {referenceModel ? modelDisplayName(referenceModel.provider, referenceModel.modelId) : 'unavailable'}</option>{Object.entries(models).map(([groupProvider, items]) => groupProvider === 'ollama' && !settingsQuery.data?.localSetupAllowed ? null : <optgroup key={groupProvider} label={groupProvider === 'gemini' ? 'Google Gemini' : groupProvider === 'openrouter' ? 'OpenRouter' : groupProvider === 'ollama' ? 'Local · Ollama' : groupProvider === 'openai' ? 'OpenAI' : 'DeepSeek'}>{items.map((item) => <option key={`${groupProvider}:${item.id}`} value={`direct|${groupProvider}|${item.id}`}>{item.name}</option>)}</optgroup>)}</select></label><input ref={attachmentInput} type="file" hidden onChange={(event) => { void attachFile(event.currentTarget.files?.[0]); }} data-testid="input-task-attachment" /><button type="button" className="button button-quiet submit-button" onClick={() => attachmentInput.current?.click()} disabled={uploadingAttachment} data-testid="button-attach-task-file"><Upload size={14} />{uploadingAttachment ? 'Uploading' : 'Attach'}</button><button className="button button-primary submit-button" disabled={!objective.trim() || isPending || uploadingAttachment} data-testid="button-submit-task">{isPending ? <LoaderCircle className="spin" size={16} /> : <Send size={15} />}{isPending ? 'Sending…' : 'Send'}</button></div></div></form>
     </section>
     {selectedTaskId && <TaskDetailDialog task={details.data} loading={details.isLoading} error={details.isError} retry={() => details.refetch()} close={() => setSelectedTaskId(undefined)} abort={(id) => abort.mutate({ id }, { onSuccess: () => { qc.invalidateQueries({ queryKey: getGetAssistantDashboardQueryKey() }); qc.invalidateQueries({ queryKey: getListAssistantTasksQueryKey() }); } })} aborting={abort.isPending} />}
   </div></AppShell>;
@@ -832,17 +834,49 @@ const GEMINI_MODEL_IDS = new Set([
 ]);
 const DEEPSEEK_MODEL_IDS = new Set(['deepseek-chat', 'deepseek-reasoner']);
 
+const models = {
+  openai: [
+    { id: 'gpt-4o', name: 'GPT-4o', detail: 'Multimodal general-purpose model', descriptor: 'BALANCED', color: 'sage' },
+    { id: 'gpt-4o-mini', name: 'GPT-4o mini', detail: 'Fast, efficient everyday tasks', descriptor: 'QUICK', color: 'blue' },
+    { id: 'o3-mini', name: 'o3-mini', detail: 'Reasoning for technical work', descriptor: 'DEEP FOCUS', color: 'gold' },
+  ],
+  deepseek: [
+    { id: 'deepseek-chat', name: 'deepseek-chat', detail: 'Default · Balanced V3/V4-Flash mode · Tool calling', descriptor: 'BALANCED', color: 'sage' },
+    { id: 'deepseek-reasoner', name: 'deepseek-reasoner', detail: 'Thinking mode for complex logic and math', descriptor: 'DEEP FOCUS', color: 'gold' },
+  ],
+  gemini: [
+    { id: 'gemini-2.5-flash', name: 'gemini-2.5-flash', detail: 'Default · Balanced', descriptor: 'BALANCED', color: 'sage' },
+    { id: 'gemini-2.5-pro', name: 'gemini-2.5-pro', detail: 'High reasoning', descriptor: 'DEEP FOCUS', color: 'gold' },
+    { id: 'gemini-2.5-flash-lite', name: 'gemini-2.5-flash-lite', detail: 'Cost-effective · Reliable fallback', descriptor: 'QUICK', color: 'blue' },
+    { id: 'gemini-3.5-flash-lite', name: 'gemini-3.5-flash-lite', detail: 'Ultra-fast · High throughput', descriptor: 'QUICK', color: 'blue' },
+    { id: 'gemini-3.8-flash', name: 'gemini-3.8-flash', detail: 'Latest agentic and coding model', descriptor: 'DEEP FOCUS', color: 'gold' },
+  ],
+  openrouter: [
+    { id: 'deepseek/deepseek-chat', name: 'DeepSeek Chat (OpenRouter)', detail: 'Balanced tool-calling model', descriptor: 'BALANCED', color: 'sage' },
+    { id: 'anthropic/claude-3.7-sonnet', name: 'Claude 3.7 Sonnet', detail: 'High reasoning for demanding tasks', descriptor: 'DEEP FOCUS', color: 'gold' },
+    { id: 'anthropic/claude-haiku-5.5', name: 'Claude Haiku 5.5', detail: 'Fast model for everyday tasks', descriptor: 'QUICK', color: 'blue' },
+    { id: 'anthropic/claude-sonnet-5.5', name: 'Claude Sonnet 5.5', detail: 'Balanced model for broader work', descriptor: 'BALANCED', color: 'sage' },
+    { id: 'anthropic/claude-opus-5.5', name: 'Claude Opus 5.5', detail: 'More capacity for demanding tasks', descriptor: 'DEEP FOCUS', color: 'gold' },
+  ],
+  ollama: [
+    { id: 'qwen2.5-coder', name: 'qwen2.5-coder', detail: 'Local coding model', descriptor: 'BALANCED', color: 'sage' },
+    { id: 'llama3.3', name: 'llama3.3', detail: 'Local general-purpose model', descriptor: 'QUICK', color: 'blue' },
+    { id: 'deepseek-r1', name: 'deepseek-r1', detail: 'Local reasoning model', descriptor: 'DEEP FOCUS', color: 'gold' },
+  ],
+} as const;
+
 function SettingsPage() {
   const qc = useQueryClient();
   const settingsQuery = useGetAssistantSettings();
   const updateSettings = useUpdateAssistantSettings();
-  const [provider, setProvider] = useState<'openai' | 'deepseek' | 'gemini' | 'openrouter'>('deepseek');
+  const [provider, setProvider] = useState<'openai' | 'deepseek' | 'gemini' | 'openrouter' | 'ollama'>('deepseek');
   const [modelId, setModelId] = useState('deepseek-chat');
   const [customModelId, setCustomModelId] = useState('');
   const [fallbackModelId, setFallbackModelId] = useState('');
   const initialized = useRef(false);
   const credentialStatus = settingsQuery.data;
   const [apiKeys, setApiKeys] = useState({ openaiApiKey: '', deepseekApiKey: '', geminiApiKey: '', openrouterApiKey: '' });
+  const [ollamaBaseUrl, setOllamaBaseUrl] = useState('http://localhost:11434/v1');
   const [codeRunnerEnabled, setCodeRunnerEnabled] = useState(false);
   const [appPreviewsEnabled, setAppPreviewsEnabled] = useState(false);
   const [providerError, setProviderError] = useState('');
@@ -852,31 +886,6 @@ function SettingsPage() {
   const [includeFiles, setIncludeFiles] = useState(true);
   const [saved, setSaved] = useState(false);
   const onSetting = (setter: (value: boolean) => void, value: boolean) => { setter(value); setSaved(false); };
-  const models = {
-    openai: [
-      { id: 'gpt-4.1-mini', name: 'GPT-4.1 mini', detail: 'A fast general-purpose model.', descriptor: 'BALANCED', color: 'sage' },
-      { id: 'gpt-4.1', name: 'GPT-4.1', detail: 'More capacity for complex tasks.', descriptor: 'DEEP FOCUS', color: 'gold' },
-      { id: 'gpt-4.1-nano', name: 'GPT-4.1 nano', detail: 'A lighter option for quick work.', descriptor: 'QUICK', color: 'blue' },
-    ],
-    deepseek: [
-      { id: 'deepseek-chat', name: 'deepseek-chat', detail: 'Default · Balanced V3/V4-Flash mode · Tool calling', descriptor: 'BALANCED', color: 'sage' },
-      { id: 'deepseek-reasoner', name: 'deepseek-reasoner', detail: 'Thinking mode for complex logic and math', descriptor: 'DEEP FOCUS', color: 'gold' },
-    ],
-    gemini: [
-      { id: 'gemini-2.5-flash', name: 'gemini-2.5-flash', detail: 'Default · Balanced', descriptor: 'BALANCED', color: 'sage' },
-      { id: 'gemini-2.5-pro', name: 'gemini-2.5-pro', detail: 'High reasoning', descriptor: 'DEEP FOCUS', color: 'gold' },
-      { id: 'gemini-2.5-flash-lite', name: 'gemini-2.5-flash-lite', detail: 'Cost-effective · Reliable fallback', descriptor: 'QUICK', color: 'blue' },
-      { id: 'gemini-3.5-flash-lite', name: 'gemini-3.5-flash-lite', detail: 'Ultra-fast · High throughput', descriptor: 'QUICK', color: 'blue' },
-      { id: 'gemini-3.8-flash', name: 'gemini-3.8-flash', detail: 'Latest agentic and coding model', descriptor: 'DEEP FOCUS', color: 'gold' },
-    ],
-    openrouter: [
-      { id: 'deepseek/deepseek-chat', name: 'DeepSeek Chat (OpenRouter)', detail: 'Balanced tool-calling model.', descriptor: 'BALANCED', color: 'sage' },
-      { id: 'anthropic/claude-3.7-sonnet', name: 'Claude 3.7 Sonnet', detail: 'High reasoning for demanding tasks.', descriptor: 'DEEP FOCUS', color: 'gold' },
-      { id: 'anthropic/claude-haiku-5.5', name: 'Claude Haiku 5.5', detail: 'A fast model for everyday tasks.', descriptor: 'QUICK', color: 'blue' },
-      { id: 'anthropic/claude-sonnet-5.5', name: 'Claude Sonnet 5.5', detail: 'A balanced model for broader work.', descriptor: 'BALANCED', color: 'sage' },
-      { id: 'anthropic/claude-opus-5.5', name: 'Claude Opus 5.5', detail: 'More capacity for demanding tasks.', descriptor: 'DEEP FOCUS', color: 'gold' },
-    ],
-  };
   useEffect(() => {
     const data = settingsQuery.data;
     if (!data || initialized.current) return;
@@ -884,29 +893,30 @@ function SettingsPage() {
     setProvider(data.provider);
     setModelId(data.modelId);
     setFallbackModelId(data.fallbackModelId ?? '');
-    setCustomModelId(
-      data.provider === 'gemini' && !GEMINI_MODEL_IDS.has(data.modelId)
-        ? data.modelId
-        : data.provider === 'deepseek' && !DEEPSEEK_MODEL_IDS.has(data.modelId)
-          ? data.modelId
-          : '',
-    );
+    const isStandardModel = data.provider === 'gemini'
+      ? GEMINI_MODEL_IDS.has(data.modelId)
+      : data.provider === 'deepseek'
+        ? DEEPSEEK_MODEL_IDS.has(data.modelId)
+        : models[data.provider].some((item) => item.id === data.modelId);
+    setCustomModelId(isStandardModel ? '' : data.modelId);
+    setOllamaBaseUrl(data.ollamaBaseUrl || 'http://localhost:11434/v1');
     setCodeRunnerEnabled(data.codeRunnerEnabled);
     setAppPreviewsEnabled(data.appPreviewsEnabled);
   }, [settingsQuery.data]);
-  const activeModels = models[provider];
   const configured = provider === 'openai'
     ? credentialStatus?.hasOpenaiKey
     : provider === 'deepseek'
       ? credentialStatus?.hasDeepseekKey
     : provider === 'gemini'
       ? credentialStatus?.hasGeminiKey
-      : credentialStatus?.hasOpenrouterKey;
+      : provider === 'openrouter'
+        ? credentialStatus?.hasOpenrouterKey
+        : credentialStatus?.localSetupAllowed;
   const saveProviderSettings = () => {
     setProviderError('');
     setProviderSaved(false);
-    const selectedModelId = (provider === 'gemini' || provider === 'deepseek') && customModelId.trim() ? customModelId.trim() : modelId;
-    const payload: AssistantSettingsInput = { provider, modelId: selectedModelId, codeRunnerEnabled, appPreviewsEnabled };
+    const selectedModelId = customModelId.trim() ? customModelId.trim() : modelId;
+    const payload: AssistantSettingsInput = { provider, modelId: selectedModelId, codeRunnerEnabled, appPreviewsEnabled, ollamaBaseUrl };
     if (provider === 'gemini') payload.fallbackModelId = fallbackModelId.trim();
     if (apiKeys.openaiApiKey.trim()) payload.openaiApiKey = apiKeys.openaiApiKey.trim();
     if (apiKeys.deepseekApiKey.trim()) payload.deepseekApiKey = apiKeys.deepseekApiKey.trim();
@@ -917,6 +927,7 @@ function SettingsPage() {
         qc.setQueryData(getGetAssistantSettingsQueryKey(), result);
         setModelId(selectedModelId);
         setApiKeys({ openaiApiKey: '', deepseekApiKey: '', geminiApiKey: '', openrouterApiKey: '' });
+        setOllamaBaseUrl(result.ollamaBaseUrl || ollamaBaseUrl);
         setProviderSaved(true);
       },
       onError: () => setProviderError('Provider settings could not be saved. Check the connection and try again.'),
@@ -927,25 +938,28 @@ function SettingsPage() {
     <PageHeading eyebrow="AGENT CONFIGURATION" title="Preferences" description="Choose how your agent works and where it should pause for your approval." />
     {settingsQuery.isLoading && <div className="settings-section" aria-label="Loading provider preferences" data-testid="status-settings-loading"><Skeleton rows={3} /></div>}
     {settingsQuery.isError && <div data-testid="status-settings-connection-error"><QueryProblem retry={() => { void settingsQuery.refetch(); }} message="Provider preferences are disconnected. Your saved configuration remains untouched." /></div>}
-    <section className="settings-section model-section"><div className="settings-section-heading"><div className="section-symbol"><Zap size={17} /></div><div><h2>Model selection</h2><p>Choose a provider and working model for new tasks.</p></div></div>
-      <label className="form-label provider-select-label">Provider<select value={provider} onChange={(event) => { const next = event.target.value as typeof provider; setProvider(next); setModelId(models[next][0].id); setCustomModelId(''); setProviderSaved(false); }} data-testid="select-model-provider"><option value="openai">OpenAI</option><option value="deepseek">DeepSeek</option><option value="gemini">Google Gemini</option><option value="openrouter">OpenRouter</option></select></label>
-      <div className="model-options">{activeModels.map((item) => <button className={`model-option ${modelId === item.id && !customModelId ? 'chosen' : ''}`} key={item.id} onClick={() => { setModelId(item.id); setCustomModelId(''); setSaved(false); setProviderSaved(false); }} data-testid={`button-model-${item.id}`}><span className={`model-mark ${item.color}`}>{item.descriptor === 'QUICK' ? <Zap size={17} /> : item.descriptor === 'DEEP FOCUS' ? <Search size={17} /> : <Layers3 size={17} />}</span><span className="model-copy"><strong>{item.name} {item.descriptor === 'BALANCED' && <span className="recommended">BALANCED</span>}</strong><span>{item.detail}</span></span><span className="model-descriptor">{item.descriptor}</span><span className={`radio-mark ${modelId === item.id && !customModelId ? 'checked' : ''}`}>{modelId === item.id && !customModelId && <Check size={12} />}</span></button>)}</div>
-      {(provider === 'gemini' || provider === 'deepseek') && <label className="form-label custom-model-control">Custom {provider === 'deepseek' ? 'DeepSeek' : 'Gemini'} model ID <span className="optional-label">Optional; overrides the selected model.</span><input type="text" autoComplete="off" spellCheck={false} value={customModelId} onChange={(event) => { setCustomModelId(event.target.value); setProviderSaved(false); }} placeholder={provider === 'deepseek' ? 'e.g. deepseek-v4-flash' : 'e.g. gemini-3.1-pro-preview'} data-testid="input-custom-model-id" /></label>}
+    <section className="settings-section model-section"><div className="settings-section-heading"><div className="section-symbol"><Zap size={17} /></div><div><h2>ACTIVE WORKING MODEL</h2><p>Choose which provider and model will run new tasks.</p></div></div>
+      <label className="form-label provider-select-label">ACTIVE AI PROVIDER<select className="provider-hud-select" value={provider} onChange={(event) => { const next = event.target.value as typeof provider; setProvider(next); setModelId(models[next][0].id); setCustomModelId(''); setProviderSaved(false); }} data-testid="select-model-provider"><option value="openai">OpenAI</option><option value="deepseek">DeepSeek</option><option value="gemini">Google Gemini</option><option value="openrouter">OpenRouter</option><option value="ollama" disabled={!credentialStatus?.localSetupAllowed}>Ollama / Local{!credentialStatus?.localSetupAllowed ? ' (localhost only)' : ''}</option></select></label>
+      <label className="form-label model-choice-label">WORKING MODEL<select className="provider-hud-select model-hud-select" value={`${provider}::${customModelId ? 'custom' : modelId}`} onChange={(event) => { const [nextProvider, nextModel] = event.target.value.split('::'); if (nextProvider in models && (nextProvider !== 'ollama' || credentialStatus?.localSetupAllowed)) { const next = nextProvider as typeof provider; setProvider(next); if (nextModel === 'custom') { setCustomModelId(customModelId || modelId); } else { setModelId(nextModel); setCustomModelId(''); } setProviderSaved(false); } }} data-testid="select-active-model">
+        {Object.entries(models).map(([groupProvider, items]) => groupProvider === 'ollama' && !credentialStatus?.localSetupAllowed ? null : <optgroup key={groupProvider} label={groupProvider === 'gemini' ? 'Google Gemini' : groupProvider === 'openrouter' ? 'OpenRouter' : groupProvider === 'ollama' ? 'Local · Ollama' : groupProvider === 'openai' ? 'OpenAI' : 'DeepSeek'}>{items.map((item) => <option key={item.id} value={`${groupProvider}::${item.id}`}>{item.name}</option>)}<option value={`${groupProvider}::custom`}>Custom model name…</option></optgroup>)}
+      </select></label>
+      <label className="form-label custom-model-control">Custom Model Name <span className="optional-label">Optional; overrides the model selected above.</span><input type="text" autoComplete="off" spellCheck={false} value={customModelId} onChange={(event) => { setCustomModelId(event.target.value); setProviderSaved(false); }} placeholder={provider === 'gemini' ? 'e.g. gemini-3.1-pro-preview' : 'Enter a provider model ID'} data-testid="input-custom-model-id" /></label>
       {provider === 'gemini' && <label className="form-label custom-model-control">Automatic fallback model <span className="optional-label">Optional; retry once after a Gemini 429 or 503. Leave blank to disable.</span><input type="text" autoComplete="off" spellCheck={false} value={fallbackModelId} onChange={(event) => { setFallbackModelId(event.target.value); setProviderSaved(false); }} placeholder="e.g. gemini-2.5-flash-lite" data-testid="input-gemini-fallback-model-id" /></label>}
-      <p className="settings-footnote"><LockKeyhole size={13} /> {configured ? 'Provider key configured.' : 'Add a provider key to run tasks.'} Keys are never sent back to the browser.</p>
+      <p className="settings-footnote"><LockKeyhole size={13} /> {provider === 'ollama' ? 'Local Ollama endpoint selected.' : configured ? 'Provider key configured.' : 'Add a provider key to run tasks.'} Keys are never sent back to the browser.</p>
     </section>
     <section className="settings-section key-vault" data-testid="settings-api-keys-vault">
-      <div className="settings-section-heading"><div className="section-symbol"><KeyRound size={17} /></div><div><h2>API Keys Vault</h2><p>Credentials stay local. Saved values are never shown or prefilled.</p></div><span className={`connection-state ${credentialStatus?.providerSettingsAllowed ? 'connected' : 'disconnected'}`} data-testid="status-provider-settings-access">{credentialStatus?.providerSettingsAllowed ? 'KEY STORAGE AVAILABLE' : 'KEY STORAGE RESTRICTED'}</span></div>
-      <div className="key-vault-grid">
-        <label className="form-label">OpenAI API key <span className="optional-label">{credentialStatus?.hasOpenaiKey ? 'Configured · blank keeps existing' : 'Optional · not configured'}</span><input type="password" autoComplete="new-password" value={apiKeys.openaiApiKey} onChange={(event) => { setApiKeys({ ...apiKeys, openaiApiKey: event.target.value }); setProviderSaved(false); }} placeholder="Enter a new OpenAI key" disabled={!credentialStatus?.providerSettingsAllowed} data-testid="input-openai-api-key" /></label>
-        <label className="form-label">DeepSeek API key <span className="optional-label">{credentialStatus?.hasDeepseekKey ? 'Configured · blank keeps existing' : 'Optional · not configured'}</span><input type="password" autoComplete="new-password" value={apiKeys.deepseekApiKey} onChange={(event) => { setApiKeys({ ...apiKeys, deepseekApiKey: event.target.value }); setProviderSaved(false); }} placeholder="Enter a new DeepSeek key" disabled={!credentialStatus?.providerSettingsAllowed} data-testid="input-deepseek-api-key" /></label>
-        <label className="form-label">Gemini API key <span className="optional-label">{credentialStatus?.hasGeminiKey ? 'Configured · blank keeps existing' : 'Optional · not configured'}</span><input type="password" autoComplete="new-password" value={apiKeys.geminiApiKey} onChange={(event) => { setApiKeys({ ...apiKeys, geminiApiKey: event.target.value }); setProviderSaved(false); }} placeholder="Enter a new Gemini key" disabled={!credentialStatus?.providerSettingsAllowed} data-testid="input-gemini-api-key" /></label>
-        <label className="form-label">OpenRouter API key <span className="optional-label">{credentialStatus?.hasOpenrouterKey ? 'Configured · blank keeps existing' : 'Optional · not configured'}</span><input type="password" autoComplete="new-password" value={apiKeys.openrouterApiKey} onChange={(event) => { setApiKeys({ ...apiKeys, openrouterApiKey: event.target.value }); setProviderSaved(false); }} placeholder="Enter a new OpenRouter key" disabled={!credentialStatus?.providerSettingsAllowed} data-testid="input-openrouter-api-key" /></label>
-      </div>
+      <div className="settings-section-heading"><div className="section-symbol"><KeyRound size={17} /></div><div><h2>API KEYS VAULT</h2><p>Credentials stay local. Saved values are never shown or prefilled.</p></div><span className={`connection-state ${credentialStatus?.providerSettingsAllowed ? 'connected' : 'disconnected'}`} data-testid="status-provider-settings-access">{credentialStatus?.providerSettingsAllowed ? 'KEY STORAGE AVAILABLE' : 'KEY STORAGE RESTRICTED'}</span></div>
+      <form className="key-vault-form" onSubmit={(event) => { event.preventDefault(); saveProviderSettings(); }}><div className="key-vault-grid">
+        <label className="form-label">DeepSeek API key <span className={`key-status ${credentialStatus?.hasDeepseekKey ? 'active' : ''}`}>{credentialStatus?.hasDeepseekKey ? 'ACTIVE KEY' : 'NO KEY'}</span><span className="optional-label">{credentialStatus?.hasDeepseekKey ? 'Blank keeps existing key' : 'Optional · not configured'}</span><input type="password" autoComplete="new-password" value={apiKeys.deepseekApiKey} onChange={(event) => { setApiKeys({ ...apiKeys, deepseekApiKey: event.target.value }); setProviderSaved(false); }} placeholder="Enter sk-…" disabled={!credentialStatus?.providerSettingsAllowed} data-testid="input-deepseek-api-key" /></label>
+        <label className="form-label">Gemini API key <span className={`key-status ${credentialStatus?.hasGeminiKey ? 'active' : ''}`}>{credentialStatus?.hasGeminiKey ? 'ACTIVE KEY' : 'NO KEY'}</span><span className="optional-label">{credentialStatus?.hasGeminiKey ? 'Blank keeps existing key' : 'Optional · not configured'}</span><input type="password" autoComplete="new-password" value={apiKeys.geminiApiKey} onChange={(event) => { setApiKeys({ ...apiKeys, geminiApiKey: event.target.value }); setProviderSaved(false); }} placeholder="Enter AIza…" disabled={!credentialStatus?.providerSettingsAllowed} data-testid="input-gemini-api-key" /></label>
+        <label className="form-label">OpenAI API key <span className={`key-status ${credentialStatus?.hasOpenaiKey ? 'active' : ''}`}>{credentialStatus?.hasOpenaiKey ? 'ACTIVE KEY' : 'NO KEY'}</span><span className="optional-label">{credentialStatus?.hasOpenaiKey ? 'Blank keeps existing key' : 'Optional · not configured'}</span><input type="password" autoComplete="new-password" value={apiKeys.openaiApiKey} onChange={(event) => { setApiKeys({ ...apiKeys, openaiApiKey: event.target.value }); setProviderSaved(false); }} placeholder="Enter sk-…" disabled={!credentialStatus?.providerSettingsAllowed} data-testid="input-openai-api-key" /></label>
+        <label className="form-label">OpenRouter / Custom Endpoint key <span className={`key-status ${credentialStatus?.hasOpenrouterKey ? 'active' : ''}`}>{credentialStatus?.hasOpenrouterKey ? 'ACTIVE KEY' : 'NO KEY'}</span><span className="optional-label">{credentialStatus?.hasOpenrouterKey ? 'Blank keeps existing key' : 'Optional · not configured'}</span><input type="password" autoComplete="new-password" value={apiKeys.openrouterApiKey} onChange={(event) => { setApiKeys({ ...apiKeys, openrouterApiKey: event.target.value }); setProviderSaved(false); }} placeholder="Enter key…" disabled={!credentialStatus?.providerSettingsAllowed} data-testid="input-openrouter-api-key" /></label>
+        <label className="form-label">Ollama / Local Base URL <span className="key-status local">LOCAL</span><span className="optional-label">OpenAI-compatible local endpoint</span><input type="url" value={ollamaBaseUrl} onChange={(event) => { setOllamaBaseUrl(event.target.value); setProviderSaved(false); }} placeholder="http://localhost:11434/v1" disabled={!credentialStatus?.providerSettingsAllowed || !credentialStatus?.localSetupAllowed} data-testid="input-ollama-base-url" /></label>
+      </div></form>
       <p className="settings-footnote"><LockKeyhole size={13} /> Blank key fields mean “keep existing key”. Key values are never returned to this screen.</p>
       {providerError && <p className="field-error" role="alert" data-testid="status-provider-save-error">{providerError}</p>}
       {providerSaved && <p className="save-state" role="status" data-testid="status-provider-saved"><CheckCircle2 size={15} /> Provider settings saved. Key values remain hidden.</p>}
-      <div className="settings-save-row"><span className="settings-footnote">Provider, model, safety switches, and new keys save together.</span><button className="button button-primary" disabled={!credentialStatus?.providerSettingsAllowed || updateSettings.isPending} onClick={saveProviderSettings} data-testid="button-save-provider"><Check size={15} /> {updateSettings.isPending ? 'Saving settings…' : 'Save provider settings'}</button></div>
+      <div className="settings-save-row"><span className="settings-footnote">Provider, model, local URL, safety switches, and new keys save together.</span><button type="button" className="button button-primary" disabled={!credentialStatus?.providerSettingsAllowed || updateSettings.isPending} onClick={saveProviderSettings} data-testid="button-save-provider"><Check size={15} /> {updateSettings.isPending ? 'Saving…' : 'Save Keys'}</button></div>
     </section>
     <section className="settings-section safety-section"><div className="settings-section-heading"><div className="section-symbol amber"><ShieldCheck size={18} /></div><div><h2>Local code runner</h2><p>Optional Python execution in the local workspace, disabled by default.</p></div></div>
       <div className="setting-row"><div className="setting-row-icon"><KeyRound size={16} /></div><div className="setting-copy"><strong>Allow safe workspace commands</strong><span>Local-only and off by default. Only read-only commands are supported, restricted to workspace files, and limited to 30 seconds.</span></div><button className={`switch ${codeRunnerEnabled ? 'on' : ''}`} role="switch" aria-checked={codeRunnerEnabled} disabled={!credentialStatus?.localSetupAllowed} onClick={() => { setCodeRunnerEnabled(!codeRunnerEnabled); setProviderSaved(false); }} aria-label="Allow safe workspace commands" data-testid="switch-local-code-runner"><span /></button></div>

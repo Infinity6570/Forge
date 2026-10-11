@@ -76,6 +76,7 @@ export const AssistantTaskRecommendedProvider = {
   deepseek: 'deepseek',
   gemini: 'gemini',
   openrouter: 'openrouter',
+  ollama: 'ollama',
 } as const;
 
 export interface AssistantTask {

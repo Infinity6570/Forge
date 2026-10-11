@@ -348,6 +348,47 @@ class ProviderSettingsTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status_code, 200, response.text)
         self.assertEqual(response.json()["fallbackModelId"], "")
 
+    async def test_ollama_provider_and_local_url_persist_without_an_api_key(self) -> None:
+        response = await self.put_settings(
+            base_url="http://127.0.0.1",
+            provider="ollama",
+            model_id="qwen2.5-coder",
+            ollamaBaseUrl="http://localhost:11434/v1",
+        )
+        settings = await self.get_settings()
+
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(dotenv_values(self.env_file)["AGENT_PROVIDER"], "ollama")
+        self.assertEqual(dotenv_values(self.env_file)["AGENT_MODEL"], "qwen2.5-coder")
+        self.assertEqual(dotenv_values(self.env_file)["OLLAMA_BASE_URL"], "http://localhost:11434/v1")
+        self.assertEqual(settings.json()["provider"], "ollama")
+        self.assertEqual(settings.json()["ollamaBaseUrl"], "http://localhost:11434/v1")
+
+    async def test_ollama_rejects_non_local_urls_without_writing_settings(self) -> None:
+        response = await self.put_settings(
+            base_url="http://127.0.0.1",
+            provider="ollama",
+            model_id="qwen2.5-coder",
+            ollamaBaseUrl="https://example.com/v1",
+        )
+
+        self.assertEqual(response.status_code, 422)
+        self.assertFalse(self.env_file.exists())
+
+    async def test_ollama_uses_the_standard_openai_compatible_client(self) -> None:
+        os.environ["OLLAMA_BASE_URL"] = "http://localhost:11434/v1"
+
+        with patch.object(main, "AsyncOpenAI") as client_constructor:
+            client = main.create_llm_client("ollama")
+
+        self.assertIs(client, client_constructor.return_value)
+        client_constructor.assert_called_once_with(
+            api_key="ollama",
+            base_url="http://localhost:11434/v1",
+            timeout=90,
+            max_retries=2,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
