@@ -43,7 +43,11 @@ from workspace_preview import (
     resolve_workspace_path,
     write_workspace_asset,
 )
-from tools.elevated_runner import execute_elevated_command, validate_elevated_command
+from tools.elevated_runner import (
+    execute_elevated_command,
+    is_process_elevated,
+    validate_elevated_command,
+)
 
 ROOT = Path(__file__).resolve().parent
 ENV_FILE = ROOT / ".env"
@@ -59,6 +63,16 @@ load_dotenv(ENV_FILE, override=True)
 
 DB_LOCK = threading.RLock()
 ACTIVE_TASKS: dict[str, asyncio.Task[None]] = {}
+
+
+def track_active_task(task_id: str, running: asyncio.Task[None]) -> None:
+    ACTIVE_TASKS[task_id] = running
+
+    def clear_if_current(completed: asyncio.Task[None]) -> None:
+        if ACTIVE_TASKS.get(task_id) is completed:
+            ACTIVE_TASKS.pop(task_id, None)
+
+    running.add_done_callback(clear_if_current)
 SCHEDULER = AsyncIOScheduler(timezone="UTC")
 MODEL_OPTIONS = {
     "openai": {"gpt-4.1-mini", "gpt-4.1", "gpt-4.1-nano"},
@@ -1042,6 +1056,8 @@ def workspace_action_requiring_approval(
     if tool_name == "execute_elevated_command":
         if is_replit_runtime():
             raise PermissionError("Administrative execution is available only from a local exported copy.")
+        if is_process_elevated():
+            raise PermissionError("The assistant server must run as a normal user, not as administrator or root.")
         command = validate_elevated_command(str(arguments.get("command", "")))
         return (
             "elevated_command",
@@ -1220,6 +1236,10 @@ async def execute_tool(
             return json.dumps({"error": str(error)[:500]}, ensure_ascii=False)
         return json.dumps({"error": "Workspace deletion requires explicit approval in the task details UI."})
     if name == "execute_elevated_command":
+        if is_replit_runtime():
+            return json.dumps({"error": "Administrative execution is available only from a local exported copy."})
+        if is_process_elevated():
+            return json.dumps({"error": "The assistant server must run as a normal user, not as administrator or root."})
         try:
             validate_elevated_command(str(arguments.get("command", "")))
         except PermissionError as error:
@@ -1285,7 +1305,7 @@ TOOLS = [
     {"type": "function", "function": {"name": "read_workspace_file", "description": "Read a UTF-8 text file inside workspace/. Parent paths, absolute paths, hidden files, and private assistant folders are blocked.", "parameters": {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]}}},
     {"type": "function", "function": {"name": "write_workspace_preview_file", "description": "When the user explicitly requests a static website, write UTF-8 HTML, CSS, JavaScript, JSON, SVG, or font/image assets inside workspace/. Keep linked assets relative and use index.html as the entry point. Never overwrite an existing file directly: it will pause for explicit approval in the task details UI. Do not write private data, executables, or files outside workspace/.", "parameters": {"type": "object", "properties": {"path": {"type": "string", "description": "Workspace-relative web asset path, such as index.html or assets/site.css."}, "content": {"type": "string", "maxLength": 2097152}, "overwrite": {"type": "boolean", "default": False}}, "required": ["path", "content"]}}},
     {"type": "function", "function": {"name": "delete_workspace_file", "description": "Request deletion of a regular user workspace file. This always pauses until the user confirms in the task details UI.", "parameters": {"type": "object", "properties": {"path": {"type": "string", "description": "Workspace-relative path to one regular file."}}, "required": ["path"]}}},
-    {"type": "function", "function": {"name": "execute_elevated_command", "description": "Request one single-line administrative command for a local exported copy. This tool never executes immediately: it pauses the task and displays the exact command for explicit approval in the task details UI. Do not combine hidden commands or request elevation unless the user's task actually requires it.", "parameters": {"type": "object", "properties": {"command": {"type": "string", "maxLength": 4000, "description": "The exact single-line command that will be shown for approval."}}, "required": ["command"]}}},
+    {"type": "function", "function": {"name": "execute_elevated_command", "description": "Request one single-line administrative command for a local exported copy. This never executes immediately: it pauses for explicit task-details approval and shows the exact command. Shell chaining, redirection, inline script execution, and known destructive commands are blocked even after approval. Request elevation only when the user's task actually requires it.", "parameters": {"type": "object", "properties": {"command": {"type": "string", "maxLength": 4000, "description": "The exact single-line command that will be shown for approval."}}, "required": ["command"]}}},
     {"type": "function", "function": {"name": "launch_workspace_app", "description": "Serve an existing HTML file from workspace/ as a static preview. Python app processes are disabled because portable subprocesses cannot be reliably confined to the workspace.", "parameters": {"type": "object", "properties": {"framework": {"type": "string", "enum": ["static"]}, "entryPath": {"type": "string", "description": "HTML file path relative to workspace/."}}, "required": ["framework", "entryPath"]}}},
     {"type": "function", "function": {"name": "stop_workspace_app", "description": "Stop a Flask or Streamlit app started by this assistant using its registered preview ID.", "parameters": {"type": "object", "properties": {"appId": {"type": "string"}}, "required": ["appId"]}}},
     {"type": "function", "function": {"name": "delegate_to_specialist", "description": "Ask a focused child worker to complete an independent subtask, then return its result.", "parameters": {"type": "object", "properties": {"task": {"type": "string"}}, "required": ["task"]}}},
@@ -1322,7 +1342,7 @@ async def run_agent_task(
                 "operations without the approval tool flow; those actions pause for an explicit user decision in the task details UI. "
                 "Never execute an administrative command directly. If a user task genuinely requires administrator privileges, "
                 "request exactly one single-line command with execute_elevated_command; the backend pauses for explicit UI approval. "
-                "Never hide, encode, or combine extra commands in an elevation request. "
+                "Never hide, encode, or combine extra commands in an elevation request; the backend also blocks shell chaining, redirection, inline scripts, and known destructive commands. "
                 "When the user explicitly requests a website or web app, create only requested safe assets under workspace/. "
                 "Static sites should use workspace/index.html with relative asset links. Python app processes are disabled. Do not run arbitrary code: run_command "
                 "supports only safe, read-only workspace commands. Do not expose environment variables, keys, or private machine data. "
@@ -1765,8 +1785,7 @@ async def create_task(body: TaskInput) -> dict[str, Any]:
         )
     else:
         running = asyncio.create_task(run_agent_task(task_id, body.fileIds))
-        ACTIVE_TASKS[task_id] = running
-        running.add_done_callback(lambda _: ACTIVE_TASKS.pop(task_id, None))
+        track_active_task(task_id, running)
     return task_dict(db_one("SELECT * FROM tasks WHERE id=?", (task_id,)))  # type: ignore[arg-type]
 
 
@@ -1801,8 +1820,7 @@ async def choose_task_model(task_id: str, body: TaskModelChoiceInput) -> dict[st
     log_task(task_id, f"User chose to continue with the {choice}: {model}.", "info")
     file_ids = parse_json(row["file_ids_json"], [])
     running = asyncio.create_task(run_agent_task(task_id, file_ids))
-    ACTIVE_TASKS[task_id] = running
-    running.add_done_callback(lambda _: ACTIVE_TASKS.pop(task_id, None))
+    track_active_task(task_id, running)
     return task_dict(db_one("SELECT * FROM tasks WHERE id=?", (task_id,)))  # type: ignore[arg-type]
 
 
@@ -1833,8 +1851,7 @@ async def choose_task_fallback(task_id: str, body: TaskFallbackChoiceInput) -> d
         (f"Retrying failed specialist step with {model}", utc_now(), task_id),
     )
     running = asyncio.create_task(retry_failed_specialist_step(task_id))
-    ACTIVE_TASKS[task_id] = running
-    running.add_done_callback(lambda _: ACTIVE_TASKS.pop(task_id, None))
+    track_active_task(task_id, running)
     return task_dict(db_one("SELECT * FROM tasks WHERE id=?", (task_id,)))  # type: ignore[arg-type]
 
 
@@ -1937,8 +1954,7 @@ async def choose_task_approval(task_id: str, body: TaskApprovalInput) -> dict[st
                 file_ids,
             )
         )
-        ACTIVE_TASKS[task_id] = running
-        running.add_done_callback(lambda _: ACTIVE_TASKS.pop(task_id, None))
+        track_active_task(task_id, running)
         return task_dict(db_one("SELECT * FROM tasks WHERE id=?", (task_id,)))  # type: ignore[arg-type]
 
     if body.approve:
@@ -1954,9 +1970,13 @@ async def choose_task_approval(task_id: str, body: TaskApprovalInput) -> dict[st
             resolution = "failed"
             log_task(task_id, "The approved workspace action could not be completed.", "error")
     else:
-        tool_result = json.dumps({"error": "The user denied this workspace action. Do not retry it; continue without changing the file."})
+        if approval["action"] == "elevated_command":
+            tool_result = json.dumps({"error": "The user rejected this administrative command. Do not retry it or request it again; continue without it."})
+            log_task(task_id, "The administrative command was rejected by the user.", "warning")
+        else:
+            tool_result = json.dumps({"error": "The user denied this workspace action. Do not retry it; continue without changing the file."})
+            log_task(task_id, "The workspace action was rejected by the user; no file change was made.", "warning")
         resolution = "rejected"
-        log_task(task_id, "The workspace action was rejected by the user; no file change was made.", "warning")
 
     for message in messages:
         if message.get("role") == "tool" and message.get("tool_call_id") == approval["tool_call_id"]:
@@ -1973,8 +1993,7 @@ async def choose_task_approval(task_id: str, body: TaskApprovalInput) -> dict[st
     )
     file_ids = parse_json(task["file_ids_json"], [])
     running = asyncio.create_task(run_agent_task(task_id, file_ids, messages))
-    ACTIVE_TASKS[task_id] = running
-    running.add_done_callback(lambda _: ACTIVE_TASKS.pop(task_id, None))
+    track_active_task(task_id, running)
     return task_dict(db_one("SELECT * FROM tasks WHERE id=?", (task_id,)))  # type: ignore[arg-type]
 
 
@@ -1988,9 +2007,14 @@ async def get_task(task_id: str) -> dict[str, Any]:
 
 @app.post("/api/assistant/tasks/{task_id}/abort")
 async def abort_task(task_id: str) -> dict[str, Any]:
-    row = db_one("SELECT status FROM tasks WHERE id=?", (task_id,))
+    row = db_one("SELECT status,current_step FROM tasks WHERE id=?", (task_id,))
     if not row:
         raise HTTPException(status_code=404, detail="Task not found.")
+    if row["current_step"] == "Running approved command; waiting for operating-system elevation":
+        raise HTTPException(
+            status_code=409,
+            detail="The approved operating-system command is already running and cannot be stopped from this task control.",
+        )
     running = ACTIVE_TASKS.get(task_id)
     if running and not running.done():
         running.cancel()

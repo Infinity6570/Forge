@@ -728,6 +728,24 @@ body { min-width: 320px; }
     border-color: #ead6b9;
     background: #fff8ed;
   }
+  .elevated-approval {
+    border-color: #e2b7a7;
+    background: linear-gradient(135deg, #fff1eb, #fff8f2);
+    color: #733522;
+  }
+  .elevated-approval > strong { color: #8d351e; }
+  .elevated-command {
+    display: block;
+    margin: 9px 0;
+    padding: 10px 12px;
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
+    border: 1px solid #ead7ce;
+    border-radius: 7px;
+    background: #fffdfa;
+    color: #39251e;
+    font: 11px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
   @media (max-width: 520px) {
     .model-recommendation-actions { flex-direction: column; }
     .model-recommendation-actions .button { width: 100%; justify-content: center; }

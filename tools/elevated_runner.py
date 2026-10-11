@@ -4,6 +4,7 @@ import base64
 import json
 import os
 import platform
+import re
 import shutil
 import subprocess
 import tempfile
@@ -16,6 +17,23 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 AUDIT_LOG_PATH = PROJECT_ROOT / "logs" / "elevated_audit.log"
 MAX_ELEVATED_COMMAND_LENGTH = 4000
 _AUDIT_LOCK = threading.Lock()
+_COMMAND_SEPARATORS = re.compile(r"[;&|<>]|\$\(|`")
+_BLOCKED_COMMANDS = (
+    re.compile(r"\b(?:rmdir|rd)\b[^\r\n]*(?:/s\b|-s\b)", re.IGNORECASE),
+    re.compile(r"\bdel\b[^\r\n]*(?:/[fsq]\b)", re.IGNORECASE),
+    re.compile(r"\bformat(?:\.com)?\b", re.IGNORECASE),
+    re.compile(r"\bdiskpart(?:\.exe)?\b", re.IGNORECASE),
+    re.compile(r"\breg(?:\.exe)?\s+delete\b", re.IGNORECASE),
+    re.compile(
+        r"\b(?:powershell|pwsh)(?:\.exe)?\b[^\r\n]*(?:\bremove-item\b[^\r\n]*(?:-recurse|-r\b)|-(?:enc|encodedcommand)\b)",
+        re.IGNORECASE,
+    ),
+    re.compile(r"\bshutdown(?:\.exe)?\b", re.IGNORECASE),
+    re.compile(r"\brm\b[^\r\n]*(?:\s-[^\s]*r[^\s]*\b|\s--recursive\b)", re.IGNORECASE),
+    re.compile(r"\b(?:mkfs(?:\.[\w-]+)?|wipefs|shred|reboot|poweroff|halt|fdisk|parted|userdel)\b", re.IGNORECASE),
+    re.compile(r"\bdd\b[^\r\n]*\bof=/dev/", re.IGNORECASE),
+    re.compile(r"^\s*(?:python(?:\d+(?:\.\d+)*)?|node|ruby|perl|php)\s+-(?:c|e)\b", re.IGNORECASE),
+)
 
 
 def is_replit_runtime() -> bool:
@@ -43,6 +61,10 @@ def validate_elevated_command(command: str) -> str:
         raise PermissionError("Elevated commands must contain 1–4,000 characters.")
     if "\0" in command or "\n" in command or "\r" in command:
         raise PermissionError("Only one single-line elevated command can be requested.")
+    if _COMMAND_SEPARATORS.search(command):
+        raise PermissionError("Elevated requests must contain one command without shell chaining, redirection, or substitution.")
+    if any(pattern.search(command) for pattern in _BLOCKED_COMMANDS):
+        raise PermissionError("This destructive command or inline script is blocked, even with approval.")
     return command
 
 
@@ -80,11 +102,7 @@ def _windows_elevation_argv(command: str) -> tuple[list[str], Path]:
     descriptor, temporary_name = tempfile.mkstemp(prefix="assistant-elevated-", suffix=".cmd")
     os.close(descriptor)
     command_file = Path(temporary_name)
-    command_file.write_text(
-        "@echo off\r\nchcp 65001 >nul\r\n" + command + "\r\n",
-        encoding="utf-8",
-        newline="",
-    )
+    command_file.write_bytes((command + "\r\n").encode("utf-8"))
     encoded_path = base64.b64encode(str(command_file).encode("utf-8")).decode("ascii")
     powershell = (
         "$path=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('"
@@ -110,7 +128,7 @@ def _elevation_argv(command: str) -> list[str]:
         return [pkexec, "/bin/sh", "-c", command]
     sudo = shutil.which("sudo")
     if sudo:
-        return [sudo, "-n", "--", "/bin/sh", "-lc", command]
+        return [sudo, "-n", "--", "/bin/sh", "-c", command]
     raise RuntimeError("Neither pkexec nor sudo is available for local elevation.")
 
 

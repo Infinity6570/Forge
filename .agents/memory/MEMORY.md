@@ -1,1 +1,1 @@
-- [Local execution boundary](local-execution-boundary.md) — keep file tools workspace-scoped and generated Python app execution disabled without an OS sandbox.
+- [Local execution and elevation boundary](local-execution-boundary.md) — ordinary tools stay workspace-scoped; admin commands require visible approval and OS elevation.

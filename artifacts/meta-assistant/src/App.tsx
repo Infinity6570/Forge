@@ -297,9 +297,28 @@ function TaskDetailDialog({ task, loading, error, retry, close, abort, aborting 
       onError: () => setActionError('The workspace approval decision could not be saved. Please try again.'),
     });
   };
+  const elevatedApproval = task?.pendingApprovalKind === 'elevated_command';
+  const elevationButtonLabel = typeof navigator !== 'undefined' && navigator.platform.toLowerCase().startsWith('win')
+    ? 'Approve & Run with UAC'
+    : 'Approve & Run with OS elevation';
   return <Modal title="Task details" onClose={close}>{loading ? <Skeleton rows={5} /> : error || !task ? <QueryProblem retry={retry} /> : <div className="detail-content"><div className="detail-objective"><StatusPill status={task.status} /><h3>{task.objective}</h3><p>Started {formatDate(task.createdAt)} <span>·</span> Updated {timeAgo(task.updatedAt)}</p></div>
     <p className="settings-footnote">Model used: <strong>{task.modelId}</strong></p>
-    {task.requiresApproval && task.pendingApprovalId && <section className="model-recommendation approval-recommendation" aria-live="polite" data-testid="task-workspace-approval"><strong>Workspace action needs your approval</strong><p>{task.approvalSummary} The agent is paused; no change has been made yet.</p><div className="model-recommendation-actions"><button className="button button-primary" onClick={() => decideApproval(true)} disabled={resolveApproval.isPending} data-testid="button-approve-workspace-action">{resolveApproval.isPending ? 'Applying…' : 'Approve and continue'}</button><button className="button button-quiet" onClick={() => decideApproval(false)} disabled={resolveApproval.isPending} data-testid="button-reject-workspace-action">Reject and continue</button></div></section>}
+    {task.requiresApproval && task.pendingApprovalId && <section className={`model-recommendation approval-recommendation ${elevatedApproval ? 'elevated-approval' : ''}`} aria-live="polite" data-testid={elevatedApproval ? 'task-elevated-approval' : 'task-workspace-approval'}>
+      {elevatedApproval ? <>
+        <strong>⚠️ Administrative Privilege Requested</strong>
+        <p>The agent is requesting permission to execute this command with elevated system permissions:</p>
+        <code className="elevated-command" data-testid="text-elevated-command">{task.approvalSummary}</code>
+        <p>Nothing runs until you approve. The invocation will be recorded in <code>logs/elevated_audit.log</code>.</p>
+        <p>If pkexec is unavailable, the sudo fallback requires an already-authorized non-interactive sudo session and fails closed otherwise.</p>
+      </> : <>
+        <strong>Workspace action needs your approval</strong>
+        <p>{task.approvalSummary} The agent is paused; no change has been made yet.</p>
+      </>}
+      <div className="model-recommendation-actions">
+        <button className="button button-primary" onClick={() => decideApproval(true)} disabled={resolveApproval.isPending} data-testid="button-approve-workspace-action">{resolveApproval.isPending ? 'Applying…' : elevatedApproval ? elevationButtonLabel : 'Approve and continue'}</button>
+        <button className="button button-quiet" onClick={() => decideApproval(false)} disabled={resolveApproval.isPending} data-testid="button-reject-workspace-action">{elevatedApproval ? 'Reject Action' : 'Reject and continue'}</button>
+      </div>
+    </section>}
     {task.requiresModelConfirmation && <section className="model-recommendation" aria-live="polite" data-testid="task-model-recommendation"><strong>💡 Recommendation:</strong><p>This task involves {task.recommendationReason}. Running on a high-capability model like {recommendedName} may produce better results. Would you like to switch for this task?</p><div className="model-recommendation-actions"><button className="button button-primary" onClick={() => choose(true)} disabled={chooseModel.isPending} data-testid="button-switch-recommended-model">{chooseModel.isPending ? 'Saving choice…' : 'Switch to Recommended Model'}</button><button className="button button-quiet" onClick={() => choose(false)} disabled={chooseModel.isPending} data-testid="button-stay-current-model">Stay on Current Model</button></div></section>}
     {task.recommendationKind === 'fallback' && task.retryAvailable && task.status !== 'running' && <section className="model-recommendation fallback-recommendation" aria-live="polite" data-testid="task-fallback-recommendation"><strong>⚠️ Task encountered persistent errors on the current model.</strong><p>Would you like to retry this step with {recommendedName}?</p><div className="model-recommendation-actions"><button className="button button-primary" onClick={() => retryFailedStep(true)} disabled={retryStep.isPending} data-testid="button-retry-step-recommended">{retryStep.isPending ? 'Starting retry…' : 'Retry this step with Recommended Pro Model'}</button><button className="button button-quiet" onClick={() => retryFailedStep(false)} disabled={retryStep.isPending} data-testid="button-dismiss-retry-suggestion">Not now</button></div></section>}
     {actionError && <p className="field-error" role="alert">{actionError}</p>}
@@ -308,7 +327,7 @@ function TaskDetailDialog({ task, loading, error, retry, close, abort, aborting 
     {task.error && <div className="error-box"><strong><AlertCircle size={16} /> What happened</strong><p>{task.error}</p></div>}
     <div className="log-heading"><strong>Execution log</strong><span>{task.logs?.length ?? 0} entries</span></div>
     <div className="log-list">{task.logs?.length ? task.logs.map((log) => <div className="log-item" key={log.id}><span className={`log-dot ${log.kind}`} /><div><div className="log-meta"><strong>{log.kind}</strong><time>{formatDate(log.createdAt)}</time></div><p>{log.message}</p></div></div>) : <div className="log-empty">No execution updates yet. This view refreshes while your task is active.</div>}</div>
-    <div className="modal-actions"><button className="button button-quiet" onClick={close}>Close</button>{['queued', 'running'].includes(task.status) && <button className="button button-danger" onClick={() => abort(task.id)} disabled={aborting} data-testid="button-abort-task"><StopCircle size={15} />{aborting ? 'Stopping…' : 'Stop task'}</button>}</div>
+    <div className="modal-actions"><button className="button button-quiet" onClick={close}>Close</button>{['queued', 'running'].includes(task.status) && task.currentStep !== 'Running approved command; waiting for operating-system elevation' && <button className="button button-danger" onClick={() => abort(task.id)} disabled={aborting} data-testid="button-abort-task"><StopCircle size={15} />{aborting ? 'Stopping…' : 'Stop task'}</button>}</div>
   </div>}</Modal>;
 }
 

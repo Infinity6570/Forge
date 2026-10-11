@@ -107,14 +107,15 @@ class WorkspaceSafetyTests(unittest.IsolatedAsyncioTestCase):
         ]
         main.db_run(
             "INSERT INTO tasks(id,objective,status,current_step,provider,model_id,file_ids_json,"
-            "messages_json,pending_approval_id,approval_summary,created_at,updated_at) "
+            "messages_json,pending_approval_id,pending_approval_kind,approval_summary,created_at,updated_at) "
             "VALUES(?,?,'awaiting_approval','Waiting for your approval','deepseek','deepseek-chat',"
-            "'[]',?,?,?, ?,?)",
+            "'[]',?,?,?,?,?,?)",
             (
                 task_id,
                 "Update a workspace file",
                 json.dumps(messages),
                 approval_id,
+                action,
                 f"Approve {action}?",
                 now,
                 now,
@@ -189,6 +190,63 @@ class WorkspaceSafetyTests(unittest.IsolatedAsyncioTestCase):
         )
         pending = main.db_one("SELECT status FROM pending_approvals WHERE id=?", (approval_id,))
         self.assertEqual(pending["status"], "rejected")
+
+    async def test_elevated_request_is_only_staged_for_approval(self) -> None:
+        with (
+            patch.object(main, "is_replit_runtime", return_value=False),
+            patch.object(main, "is_process_elevated", return_value=False),
+        ):
+            staged = main.workspace_action_requiring_approval(
+                "execute_elevated_command",
+                {"command": "ipconfig /flushdns"},
+            )
+
+        self.assertEqual(
+            staged,
+            (
+                "elevated_command",
+                {"command": "ipconfig /flushdns"},
+                "ipconfig /flushdns",
+            ),
+        )
+        with self.assertRaises(PermissionError):
+            main.validate_elevated_command("first\nsecond")
+
+    async def test_elevated_command_runs_only_after_approval(self) -> None:
+        approval_id = "approval-elevation"
+        task_id = await self._create_pending_task(
+            approval_id,
+            "elevated_command",
+            {"command": "whoami"},
+        )
+
+        async def fake_worker(*_args: object) -> None:
+            return None
+
+        with (
+            patch.object(
+                main,
+                "execute_elevated_command",
+                return_value={"returnCode": 0, "stdout": "local-user", "stderr": "", "status": "completed"},
+            ) as elevated_runner,
+            patch.object(main, "run_agent_task", new=fake_worker),
+        ):
+            self.assertEqual(elevated_runner.call_count, 0)
+            response = await self._choose_approval(task_id, approval_id, True)
+            self.assertEqual(response.status_code, 200, response.text)
+            self.assertFalse(response.json()["requiresApproval"])
+
+            for _ in range(50):
+                pending = main.db_one("SELECT status FROM pending_approvals WHERE id=?", (approval_id,))
+                if pending["status"] != "processing":
+                    break
+                await asyncio.sleep(0.01)
+
+        elevated_runner.assert_called_once_with("whoami")
+        self.assertEqual(pending["status"], "approved")
+        task = main.db_one("SELECT status,pending_approval_kind FROM tasks WHERE id=?", (task_id,))
+        self.assertEqual(task["status"], "queued")
+        self.assertIsNone(task["pending_approval_kind"])
 
 
 if __name__ == "__main__":
