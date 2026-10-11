@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&family=Newsreader:opsz,wght@6..72,500;6..72,600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=JetBrains+Mono:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&family=Newsreader:opsz,wght@6..72,500;6..72,600&display=swap');
 @import 'tailwindcss';
 @import 'tw-animate-css';
 @plugin "@tailwindcss/typography";
@@ -68,11 +68,12 @@
 }
 
 /* Forge local-operations console themes */
-html[data-theme="cyberdeck"] {
+html[data-theme="cyberdeck"],html[data-theme="scifi"] {
   color-scheme: dark;
-  --bg-main:#050811; --bg-panel:#0b1220; --bg-card:#0f1928; --border:#1a3442;
-  --accent:#00f0ff; --accent-glow:rgba(0,240,255,.18); --text-primary:#e1f4f7; --text-muted:#83a0aa;
-  --font-mono:'DM Mono',ui-monospace,monospace; --warn:#ff007f; --surface-raised:#142331;
+  --bg-main:#050811; --bg-panel:#080e18; --bg-card:#0b1420; --border:#16404c;
+  --accent:#00f0ff; --accent-glow:rgba(0,240,255,.25); --text-primary:#d9f5f7; --text-muted:#7898a4;
+  --font-mono:'JetBrains Mono',ui-monospace,monospace; --app-font-mono:'JetBrains Mono',ui-monospace,monospace;
+  --warn:#ff557e; --surface-raised:#101e2b;
 }
 html[data-theme="dark"] {
   color-scheme:dark;
@@ -1152,4 +1153,164 @@ html[data-theme] .theme-settings .theme-chooser { flex:none; }
   html[data-theme] .topbar-icon { display:none; }
   html[data-theme] .ops-tagline { padding:3px;font-size:6px; }
   html[data-theme] .theme-option { padding:0 3px;font-size:7px; }
+}
+
+/* Tactical terminal skin — isolated to the Sci-Fi appearance. */
+html:is([data-theme="scifi"],[data-theme="cyberdeck"]) body,
+html:is([data-theme="scifi"],[data-theme="cyberdeck"]) button,
+html:is([data-theme="scifi"],[data-theme="cyberdeck"]) input,
+html:is([data-theme="scifi"],[data-theme="cyberdeck"]) textarea,
+html:is([data-theme="scifi"],[data-theme="cyberdeck"]) select {
+  font-family:'JetBrains Mono',ui-monospace,monospace;
+}
+html:is([data-theme="scifi"],[data-theme="cyberdeck"]) .center-pane {
+  background-color:var(--bg-main);
+  background-image:radial-gradient(rgba(0,240,255,.12) .65px,transparent .65px);
+  background-size:17px 17px;
+}
+html:is([data-theme="scifi"],[data-theme="cyberdeck"]) .brand-name,
+html:is([data-theme="scifi"],[data-theme="cyberdeck"]) .command-heading h1,
+html:is([data-theme="scifi"],[data-theme="cyberdeck"]) .page-heading h1,
+html:is([data-theme="scifi"],[data-theme="cyberdeck"]) .welcome-row h1,
+html:is([data-theme="scifi"],[data-theme="cyberdeck"]) .command-status,
+html:is([data-theme="scifi"],[data-theme="cyberdeck"]) .status-pill {
+  text-shadow:0 0 9px rgba(0,240,255,.22);
+}
+html:is([data-theme="scifi"],[data-theme="cyberdeck"]) .eyebrow,
+html:is([data-theme="scifi"],[data-theme="cyberdeck"]) .workspace-label,
+html:is([data-theme="scifi"],[data-theme="cyberdeck"]) .sidebar-section-title,
+html:is([data-theme="scifi"],[data-theme="cyberdeck"]) .live-label,
+html:is([data-theme="scifi"],[data-theme="cyberdeck"]) .stream-current small,
+html:is([data-theme="scifi"],[data-theme="cyberdeck"]) .current-step small,
+html:is([data-theme="scifi"],[data-theme="cyberdeck"]) .status-pill,
+html:is([data-theme="scifi"],[data-theme="cyberdeck"]) .command-metrics>span {
+  text-transform:uppercase;
+  letter-spacing:.15em;
+}
+html:is([data-theme="scifi"],[data-theme="cyberdeck"]) .panel,
+html:is([data-theme="scifi"],[data-theme="cyberdeck"]) .activity-panel,
+html:is([data-theme="scifi"],[data-theme="cyberdeck"]) .composer-panel,
+html:is([data-theme="scifi"],[data-theme="cyberdeck"]) .stat-card,
+html:is([data-theme="scifi"],[data-theme="cyberdeck"]) .mini-resource,
+html:is([data-theme="scifi"],[data-theme="cyberdeck"]) .tasks-table-panel,
+html:is([data-theme="scifi"],[data-theme="cyberdeck"]) .settings-section,
+html:is([data-theme="scifi"],[data-theme="cyberdeck"]) .note-card,
+html:is([data-theme="scifi"],[data-theme="cyberdeck"]) .file-card,
+html:is([data-theme="scifi"],[data-theme="cyberdeck"]) .modal-card,
+html:is([data-theme="scifi"],[data-theme="cyberdeck"]) .task-overview-strip,
+html:is([data-theme="scifi"],[data-theme="cyberdeck"]) .agent-card,
+html:is([data-theme="scifi"],[data-theme="cyberdeck"]) .action-dock,
+html:is([data-theme="scifi"],[data-theme="cyberdeck"]) .right-inspector {
+  position:relative;
+  border:1px solid color-mix(in srgb,var(--accent) 48%,var(--border))!important;
+  border-radius:2px!important;
+  box-shadow:0 0 12px rgba(0,240,255,.25);
+}
+html:is([data-theme="scifi"],[data-theme="cyberdeck"]) .panel,
+html:is([data-theme="scifi"],[data-theme="cyberdeck"]) .activity-panel,
+html:is([data-theme="scifi"],[data-theme="cyberdeck"]) .composer-panel,
+html:is([data-theme="scifi"],[data-theme="cyberdeck"]) .stat-card,
+html:is([data-theme="scifi"],[data-theme="cyberdeck"]) .mini-resource,
+html:is([data-theme="scifi"],[data-theme="cyberdeck"]) .tasks-table-panel,
+html:is([data-theme="scifi"],[data-theme="cyberdeck"]) .settings-section,
+html:is([data-theme="scifi"],[data-theme="cyberdeck"]) .note-card,
+html:is([data-theme="scifi"],[data-theme="cyberdeck"]) .file-card,
+html:is([data-theme="scifi"],[data-theme="cyberdeck"]) .task-overview-strip,
+html:is([data-theme="scifi"],[data-theme="cyberdeck"]) .agent-card {
+  background-image:
+    linear-gradient(var(--accent),var(--accent)),linear-gradient(var(--accent),var(--accent)),
+    linear-gradient(var(--accent),var(--accent)),linear-gradient(var(--accent),var(--accent)),
+    linear-gradient(var(--accent),var(--accent)),linear-gradient(var(--accent),var(--accent)),
+    linear-gradient(var(--accent),var(--accent)),linear-gradient(var(--accent),var(--accent))!important;
+  background-size:11px 1px,11px 1px,1px 11px,1px 11px,11px 1px,11px 1px,1px 11px,1px 11px!important;
+  background-position:top left,top right,top left,top right,bottom left,bottom right,bottom left,bottom right!important;
+  background-repeat:no-repeat!important;
+}
+html:is([data-theme="scifi"],[data-theme="cyberdeck"]) .sidebar,
+html:is([data-theme="scifi"],[data-theme="cyberdeck"]) .topbar,
+html:is([data-theme="scifi"],[data-theme="cyberdeck"]) .right-inspector {
+  border-color:#17424e!important;
+}
+html:is([data-theme="scifi"],[data-theme="cyberdeck"]) .nav-link,
+html:is([data-theme="scifi"],[data-theme="cyberdeck"]) .button,
+html:is([data-theme="scifi"],[data-theme="cyberdeck"]) .icon-button,
+html:is([data-theme="scifi"],[data-theme="cyberdeck"]) .theme-option,
+html:is([data-theme="scifi"],[data-theme="cyberdeck"]) .status-pill,
+html:is([data-theme="scifi"],[data-theme="cyberdeck"]) .filter-pill,
+html:is([data-theme="scifi"],[data-theme="cyberdeck"]) .search-box,
+html:is([data-theme="scifi"],[data-theme="cyberdeck"]) .form-label input,
+html:is([data-theme="scifi"],[data-theme="cyberdeck"]) .form-label select,
+html:is([data-theme="scifi"],[data-theme="cyberdeck"]) .form-label textarea {
+  border-radius:2px!important;
+}
+html:is([data-theme="scifi"],[data-theme="cyberdeck"]) .nav-link.active {
+  box-shadow:inset 2px 0 var(--accent),0 0 12px rgba(0,240,255,.16);
+}
+html:is([data-theme="scifi"],[data-theme="cyberdeck"]) .command-heading h1,
+html:is([data-theme="scifi"],[data-theme="cyberdeck"]) .page-heading h1,
+html:is([data-theme="scifi"],[data-theme="cyberdeck"]) .welcome-row h1 {
+  font-family:'JetBrains Mono',ui-monospace,monospace;
+  letter-spacing:-.055em;
+}
+html:is([data-theme="scifi"],[data-theme="cyberdeck"]) .terminal-input-row {
+  display:flex;
+  align-items:flex-start;
+  gap:10px;
+  min-width:0;
+  padding:10px 12px;
+  border:1px solid #173b47;
+  border-radius:2px;
+  background:#02040a;
+  transition:border-color .16s ease,box-shadow .16s ease;
+}
+html:is([data-theme="scifi"],[data-theme="cyberdeck"]) .terminal-prompt {
+  flex:none;
+  padding-top:13px;
+  color:var(--accent);
+  font:500 11px/1.6 'JetBrains Mono',ui-monospace,monospace;
+  white-space:nowrap;
+}
+html:is([data-theme="scifi"],[data-theme="cyberdeck"]) .composer-panel textarea {
+  min-width:0;
+  border:0;
+  border-top:0;
+  border-radius:0;
+  padding:10px 0 7px;
+  outline:0;
+  color:var(--text-primary)!important;
+  background:#02040a!important;
+  font:400 12px/1.7 'JetBrains Mono',ui-monospace,monospace;
+}
+html:is([data-theme="scifi"],[data-theme="cyberdeck"]) .terminal-input-row:focus-within,
+html:is([data-theme="scifi"],[data-theme="cyberdeck"]) .terminal-input-row:hover {
+  border-color:var(--accent);
+  box-shadow:0 0 0 1px rgba(0,240,255,.35),0 0 12px rgba(0,240,255,.2);
+}
+html:is([data-theme="scifi"],[data-theme="cyberdeck"]) .terminal-prefix {
+  display:block;
+  margin:0 0 5px;
+  color:var(--accent);
+  font:500 9px/1.4 'JetBrains Mono',ui-monospace,monospace;
+  letter-spacing:.08em;
+  text-shadow:0 0 7px rgba(0,240,255,.2);
+}
+html:is([data-theme="scifi"],[data-theme="cyberdeck"]) .log-message p {
+  font-family:'JetBrains Mono',ui-monospace,monospace;
+  overflow-wrap:anywhere;
+}
+html:is([data-theme="scifi"],[data-theme="cyberdeck"]) .terminal-cursor {
+  display:inline-block;
+  margin-left:.35em;
+  color:var(--accent);
+  font-weight:700;
+  text-shadow:0 0 8px rgba(0,240,255,.45);
+  animation:terminal-cursor-blink 1.1s steps(2,start) infinite;
+}
+@keyframes terminal-cursor-blink { to { opacity:0; } }
+@media(max-width:560px) {
+  html:is([data-theme="scifi"],[data-theme="cyberdeck"]) .terminal-input-row { gap:6px;padding:8px; }
+  html:is([data-theme="scifi"],[data-theme="cyberdeck"]) .terminal-prompt { font-size:8px; }
+}
+@media(prefers-reduced-motion:reduce) {
+  html:is([data-theme="scifi"],[data-theme="cyberdeck"]) .terminal-cursor { animation:none; }
 }

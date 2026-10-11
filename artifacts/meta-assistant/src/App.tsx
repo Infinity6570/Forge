@@ -61,17 +61,20 @@ const THEMES = [
 function ThemeChooser() {
   const [theme, setTheme] = useState(() => {
     const saved = localStorage.getItem('morrow-theme');
-    return THEMES.some((item) => item.id === saved) ? saved! : 'cyberdeck';
+    return saved === 'dark' || saved === 'light' ? saved : 'cyberdeck';
   });
   const chooseTheme = (value: string) => {
     if (!THEMES.some((item) => item.id === value)) return;
     setTheme(value);
-    document.documentElement.dataset.theme = value;
+    document.documentElement.dataset.theme = value === 'cyberdeck' ? 'scifi' : value;
     localStorage.setItem('morrow-theme', value);
     window.dispatchEvent(new Event('morrow:theme'));
   };
   useEffect(() => {
-    const sync = () => setTheme(document.documentElement.dataset.theme || 'cyberdeck');
+    const sync = () => {
+      const active = document.documentElement.dataset.theme;
+      setTheme(active === 'dark' || active === 'light' ? active : 'cyberdeck');
+    };
     window.addEventListener('morrow:theme', sync);
     return () => window.removeEventListener('morrow:theme', sync);
   }, []);
@@ -296,9 +299,9 @@ function CodeSnippet({ source, language }: { source: string; language: string })
   return <div className="stream-code"><div><span>{language || 'code'}</span><button onClick={() => void copy()} data-testid="button-copy-task-code"><Copy size={12} />{copied ? 'Copied' : 'Copy'}</button></div><pre><code>{source}</code></pre></div>;
 }
 
-function LogMessage({ message }: { message: string }) {
+function LogMessage({ message, kind }: { message: string; kind: string }) {
   const pieces = message.split(/(```[\s\S]*?```)/g);
-  return <div className="log-message">{pieces.map((piece, index) => {
+  return <div className="log-message"><span className="terminal-prefix" aria-hidden="true">{kind === 'tool' ? '[OP_RUNNER]' : 'FORGE://SYS_OUT >'}</span>{pieces.map((piece, index) => {
     const match = piece.match(/^```([\w-]*)\n?([\s\S]*?)```$/);
     return match ? <CodeSnippet key={index} language={match[1]} source={match[2].replace(/\n$/, '')} /> : <p key={index}>{piece}</p>;
   })}</div>;
@@ -327,10 +330,10 @@ function ActivityStream({ tasks, loading, onOpen }: { tasks: AssistantTask[]; lo
   }} data-testid="activity-stream">
     {tasks.map((task) => <article className="stream-task" key={task.id} data-testid={`stream-task-${task.id}`}>
       <button className="stream-task-heading" onClick={() => onOpen(task)} data-testid={`button-stream-task-${task.id}`}><span className="stream-task-marker"><span className={statusTone(task.status)} /></span><span><strong>{task.objective}</strong><small>{task.currentStep || task.result || task.error || 'Task activity'} · {timeAgo(task.updatedAt)}</small></span><StatusPill status={task.status} /><ArrowRight size={14} /></button>
-      {task.currentStep && <div className="stream-current"><span className="stream-live-mark" /><div><small>CURRENT STEP</small><strong>{task.currentStep}</strong></div></div>}
+      {task.currentStep && <div className="stream-current"><span className="stream-live-mark" /><div><small>CURRENT STEP</small><strong>{task.currentStep}{task.status === 'running' && <span className="terminal-cursor" aria-hidden="true">▋</span>}</strong></div></div>}
       <div className="stream-steps">{(task.logs ?? []).map((log) => <details className="stream-step" key={log.id} open={log.kind === 'error' || log.kind === 'warning'} data-testid={`step-log-${log.id}`}>
         <summary><span className={`log-dot ${log.kind}`} /><span className="step-category">{sectionFor(log.kind, log.message)}</span><span className="step-title">{log.kind}</span><time>{formatDate(log.createdAt)}</time><ChevronDown size={13} /></summary>
-        <div className="step-body"><LogMessage message={log.message} /></div>
+         <div className="step-body"><LogMessage message={log.message} kind={log.kind} /></div>
       </details>)}</div>
       {task.result && <div className="stream-result"><CheckCircle2 size={14} /><span>{task.result}</span></div>}
       {task.error && <div className="stream-error"><AlertCircle size={14} /><span>{task.error}</span></div>}
@@ -461,7 +464,7 @@ function Dashboard() {
     <TaskActionDock task={actionTask.data} />
     <section className="composer-panel command-composer">
       <div className="composer-heading"><span className="composer-icon"><Sparkles size={15} /></span><div><strong>Give Forge a task</strong><span>Specific requests produce better work.</span></div></div>
-      <form onSubmit={submit}><textarea value={objective} onChange={(event) => setObjective(event.target.value)} placeholder="Describe what you want done…" maxLength={12000} rows={2} data-testid="input-objective" aria-label="Task objective" />
+      <form onSubmit={submit}><div className="terminal-input-row"><span className="terminal-prompt" aria-hidden="true">USR@FORGE-6570:~$</span><textarea value={objective} onChange={(event) => setObjective(event.target.value)} placeholder="Describe what you want done…" maxLength={12000} rows={2} data-testid="input-objective" aria-label="Task objective" /></div>
         {attachments.length > 0 && <div className="task-attachments">{attachments.map((file) => <span className="attachment-chip" key={file.id}><FileText size={13} />{file.name}<button type="button" onClick={() => setAttachments((current) => current.filter((item) => item.id !== file.id))} aria-label={`Remove ${file.name}`} data-testid={`button-remove-attachment-${file.id}`}><X size={13} /></button></span>)}</div>}
         {attachmentError && <p className="field-error" role="alert">{attachmentError}</p>}
         <div className="composer-bottom"><span>{submitError ? <span className="field-error">{submitError}</span> : <span>{objective.length.toLocaleString()} / 12,000 characters</span>}</span><div className="composer-actions"><label className="composer-model">Model<select value={modelMode} onChange={(event) => setModelMode(event.target.value as typeof modelMode)} aria-label="Task model tier" data-testid="select-task-model"><option value="configured">Configured default</option><option value="last-used" disabled={!referenceModel}>Last used · {referenceModel ? modelDisplayName(referenceModel.provider, referenceModel.modelId) : 'unavailable'}</option></select></label><input ref={attachmentInput} type="file" hidden onChange={(event) => { void attachFile(event.currentTarget.files?.[0]); }} data-testid="input-task-attachment" /><button type="button" className="button button-quiet submit-button" onClick={() => attachmentInput.current?.click()} disabled={uploadingAttachment} data-testid="button-attach-task-file"><Upload size={14} />{uploadingAttachment ? 'Uploading' : 'Attach'}</button><button className="button button-primary submit-button" disabled={!objective.trim() || isPending || uploadingAttachment} data-testid="button-submit-task">{isPending ? <LoaderCircle className="spin" size={16} /> : <Send size={15} />}{isPending ? 'Sending…' : 'Send'}</button></div></div></form>
@@ -531,11 +534,11 @@ function TaskDetailDialog({ task, loading, error, retry, close, abort, aborting 
     {task.requiresModelConfirmation && <section className="model-recommendation" aria-live="polite" data-testid="task-model-recommendation"><strong>Recommendation:</strong><p>This task involves {task.recommendationReason}. Running on a high-capability model like {recommendedName} may produce better results. Would you like to switch for this task?</p><div className="model-recommendation-actions"><button className="button button-primary" onClick={() => choose(true)} disabled={chooseModel.isPending} data-testid="button-switch-recommended-model">{chooseModel.isPending ? 'Saving choice…' : 'Switch to Recommended Model'}</button><button className="button button-quiet" onClick={() => choose(false)} disabled={chooseModel.isPending} data-testid="button-stay-current-model">Stay on Current Model</button></div></section>}
     {task.recommendationKind === 'fallback' && task.retryAvailable && task.status !== 'running' && <section className="model-recommendation fallback-recommendation" aria-live="polite" data-testid="task-fallback-recommendation"><strong>Task encountered persistent errors on the current model.</strong><p>Would you like to retry this step with {recommendedName}?</p><div className="model-recommendation-actions"><button className="button button-primary" onClick={() => retryFailedStep(true)} disabled={retryStep.isPending} data-testid="button-retry-step-recommended">{retryStep.isPending ? 'Starting retry…' : 'Retry this step with Recommended Pro Model'}</button><button className="button button-quiet" onClick={() => retryFailedStep(false)} disabled={retryStep.isPending} data-testid="button-dismiss-retry-suggestion">Not now</button></div></section>}
     {actionError && <p className="field-error" role="alert">{actionError}</p>}
-    {task.currentStep && <div className="current-step"><span>{task.status === 'awaiting_confirmation' || task.status === 'awaiting_approval' ? <CircleHelp size={16} /> : <span className="tiny-spinner" />}</span><div><small>{task.status === 'awaiting_confirmation' || task.status === 'awaiting_approval' ? 'WAITING FOR YOU' : 'CURRENT STEP'}</small><strong>{task.currentStep}</strong></div></div>}
+    {task.currentStep && <div className="current-step"><span>{task.status === 'awaiting_confirmation' || task.status === 'awaiting_approval' ? <CircleHelp size={16} /> : <span className="tiny-spinner" />}</span><div><small>{task.status === 'awaiting_confirmation' || task.status === 'awaiting_approval' ? 'WAITING FOR YOU' : 'CURRENT STEP'}</small><strong>{task.currentStep}{task.status === 'running' && <span className="terminal-cursor" aria-hidden="true">▋</span>}</strong></div></div>}
     {task.result && <div className="outcome-box"><strong><CheckCircle2 size={16} /> Outcome</strong><p>{task.result}</p></div>}
     {task.error && <div className="error-box"><strong><AlertCircle size={16} /> What happened</strong><p>{task.error}</p></div>}
     <div className="log-heading"><strong>Execution log</strong><span>{task.logs?.length ?? 0} entries</span></div>
-    <div className="log-list">{task.logs?.length ? task.logs.map((log) => <div className="log-item" key={log.id}><span className={`log-dot ${log.kind}`} /><div><div className="log-meta"><strong>{log.kind}</strong><time>{formatDate(log.createdAt)}</time></div><p>{log.message}</p></div></div>) : <div className="log-empty">No execution updates yet. This view refreshes while your task is active.</div>}</div>
+    <div className="log-list">{task.logs?.length ? task.logs.map((log) => <div className="log-item" key={log.id}><span className={`log-dot ${log.kind}`} /><div><div className="log-meta"><strong>{log.kind}</strong><time>{formatDate(log.createdAt)}</time></div><span className="terminal-prefix" aria-hidden="true">{log.kind === 'tool' ? '[OP_RUNNER]' : 'FORGE://SYS_OUT >'}</span><p>{log.message}</p></div></div>) : <div className="log-empty">No execution updates yet. This view refreshes while your task is active.</div>}</div>
     <div className="modal-actions"><button className="button button-quiet" onClick={close}>Close</button>{['queued', 'running'].includes(task.status) && task.currentStep !== 'Running approved command; waiting for operating-system elevation' && <button className="button button-danger" onClick={() => abort(task.id)} disabled={aborting} data-testid="button-abort-task"><StopCircle size={15} />{aborting ? 'Stopping…' : 'Stop task'}</button>}</div>
   </div>}</Modal>;
 }

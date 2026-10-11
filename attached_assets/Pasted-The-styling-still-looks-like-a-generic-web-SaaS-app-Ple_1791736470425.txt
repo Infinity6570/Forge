@@ -1,0 +1,24 @@
+The styling still looks like a generic web SaaS app. Please overhaul the "Sci-Fi Cyberdeck" theme specifically with authentic sci-fi terminal aesthetics:
+
+1. Typography & HUD Fonts:
+   - Import and apply a dedicated technical monospace font (e.g., 'JetBrains Mono', 'Share Tech Mono', or 'Space Mono' via Google Fonts).
+   - Use uppercase micro-headers with tracked letter spacing (`letter-spacing: 0.15em`) for panel headers, status indicators, and badges.
+   - Style assistant messages with terminal prefixes (e.g., `FORGE://SYS_OUT >` or `[OP_RUNNER]`).
+
+2. Angular Geometry & Cyberpunk Borders (Drop standard rounded-xl SaaS cards):
+   - Replace rounded borders (`border-radius: 12px/16px`) in the Sci-Fi theme with chamfered/angled cut corners using CSS clip-path or sharp, crisp 2px corners:
+     `clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 10px, 100% 100%, 0 100%);`
+   - Add technical corner brackets or tick marks on cards and panels (e.g., `+-- [SYSTEM ACTIVE] --+` or tactical corner border accents).
+   - Use high-contrast glowing neon cyan (#00f0ff) borders with subtle box-shadow glows (`box-shadow: 0 0 12px rgba(0, 240, 255, 0.25)`).
+
+3. CRT & Tactical Screen Elements:
+   - Add a subtle scanline overlay or faint grid background pattern across the main dashboard in Sci-Fi mode:
+     `background-image: radial-gradient(rgba(0, 240, 255, 0.08) 1px, transparent 0); background-size: 24px 24px;`
+   - Include a blinking terminal cursor block (`▋`) at the end of streaming text outputs.
+   - Text glow: Apply subtle text-shadow to primary headlines and status badges:
+     `text-shadow: 0 0 8px rgba(0, 240, 255, 0.6);`
+
+4. Chat Input & Console Treatment:
+   - Re-skin the bottom prompt bar into a terminal command console: prefix the prompt with `USR@FORGE-6570:~$`, make the background deep void black (#02040a), and use a neon cyan border focus ring with glowing hover states.
+
+Ensure these aggressive sci-fi visual styles apply under `data-theme="scifi"`, while keeping "Minimalist Dark" and "Minimalist Light" clean, flat, and legible.

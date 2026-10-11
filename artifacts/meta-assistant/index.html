@@ -18,8 +18,8 @@
     <script>
       try {
         var t = localStorage.getItem('morrow-theme');
-        document.documentElement.dataset.theme = ['cyberdeck', 'dark', 'light'].includes(t) ? t : 'cyberdeck';
-      } catch (_) { document.documentElement.dataset.theme = 'cyberdeck'; }
+        document.documentElement.dataset.theme = t === 'dark' || t === 'light' ? t : 'scifi';
+      } catch (_) { document.documentElement.dataset.theme = 'scifi'; }
     </script>
   </head>
   <body>
