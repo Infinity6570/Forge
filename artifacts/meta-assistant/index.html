@@ -3,19 +3,24 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1" />
-    <title>Universal Meta-Agent Assistant</title>
-    <meta name="description" content="Universal Meta-Agent Assistant — built on Replit. Update this description to reflect the app." />
+    <title>Morrow — Personal Command Center</title>
+    <meta name="description" content="A personal command center for ongoing work with your autonomous agent." />
     <meta name="robots" content="index, follow" />
-    <meta property="og:title" content="Universal Meta-Agent Assistant" />
-    <meta property="og:description" content="Universal Meta-Agent Assistant — built on Replit. Update this description to reflect the app." />
+    <meta property="og:title" content="Morrow — Personal Command Center" />
+    <meta property="og:description" content="A personal command center for ongoing work with your autonomous agent." />
     <meta property="og:type" content="website" />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="Universal Meta-Agent Assistant" />
-    <meta name="twitter:description" content="Universal Meta-Agent Assistant — built on Replit. Update this description to reflect the app." />
+    <meta name="twitter:title" content="Morrow — Personal Command Center" />
+    <meta name="twitter:description" content="A personal command center for ongoing work with your autonomous agent." />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script>
+      try {
+        var t = localStorage.getItem('morrow-theme');
+        document.documentElement.dataset.theme = ['cyberdeck', 'dark', 'light'].includes(t) ? t : 'cyberdeck';
+      } catch (_) { document.documentElement.dataset.theme = 'cyberdeck'; }
+    </script>
   </head>
   <body>
     <div id="root"></div>

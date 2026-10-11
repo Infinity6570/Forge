@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { FormEvent, ReactNode } from 'react';
+import type { CSSProperties, FormEvent, ReactNode } from 'react';
 import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
 import { Link, Route, Router as WouterRouter, Switch, useLocation } from 'wouter';
 import {
@@ -32,9 +32,9 @@ import {
 import type { AssistantFile, AssistantNote, AssistantTask, AssistantTimer, WorkspacePreviewApp } from '@workspace/api-client-react';
 import {
   Activity, AlertCircle, ArrowDownToLine, ArrowRight, Bell, BookOpen, Check, CheckCircle2,
-  CircleHelp, Clock3, ExternalLink, FileText, FolderOpen, Gauge, HardDrive, Layers3,
+  ChevronDown, ChevronRight, CircleHelp, Clock3, Copy, ExternalLink, FileText, FolderOpen, Gauge, HardDrive, Layers3,
   KeyRound, LoaderCircle, LockKeyhole, Menu, MoreHorizontal, Plus, RefreshCw, Search,
-  Send, Settings2, ShieldCheck, Sparkles, StopCircle, Trash2, Upload, X, Zap,
+  Send, Settings2, ShieldCheck, Sparkles, StopCircle, Trash2, Upload, X, Zap, PanelRight, GripVertical,
 } from 'lucide-react';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { Toaster } from '@/components/ui/toaster';
@@ -42,14 +42,43 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import NotFound from '@/pages/not-found';
 
 const queryClient = new QueryClient();
-type Page = 'home' | 'tasks' | 'workspace' | 'settings';
+type Page = 'home' | 'tasks' | 'workspace' | 'alarms' | 'settings';
 
 const navItems: { href: string; label: string; icon: typeof Activity }[] = [
   { href: '/', label: 'Command center', icon: Gauge },
   { href: '/tasks', label: 'Task activity', icon: Activity },
   { href: '/workspace', label: 'Workspace', icon: FolderOpen },
+  { href: '/alarms', label: 'Scheduled alarms', icon: Bell },
   { href: '/settings', label: 'Preferences', icon: Settings2 },
 ];
+
+const THEMES = [
+  { id: 'cyberdeck', label: 'Sci-Fi Cyberdeck' },
+  { id: 'dark', label: 'Minimalist Dark' },
+  { id: 'light', label: 'Minimalist Light' },
+] as const;
+
+function ThemeChooser() {
+  const [theme, setTheme] = useState(() => {
+    const saved = localStorage.getItem('morrow-theme');
+    return THEMES.some((item) => item.id === saved) ? saved! : 'cyberdeck';
+  });
+  const chooseTheme = (value: string) => {
+    if (!THEMES.some((item) => item.id === value)) return;
+    setTheme(value);
+    document.documentElement.dataset.theme = value;
+    localStorage.setItem('morrow-theme', value);
+    window.dispatchEvent(new Event('morrow:theme'));
+  };
+  useEffect(() => {
+    const sync = () => setTheme(document.documentElement.dataset.theme || 'cyberdeck');
+    window.addEventListener('morrow:theme', sync);
+    return () => window.removeEventListener('morrow:theme', sync);
+  }, []);
+  return <label className="theme-chooser"><span>Theme</span><select value={theme} onChange={(event) => chooseTheme(event.target.value)} aria-label="Choose appearance theme" data-testid="select-theme">
+    {THEMES.map((item) => <option value={item.id} key={item.id}>{item.label}</option>)}
+  </select></label>;
+}
 
 function timeAgo(value?: string) {
   if (!value) return 'Just now';
@@ -110,10 +139,29 @@ function Modal({ title, onClose, children }: { title: string; onClose: () => voi
 
 function AppShell({ children, page }: { children: ReactNode; page: Page }) {
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [inspectorOpen, setInspectorOpen] = useState(true);
+  const [inspectorWidth, setInspectorWidth] = useState(410);
+  const [resizingInspector, setResizingInspector] = useState(false);
   const [location] = useLocation();
   const routePage = (location === '/' ? 'home' : location.slice(1)) as Page;
   const current = page || routePage;
-  return <div className="app-frame shell-noise">
+  useEffect(() => {
+    if (!resizingInspector) return;
+    const move = (event: PointerEvent) => setInspectorWidth(Math.max(380, Math.min(450, window.innerWidth - event.clientX)));
+    const stop = () => setResizingInspector(false);
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', stop, { once: true });
+    return () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', stop); };
+  }, [resizingInspector]);
+  useEffect(() => {
+    const openPreview = () => {
+      setInspectorOpen(true);
+      window.dispatchEvent(new Event('morrow:show-preview'));
+    };
+    window.addEventListener('morrow:open-preview-inspector', openPreview);
+    return () => window.removeEventListener('morrow:open-preview-inspector', openPreview);
+  }, []);
+  return <div className={`app-frame shell-noise ${inspectorOpen ? 'inspector-open' : 'inspector-closed'}`} style={{ '--inspector-width': `${inspectorWidth}px` } as CSSProperties}>
     <aside className={`sidebar ${mobileOpen ? 'mobile-open' : ''}`}>
       <div className="brand"><div className="brand-mark"><Layers3 size={19} strokeWidth={2.3} /></div><div><div className="brand-name">Morrow</div><div className="brand-caption">PERSONAL AGENT</div></div><button className="sidebar-close icon-button" onClick={() => setMobileOpen(false)} aria-label="Close navigation"><X size={17} /></button></div>
       <div className="workspace-label">YOUR WORKSPACE</div>
@@ -127,18 +175,23 @@ function AppShell({ children, page }: { children: ReactNode; page: Page }) {
     </aside>
     {mobileOpen && <button className="mobile-scrim" onClick={() => setMobileOpen(false)} aria-label="Close menu" />}
     <main className="main-area">
-      <header className="topbar"><button className="mobile-menu icon-button" aria-label="Open navigation" onClick={() => setMobileOpen(true)}><Menu size={20} /></button><div className="breadcrumbs"><span>Workspace</span><span className="crumb-slash">/</span><strong>{navItems.find((n) => (n.href === '/' ? 'home' : n.href.slice(1)) === current)?.label ?? 'Overview'}</strong></div><div className="topbar-right"><div className="system-online"><span className="online-pip" />All systems operational</div><button className="topbar-icon" aria-label="Help" onClick={() => window.alert('Your agent can help with documents, reminders, research, and code-related work.')} data-testid="button-help"><CircleHelp size={18} /></button><div className="topbar-avatar">M</div></div></header>
-      <div className="page-wrap">{children}</div>
-      <footer className="app-footer"><span>Made for thoughtful delegation.</span><span className="footer-build">MORROW <span>·</span> PERSONAL COMMAND CENTER</span></footer>
+      <header className="topbar"><button className="mobile-menu icon-button" aria-label="Open navigation" onClick={() => setMobileOpen(true)} data-testid="button-open-navigation"><Menu size={20} /></button><div className="breadcrumbs"><span>Workspace</span><span className="crumb-slash">/</span><strong>{navItems.find((n) => (n.href === '/' ? 'home' : n.href.slice(1)) === current)?.label ?? 'Overview'}</strong></div><div className="topbar-right"><div className="system-online"><span className="online-pip" />All systems operational</div><ThemeChooser /><button className="inspector-toggle icon-button" aria-label={inspectorOpen ? 'Close workspace inspector' : 'Open workspace inspector'} aria-expanded={inspectorOpen} onClick={() => setInspectorOpen((open) => !open)} data-testid="button-toggle-inspector"><PanelRight size={17} /></button><button className="topbar-icon" aria-label="Help" onClick={() => window.alert('Your agent can help with documents, reminders, research, and code-related work.')} data-testid="button-help"><CircleHelp size={18} /></button><div className="topbar-avatar">M</div></div></header>
+      <div className="center-pane"><div className="page-wrap">{children}</div><footer className="app-footer"><span>Made for thoughtful delegation.</span><span className="footer-build">MORROW <span>·</span> PERSONAL COMMAND CENTER</span></footer></div>
     </main>
+    {inspectorOpen && <div className="inspector-resize" role="separator" aria-orientation="vertical" aria-label="Resize workspace inspector" aria-valuemin={380} aria-valuemax={450} aria-valuenow={inspectorWidth} tabIndex={0} onPointerDown={(event) => { event.preventDefault(); setResizingInspector(true); }} onKeyDown={(event) => { if (event.key === 'ArrowLeft') setInspectorWidth((width) => Math.min(450, width + 10)); if (event.key === 'ArrowRight') setInspectorWidth((width) => Math.max(380, width - 10)); }} data-testid="separator-inspector"><GripVertical size={14} /></div>}
+    {inspectorOpen && <InspectorPanel onClose={() => setInspectorOpen(false)} />}
   </div>;
 }
 
 function QuickSidebarStatus() {
   const { data, isLoading } = useGetAssistantDashboard();
+  const files = useListAssistantFiles();
+  const timers = useListAssistantTimers();
+  const storage = (files.data ?? []).reduce((total, file) => total + file.sizeBytes, 0);
   return <div className="quick-status">
     <div><span className="quick-status-icon"><Activity size={14} /></span><span>In progress</span><strong>{isLoading ? '—' : data?.activeTasks ?? 0}</strong></div>
-    <div><span className="quick-status-icon amber"><Bell size={14} /></span><span>Reminders</span><strong>{isLoading ? '—' : data?.activeTimers ?? 0}</strong></div>
+    <div><span className="quick-status-icon amber"><Bell size={14} /></span><span>Active alarms</span><strong>{timers.isLoading ? '—' : (timers.data ?? []).filter((timer) => timer.status === 'active').length}</strong></div>
+    <div className="sidebar-storage"><span className="quick-status-icon"><HardDrive size={14} /></span><span>Workspace storage</span><strong>{files.isLoading ? '—' : formatSize(storage)}</strong></div>
   </div>;
 }
 
@@ -204,6 +257,105 @@ function TaskStatusLine({ task, compact = false, onClick }: { task: AssistantTas
   </button>;
 }
 
+function CodeSnippet({ source, language }: { source: string; language: string }) {
+  const [copied, setCopied] = useState(false);
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(source);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    } catch { setCopied(false); }
+  };
+  return <div className="stream-code"><div><span>{language || 'code'}</span><button onClick={() => void copy()} data-testid="button-copy-task-code"><Copy size={12} />{copied ? 'Copied' : 'Copy'}</button></div><pre><code>{source}</code></pre></div>;
+}
+
+function LogMessage({ message }: { message: string }) {
+  const pieces = message.split(/(```[\s\S]*?```)/g);
+  return <div className="log-message">{pieces.map((piece, index) => {
+    const match = piece.match(/^```([\w-]*)\n?([\s\S]*?)```$/);
+    return match ? <CodeSnippet key={index} language={match[1]} source={match[2].replace(/\n$/, '')} /> : <p key={index}>{piece}</p>;
+  })}</div>;
+}
+
+function ActivityStream({ tasks, loading, onOpen }: { tasks: AssistantTask[]; loading: boolean; onOpen: (task: AssistantTask) => void }) {
+  const scroller = useRef<HTMLDivElement>(null);
+  const following = useRef(true);
+  const streamKey = tasks.map((task) => `${task.id}:${task.logs?.length ?? 0}:${task.updatedAt}`).join('|');
+  useEffect(() => {
+    if (following.current && scroller.current) scroller.current.scrollTop = scroller.current.scrollHeight;
+  }, [streamKey]);
+  const sectionFor = (kind: string, message: string) => {
+    const lower = message.toLowerCase();
+    if (kind === 'plan') return 'Planning';
+    if (kind === 'tool' && /terminal|shell|command|python|node|bash/.test(lower)) return 'Terminal runs';
+    if (kind === 'tool') return 'Tool calls';
+    if (kind === 'success' || kind === 'result' || /verif|check|test/.test(lower)) return 'Verification';
+    return 'Agent activity';
+  };
+  if (loading) return <div className="activity-stream"><Skeleton rows={6} /></div>;
+  if (!tasks.length) return <div className="activity-stream"><div className="stream-empty"><Activity size={20} /><strong>Waiting for your first task</strong><span>Send a request below. Real execution steps will appear here.</span></div></div>;
+  return <div className="activity-stream" ref={scroller} onScroll={(event) => {
+    const element = event.currentTarget;
+    following.current = element.scrollHeight - element.scrollTop - element.clientHeight < 72;
+  }} data-testid="activity-stream">
+    {tasks.map((task) => <article className="stream-task" key={task.id} data-testid={`stream-task-${task.id}`}>
+      <button className="stream-task-heading" onClick={() => onOpen(task)} data-testid={`button-stream-task-${task.id}`}><span className="stream-task-marker"><span className={statusTone(task.status)} /></span><span><strong>{task.objective}</strong><small>{task.currentStep || task.result || task.error || 'Task activity'} · {timeAgo(task.updatedAt)}</small></span><StatusPill status={task.status} /><ArrowRight size={14} /></button>
+      {task.currentStep && <div className="stream-current"><span className="stream-live-mark" /><div><small>CURRENT STEP</small><strong>{task.currentStep}</strong></div></div>}
+      <div className="stream-steps">{(task.logs ?? []).map((log) => <details className="stream-step" key={log.id} open={log.kind === 'error' || log.kind === 'warning'} data-testid={`step-log-${log.id}`}>
+        <summary><span className={`log-dot ${log.kind}`} /><span className="step-category">{sectionFor(log.kind, log.message)}</span><span className="step-title">{log.kind}</span><time>{formatDate(log.createdAt)}</time><ChevronDown size={13} /></summary>
+        <div className="step-body"><LogMessage message={log.message} /></div>
+      </details>)}</div>
+      {task.result && <div className="stream-result"><CheckCircle2 size={14} /><span>{task.result}</span></div>}
+      {task.error && <div className="stream-error"><AlertCircle size={14} /><span>{task.error}</span></div>}
+      {!task.currentStep && !task.logs?.length && !task.result && !task.error && <p className="stream-no-events">No execution updates yet.</p>}
+    </article>)}
+  </div>;
+}
+
+function TaskActionDock({ task }: { task?: AssistantTask }) {
+  const qc = useQueryClient();
+  const approval = useChooseAssistantTaskApproval();
+  const model = useChooseAssistantTaskModel();
+  const retry = useRetryAssistantTaskStep();
+  const [error, setError] = useState('');
+  if (!task) return null;
+  const update = (updated: AssistantTask) => {
+    qc.setQueryData(getGetAssistantTaskQueryKey(updated.id), updated);
+    qc.invalidateQueries({ queryKey: getGetAssistantDashboardQueryKey() });
+    qc.invalidateQueries({ queryKey: getListAssistantTasksQueryKey() });
+  };
+  const isElevated = task.pendingApprovalKind === 'elevated_command';
+  const needsApproval = task.requiresApproval && !!task.pendingApprovalId;
+  const needsModel = task.requiresModelConfirmation;
+  const needsFallback = task.recommendationKind === 'fallback' && task.retryAvailable && task.status !== 'running';
+  if (!needsApproval && !needsModel && !needsFallback) return null;
+  const decide = (approve: boolean) => {
+    if (!task.pendingApprovalId) return;
+    setError('');
+    approval.mutate({ id: task.id, data: { approvalId: task.pendingApprovalId, approve } }, { onSuccess: update, onError: () => setError('The workspace approval decision could not be saved. Please try again.') });
+  };
+  const choose = (switchToRecommendation: boolean) => {
+    setError('');
+    model.mutate({ id: task.id, data: { switchToRecommendation } }, { onSuccess: update, onError: () => setError('Your model choice could not be saved. Please try again.') });
+  };
+  const retryStep = (shouldRetry: boolean) => {
+    setError('');
+    retry.mutate({ id: task.id, data: { retry: shouldRetry } }, { onSuccess: update, onError: () => setError('The specialist retry could not be started. Please try again.') });
+  };
+  const recommended = modelDisplayName(task.recommendedProvider, task.recommendedModelId);
+  const elevationLabel = typeof navigator !== 'undefined' && navigator.platform.toLowerCase().startsWith('win') ? 'Approve & Run with UAC' : 'Approve & Run with OS elevation';
+  return <section className="action-dock" aria-label="Task decisions" data-testid="task-action-dock">
+    <div className="dock-heading"><span className="dock-alert" /><strong>Waiting for your decision</strong><span>{task.objective}</span></div>
+    {needsApproval && <div className={`dock-card ${isElevated ? 'security-warning' : ''}`} data-testid={isElevated ? 'dock-elevated-approval' : 'dock-workspace-approval'}>
+      {isElevated ? <><strong>Administrative Privilege Requested</strong><p>The agent is requesting permission to execute this command with elevated system permissions:</p><code>{task.approvalSummary}</code><p>Nothing runs until you approve. The invocation will be recorded in <code>logs/elevated_audit.log</code>.</p><p>If pkexec is unavailable, the sudo fallback requires an already-authorized non-interactive sudo session and fails closed otherwise.</p></> : <><strong>Workspace action needs your approval</strong><p>{task.approvalSummary} The agent is paused; no change has been made yet.</p></>}
+      <div className="model-recommendation-actions"><button className="button button-primary" onClick={() => decide(true)} disabled={approval.isPending} data-testid="button-dock-approve">{approval.isPending ? 'Applying…' : isElevated ? elevationLabel : 'Approve and continue'}</button><button className="button button-quiet" onClick={() => decide(false)} disabled={approval.isPending} data-testid="button-dock-reject">{isElevated ? 'Reject Action' : 'Reject and continue'}</button></div>
+    </div>}
+    {needsModel && <div className="dock-card" data-testid="dock-model-recommendation"><strong>Recommendation:</strong><p>This task involves {task.recommendationReason}. Running on a high-capability model like {recommended} may produce better results. Would you like to switch for this task?</p><div className="model-recommendation-actions"><button className="button button-primary" onClick={() => choose(true)} disabled={model.isPending} data-testid="button-dock-switch-model">{model.isPending ? 'Saving choice…' : 'Switch to Recommended Model'}</button><button className="button button-quiet" onClick={() => choose(false)} disabled={model.isPending} data-testid="button-dock-stay-model">Stay on Current Model</button></div></div>}
+    {needsFallback && <div className="dock-card security-warning" data-testid="dock-fallback-recommendation"><strong>Task encountered persistent errors on the current model.</strong><p>Would you like to retry this step with {recommended}?</p><div className="model-recommendation-actions"><button className="button button-primary" onClick={() => retryStep(true)} disabled={retry.isPending} data-testid="button-dock-retry-model">{retry.isPending ? 'Starting retry…' : 'Retry this step with Recommended Pro Model'}</button><button className="button button-quiet" onClick={() => retryStep(false)} disabled={retry.isPending} data-testid="button-dock-dismiss-retry">Not now</button></div></div>}
+    {error && <p className="field-error" role="alert">{error}</p>}
+  </section>;
+}
+
 function Dashboard() {
   const qc = useQueryClient();
   const summary = useGetAssistantDashboard();
@@ -212,21 +364,34 @@ function Dashboard() {
   const [objective, setObjective] = useState('');
   const [submitError, setSubmitError] = useState('');
   const [selectedTaskId, setSelectedTaskId] = useState<string>();
+  const [attachments, setAttachments] = useState<AssistantFile[]>([]);
+  const [uploadingAttachment, setUploadingAttachment] = useState(false);
+  const [attachmentError, setAttachmentError] = useState('');
+  const [modelMode, setModelMode] = useState<'configured' | 'last-used'>('configured');
+  const attachmentInput = useRef<HTMLInputElement>(null);
   const details = useGetAssistantTask(selectedTaskId ?? '', { query: { enabled: !!selectedTaskId, queryKey: getGetAssistantTaskQueryKey(selectedTaskId ?? ''), refetchInterval: (query) => {
     const task = query.state.data;
     return task && ['queued', 'running', 'awaiting_approval', 'awaiting_confirmation'].includes(task.status) ? 2500 : false;
   } } });
   const abort = useAbortAssistantTask();
   const tasks = summary.data?.recentTasks ?? listTasks.data ?? [];
+  const actionTaskId = tasks.find((task) => task.requiresApproval || task.requiresModelConfirmation || task.recommendationKind === 'fallback')?.id
+    ?? tasks.find((task) => ['running', 'queued', 'awaiting_confirmation', 'awaiting_approval'].includes(task.status))?.id ?? '';
+  const actionTask = useGetAssistantTask(actionTaskId, { query: { enabled: !!actionTaskId, queryKey: getGetAssistantTaskQueryKey(actionTaskId), refetchInterval: (query) => {
+    const task = query.state.data;
+    return task && ['queued', 'running', 'awaiting_approval', 'awaiting_confirmation'].includes(task.status) ? 2500 : false;
+  } } });
+  const referenceModel = tasks.find((task) => task.modelId);
   const isPending = createTask.isPending;
   const submit = (event: FormEvent) => {
     event.preventDefault();
     const text = objective.trim();
     if (!text) return;
     setSubmitError('');
-    createTask.mutate({ data: { objective: text } }, {
+    createTask.mutate({ data: { objective: text, ...(attachments.length ? { fileIds: attachments.map((file) => file.id) } : {}), ...(modelMode === 'last-used' && referenceModel ? { provider: referenceModel.provider, modelId: referenceModel.modelId } : {}) } }, {
       onSuccess: (task) => {
         setObjective('');
+        setAttachments([]);
         setSelectedTaskId(task.id);
         qc.invalidateQueries({ queryKey: getGetAssistantDashboardQueryKey() });
         qc.invalidateQueries({ queryKey: getListAssistantTasksQueryKey() });
@@ -234,28 +399,46 @@ function Dashboard() {
       onError: () => setSubmitError('Your request could not be sent. Please try again.'),
     });
   };
+  const attachFile = async (file?: File) => {
+    if (!file) return;
+    setUploadingAttachment(true);
+    setAttachmentError('');
+    try {
+      const body = new FormData();
+      body.append('file', file);
+      const response = await fetch('/api/assistant/files', { method: 'POST', body, credentials: 'include' });
+      if (!response.ok) throw new Error('Upload failed');
+      const uploaded = await response.json() as AssistantFile;
+      setAttachments((current) => [...current, uploaded]);
+      await qc.invalidateQueries({ queryKey: getListAssistantFilesQueryKey() });
+      await qc.invalidateQueries({ queryKey: getGetAssistantDashboardQueryKey() });
+    } catch {
+      setAttachmentError('The attachment could not be uploaded. Try again from Workspace Files.');
+    } finally {
+      setUploadingAttachment(false);
+      if (attachmentInput.current) attachmentInput.current.value = '';
+    }
+  };
   const counts = [
     { label: 'In motion', value: summary.data?.activeTasks, icon: Activity, tint: 'teal', note: 'tasks running now' },
     { label: 'Completed', value: summary.data?.completedTasks, icon: CheckCircle2, tint: 'blue', note: 'outcomes delivered' },
     { label: 'Reminders', value: summary.data?.activeTimers, icon: Bell, tint: 'amber', note: 'upcoming or active' },
     { label: 'Knowledge', value: (summary.data?.notesCount ?? 0) + (summary.data?.filesCount ?? 0), icon: BookOpen, tint: 'plum', note: `${summary.data?.notesCount ?? 0} notes · ${summary.data?.filesCount ?? 0} files` },
   ];
-  return <AppShell page="home"><div className="dashboard-page enter">
-    <div className="welcome-row"><div><p className="eyebrow">YOUR COMMAND CENTER</p><h1 className="font-display">Make room for<br /><em>the work that matters.</em></h1><p className="page-description">Give your agent the busywork. Keep your attention for the big picture.</p></div><div className="welcome-stamp"><div className="stamp-orbit"><span /><i /></div><span>AGENT<br />STANDBY</span></div></div>
-    <section className="composer-panel">
-      <div className="composer-heading"><span className="composer-icon"><Sparkles size={16} /></span><div><strong>What should I take care of?</strong><span>Documents, research, reminders, or code tasks</span></div><span className="composer-shortcut">⌘ ↵</span></div>
-      <form onSubmit={submit}><textarea value={objective} onChange={(event) => setObjective(event.target.value)} placeholder="For example: Compare these two proposals and summarize the trade-offs…" maxLength={12000} rows={2} data-testid="input-objective" aria-label="Task objective" /><div className="composer-bottom"><span>{submitError ? <span className="field-error">{submitError}</span> : <span>Be specific. Your agent will show its work as it goes.</span>}<span className="char-count">{objective.length.toLocaleString()} / 12,000</span></span><button className="button button-primary submit-button" disabled={!objective.trim() || isPending} data-testid="button-submit-task">{isPending ? <LoaderCircle className="spin" size={16} /> : <Send size={15} />}{isPending ? 'Sending…' : 'Send to agent'}</button></div></form>
-    </section>
+  return <AppShell page="home"><div className="dashboard-page command-center enter">
+    <div className="command-heading"><div><p className="eyebrow">MORROW / COMMAND CENTER</p><h1>Work in motion</h1></div><div className="command-status" data-testid="status-agent-state"><span className={`online-pip ${summary.data?.activeTasks ? 'working' : ''}`} />{summary.isLoading ? 'Connecting' : summary.data?.activeTasks ? 'Running' : 'Idle'}<span className="status-divider" />{referenceModel ? modelDisplayName(referenceModel.provider, referenceModel.modelId) : 'Configured model'}</div></div>
     {summary.isError && <QueryProblem retry={() => summary.refetch()} message="Your overview is temporarily unavailable." />}
-    <section className="stat-grid stagger" aria-label="Workspace summary">{counts.map(({ label, value, icon: Icon, tint, note }) => <article className="stat-card" key={label} data-testid={`stat-${label.toLowerCase().replaceAll(' ', '-')}`}><div className={`stat-icon ${tint}`}><Icon size={17} /></div><div className="stat-label">{label}</div><div className="stat-number">{summary.isLoading ? <span className="number-skeleton" /> : value ?? 0}</div><div className="stat-note">{note}</div></article>)}</section>
-    <section className="dashboard-lower">
-      <div className="panel recent-panel"><div className="panel-heading"><div><p className="eyebrow">LATEST ACTIVITY</p><h2 className="font-display">Recent tasks</h2></div><Link href="/tasks" className="text-link" data-testid="link-all-tasks">See all <ArrowRight size={14} /></Link></div>
-        {summary.isLoading && listTasks.isLoading ? <Skeleton rows={4} /> : listTasks.isError && !summary.data ? <QueryProblem retry={() => listTasks.refetch()} /> : tasks.length ? <div className="task-list">{tasks.slice(0, 5).map((task) => <TaskStatusLine key={task.id} task={task} compact onClick={() => setSelectedTaskId(task.id)} />)}</div> : <div className="empty-state compact-empty"><div className="empty-mark"><Zap size={18} /></div><strong>A clear desk</strong><p>Your agent’s work will show up here.</p></div>}
-      </div>
-      <div className="right-rail">
-        <div className="focus-card"><div className="focus-kicker"><span className="online-pip" />READY WHEN YOU ARE</div><h2 className="font-display">One clear<br />request at a time.</h2><p>Tasks stay visible from first step to final result. You’re always in control.</p><div className="focus-rule" /><Link href="/settings" className="focus-link" data-testid="link-safety-controls">Explore safety controls <ArrowRight size={14} /></Link></div>
-        <div className="mini-resource"><div className="mini-resource-top"><span className="mini-resource-icon"><HardDrive size={16} /></span><span>Workspace library</span><ArrowRight size={14} /></div><strong>{summary.data?.filesCount ?? 0} files <i /> {summary.data?.notesCount ?? 0} notes</strong><Link href="/workspace" className="mini-resource-link" data-testid="link-open-workspace">Browse saved material</Link></div>
-      </div>
+    <div className="command-metrics" aria-label="Workspace status">{counts.map(({ label, value }) => <span key={label} data-testid={`metric-${label.toLowerCase().replaceAll(' ', '-')}`}><i />{label}<strong>{summary.isLoading ? '—' : value ?? 0}</strong></span>)}</div>
+    <section className="activity-panel"><div className="activity-panel-heading"><div><span className="live-label"><span className="online-pip" />LIVE TASK STREAM</span><h2>Recent execution</h2></div><Link href="/tasks" className="text-link" data-testid="link-all-tasks">Task activity <ArrowRight size={14} /></Link></div>
+      {listTasks.isError && !summary.data ? <QueryProblem retry={() => listTasks.refetch()} /> : <ActivityStream tasks={tasks.slice(0, 8)} loading={summary.isLoading && listTasks.isLoading} onOpen={(task) => setSelectedTaskId(task.id)} />}
+    </section>
+    <TaskActionDock task={actionTask.data} />
+    <section className="composer-panel command-composer">
+      <div className="composer-heading"><span className="composer-icon"><Sparkles size={15} /></span><div><strong>Give Morrow a task</strong><span>Specific requests produce better work.</span></div></div>
+      <form onSubmit={submit}><textarea value={objective} onChange={(event) => setObjective(event.target.value)} placeholder="Describe what you want done…" maxLength={12000} rows={2} data-testid="input-objective" aria-label="Task objective" />
+        {attachments.length > 0 && <div className="task-attachments">{attachments.map((file) => <span className="attachment-chip" key={file.id}><FileText size={13} />{file.name}<button type="button" onClick={() => setAttachments((current) => current.filter((item) => item.id !== file.id))} aria-label={`Remove ${file.name}`} data-testid={`button-remove-attachment-${file.id}`}><X size={13} /></button></span>)}</div>}
+        {attachmentError && <p className="field-error" role="alert">{attachmentError}</p>}
+        <div className="composer-bottom"><span>{submitError ? <span className="field-error">{submitError}</span> : <span>{objective.length.toLocaleString()} / 12,000 characters</span>}</span><div className="composer-actions"><label className="composer-model">Model<select value={modelMode} onChange={(event) => setModelMode(event.target.value as typeof modelMode)} aria-label="Task model tier" data-testid="select-task-model"><option value="configured">Configured default</option><option value="last-used" disabled={!referenceModel}>Last used · {referenceModel ? modelDisplayName(referenceModel.provider, referenceModel.modelId) : 'unavailable'}</option></select></label><input ref={attachmentInput} type="file" hidden onChange={(event) => { void attachFile(event.currentTarget.files?.[0]); }} data-testid="input-task-attachment" /><button type="button" className="button button-quiet submit-button" onClick={() => attachmentInput.current?.click()} disabled={uploadingAttachment} data-testid="button-attach-task-file"><Upload size={14} />{uploadingAttachment ? 'Uploading' : 'Attach'}</button><button className="button button-primary submit-button" disabled={!objective.trim() || isPending || uploadingAttachment} data-testid="button-submit-task">{isPending ? <LoaderCircle className="spin" size={16} /> : <Send size={15} />}{isPending ? 'Sending…' : 'Send'}</button></div></div></form>
     </section>
     {selectedTaskId && <TaskDetailDialog task={details.data} loading={details.isLoading} error={details.isError} retry={() => details.refetch()} close={() => setSelectedTaskId(undefined)} abort={(id) => abort.mutate({ id }, { onSuccess: () => { qc.invalidateQueries({ queryKey: getGetAssistantDashboardQueryKey() }); qc.invalidateQueries({ queryKey: getListAssistantTasksQueryKey() }); } })} aborting={abort.isPending} />}
   </div></AppShell>;
@@ -470,6 +653,52 @@ function WorkspacePreview() {
   </section>;
 }
 
+function WorkspaceInspector() {
+  const filesQuery = useListAssistantFiles();
+  const files = filesQuery.data ?? [];
+  const [selectedId, setSelectedId] = useState('');
+  const selected = files.find((file) => file.id === selectedId) ?? files[0];
+  const [copied, setCopied] = useState(false);
+  const lines = (selected?.extractedText ?? '').split('\n');
+  const language = selected?.name.split('.').pop()?.toLowerCase() ?? 'text';
+  return <div className="workspace-inspector" data-testid="workspace-inspector">
+    <div className="inspector-files">
+      <div className="inspector-section-label"><FolderOpen size={14} /> WORKSPACE FILES</div>
+      {filesQuery.isLoading ? <Skeleton rows={4} /> : filesQuery.isError ? <QueryProblem retry={() => filesQuery.refetch()} /> : files.length ? files.map((file) =>
+        <button key={file.id} className={`inspector-file ${selected?.id === file.id ? 'selected' : ''}`} onClick={() => setSelectedId(file.id)} data-testid={`button-inspector-file-${file.id}`}>
+          <FileText size={14} /><span>{file.name}</span><small>{formatSize(file.sizeBytes)}</small>
+        </button>) : <div className="inspector-empty">No workspace files yet.</div>}
+    </div>
+    <div className="inspector-file-preview">
+      {selected ? <>
+        <div className="inspector-file-heading"><div><strong>{selected.name}</strong><span>{language.toUpperCase()} · {lines.length} lines</span></div><button className="icon-button" aria-label="Copy file contents" onClick={() => { void navigator.clipboard?.writeText(selected.extractedText).then(() => { setCopied(true); window.setTimeout(() => setCopied(false), 1400); }); }} data-testid="button-copy-inspector-file"><Copy size={14} /></button></div>
+        {copied && <span className="copy-feedback" role="status" data-testid="status-file-copied">Copied</span>}
+        <pre className={`file-code lang-${language}`} data-testid="code-inspector-file"><code>{lines.map((line, index) => <span className="code-line" key={index}><i>{index + 1}</i><span>{line.split(/("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|\/\/.*$|#.*$|\b(?:const|let|var|function|return|import|from|if|else|class|def|for|while|async|await|export|true|false|null|None)\b)/g).map((token, part) => {
+          const cls = /^["']/.test(token) ? 'syntax-string' : /^(\/\/|#)/.test(token) ? 'syntax-comment' : /^(const|let|var|function|return|import|from|if|else|class|def|for|while|async|await|export|true|false|null|None)$/.test(token) ? 'syntax-keyword' : '';
+          return <span className={cls} key={part}>{token}</span>;
+        })}</span></span>)}</code></pre>
+      </> : <div className="inspector-empty-preview"><FileText size={22} /><strong>Select a file</strong><span>Choose a workspace file to inspect its extracted contents.</span></div>}
+    </div>
+  </div>;
+}
+
+function InspectorPanel({ onClose }: { onClose: () => void }) {
+  const [tab, setTab] = useState<'preview' | 'files'>('preview');
+  useEffect(() => {
+    const showPreview = () => setTab('preview');
+    window.addEventListener('morrow:show-preview', showPreview);
+    return () => window.removeEventListener('morrow:show-preview', showPreview);
+  }, []);
+  return <aside className="right-inspector" aria-label="Workspace inspector" data-testid="right-inspector">
+    <div className="inspector-heading"><div><span className="eyebrow">INSPECTOR</span><strong>Workspace</strong></div><button className="icon-button" onClick={onClose} aria-label="Close inspector" data-testid="button-close-inspector"><X size={16} /></button></div>
+    <div className="inspector-tabs" role="tablist" aria-label="Inspector views">
+      <button role="tab" aria-selected={tab === 'preview'} className={tab === 'preview' ? 'active' : ''} onClick={() => setTab('preview')} data-testid="tab-inspector-live-preview">Live Preview</button>
+      <button role="tab" aria-selected={tab === 'files'} className={tab === 'files' ? 'active' : ''} onClick={() => setTab('files')} data-testid="tab-workspace-inspector">Workspace Inspector</button>
+    </div>
+    <div className="inspector-content">{tab === 'preview' ? <WorkspacePreview /> : <WorkspaceInspector />}</div>
+  </aside>;
+}
+
 function WorkspacePage() {
   const qc = useQueryClient();
   const notesQuery = useListAssistantNotes();
@@ -517,8 +746,8 @@ function WorkspacePage() {
     <PageHeading eyebrow="REFERENCE LIBRARY" title="Workspace" description="Files and notes your agent can draw on when the context matters." right={<><a className="button button-quiet" href="/api/assistant/workspace.zip" download data-testid="button-download-workspace"><ArrowDownToLine size={15} /> Download ZIP</a><label className={`button button-quiet ${uploading ? 'disabled' : ''}`} htmlFor="workspace-upload" data-testid="button-upload-file"><Upload size={15} />{uploading ? 'Uploading…' : 'Upload file'}<input id="workspace-upload" type="file" hidden disabled={uploading} onChange={(e) => { void onUpload(e.currentTarget.files?.[0]); e.currentTarget.value = ''; }} /></label><button className="button button-primary" onClick={() => setNoteOpen(true)} data-testid="button-new-note"><Plus size={16} /> New note</button></>} />
     <div className="library-intro"><div className="library-graphic"><div className="graphic-file"><FileText size={22} /></div><div className="graphic-note"><BookOpen size={19} /></div><div className="graphic-orbit" /></div><div><strong>A little context goes a long way.</strong><p>Keep source material and useful details close. Your agent can reference uploaded files and saved notes in future work.</p></div></div>
     {uploadError && <div className="inline-error"><AlertCircle size={15} />{uploadError}<button onClick={() => setUploadError('')} aria-label="Dismiss upload error"><X size={14} /></button></div>}
-    <section className="panel library-panel"><div className="library-toolbar"><div className="library-tabs"><button onClick={() => setTab('files')} className={tab === 'files' ? 'active' : ''} data-testid="tab-files"><FileText size={15} /> Files <span>{filesQuery.data?.length ?? 0}</span></button><button onClick={() => setTab('notes')} className={tab === 'notes' ? 'active' : ''} data-testid="tab-notes"><BookOpen size={15} /> Notes <span>{notesQuery.data?.length ?? 0}</span></button><button onClick={() => setTab('preview')} className={tab === 'preview' ? 'active' : ''} data-testid="tab-live-preview"><Layers3 size={15} /> Live Preview</button></div>{tab !== 'preview' && <label className="search-box"><Search size={15} /><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={`Search ${tab}`} aria-label={`Search ${tab}`} data-testid="input-search-library" /></label>}</div>
-      {tab === 'preview' ? <WorkspacePreview /> : <>
+    <section className="panel library-panel"><div className="library-toolbar"><div className="library-tabs"><button onClick={() => setTab('files')} className={tab === 'files' ? 'active' : ''} data-testid="tab-files"><FileText size={15} /> Files <span>{filesQuery.data?.length ?? 0}</span></button><button onClick={() => setTab('notes')} className={tab === 'notes' ? 'active' : ''} data-testid="tab-notes"><BookOpen size={15} /> Notes <span>{notesQuery.data?.length ?? 0}</span></button><button onClick={() => { setTab('preview'); window.dispatchEvent(new Event('morrow:open-preview-inspector')); }} className={tab === 'preview' ? 'active' : ''} data-testid="tab-live-preview"><Layers3 size={15} /> Live Preview</button></div>{tab !== 'preview' && <label className="search-box"><Search size={15} /><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={`Search ${tab}`} aria-label={`Search ${tab}`} data-testid="input-search-library" /></label>}</div>
+      {tab === 'preview' ? <div className="preview-in-inspector"><div className="preview-state-icon"><Layers3 size={20} /></div><strong>Live preview is open in the inspector</strong><p>Refresh, navigate, and stop preview apps from the right-side workspace panel.</p><button className="button button-primary button-small" onClick={() => window.dispatchEvent(new Event('morrow:open-preview-inspector'))} data-testid="button-open-preview-inspector"><PanelRight size={14} /> Show inspector</button></div> : <>
       {tab === 'files' ? filesQuery.isLoading ? <div className="library-loading"><Skeleton rows={4} /></div> : filesQuery.isError ? <QueryProblem retry={() => filesQuery.refetch()} /> : filteredFiles.length ? <div className="file-list">{filteredFiles.map((file) => <div className="file-row" key={file.id}><span className="file-type-icon"><FileText size={18} /></span><div className="file-main"><strong>{file.name}</strong><span>{file.mimeType || 'Document'} <i /> {formatSize(file.sizeBytes)}</span></div><span className="file-added">{timeAgo(file.createdAt)}</span><div className="row-actions"><button onClick={() => setSelectedFile(file)} className="icon-button" aria-label={`Preview ${file.name}`} data-testid={`button-preview-file-${file.id}`}><ArrowDownToLine size={16} /></button><button onClick={() => removeFile(file)} className="icon-button danger-hover" aria-label={`Delete ${file.name}`} data-testid={`button-delete-file-${file.id}`}><Trash2 size={16} /></button></div></div>)}</div> : <div className="empty-state"><div className="empty-mark"><Upload size={19} /></div><strong>{search ? 'No files found' : 'Start with a source file'}</strong><p>{search ? 'Try a different name.' : 'Upload a document, PDF, or text file to give your agent context.'}</p>{!search && <label htmlFor="workspace-upload" className="button button-primary button-small"><Upload size={14} /> Upload your first file</label>}</div>
       : notesQuery.isLoading ? <div className="library-loading"><Skeleton rows={4} /></div> : notesQuery.isError ? <QueryProblem retry={() => notesQuery.refetch()} /> : filteredNotes.length ? <div className="note-grid">{filteredNotes.map((note) => <article className="note-card" key={note.id}><div className="note-card-top"><span className="note-glyph"><BookOpen size={15} /></span><button className="icon-button danger-hover" aria-label={`Delete ${note.title}`} onClick={() => removeNote(note)} data-testid={`button-delete-note-${note.id}`}><Trash2 size={15} /></button></div><h3>{note.title}</h3><p>{note.content || 'An empty note, ready for useful context.'}</p><div className="note-tags">{note.tags.map((tag) => <span key={tag}>{tag}</span>)}</div><div className="note-card-foot">UPDATED {timeAgo(note.updatedAt).toUpperCase()}</div></article>)}</div> : <div className="empty-state"><div className="empty-mark"><BookOpen size={19} /></div><strong>{search ? 'No notes found' : 'Nothing noted yet'}</strong><p>{search ? 'Try another search.' : 'Save a detail you want your agent to remember.'}</p>{!search && <button className="button button-primary button-small" onClick={() => setNoteOpen(true)} data-testid="button-first-note"><Plus size={14} /> Write a note</button>}</div>}
       </>}
@@ -657,6 +886,7 @@ function SettingsPage() {
     }
   };
   return <AppShell page="settings"><div className="content-page settings-page enter">
+    <section className="settings-section theme-settings"><div className="settings-section-heading"><div><h2>Appearance</h2><p>Choose the command center color system.</p></div><ThemeChooser /></div></section>
     <PageHeading eyebrow="AGENT CONFIGURATION" title="Preferences" description="Choose how your agent works and where it should pause for your approval." />
     <section className="settings-section model-section"><div className="settings-section-heading"><div className="section-symbol"><Zap size={17} /></div><div><h2>Model selection</h2><p>Choose a provider and working model for new tasks.</p></div><button className="button button-quiet button-small" onClick={() => { setProviderError(''); setProviderModalOpen(true); }} data-testid="button-configure-provider"><KeyRound size={14} /> Configure provider</button></div>
       <label className="form-label provider-select-label">Provider<select value={provider} onChange={(event) => { const next = event.target.value as typeof provider; setProvider(next); setModelId(models[next][0].id); setCustomModelId(''); }} data-testid="select-model-provider"><option value="openai">OpenAI</option><option value="deepseek">DeepSeek</option><option value="gemini">Google Gemini</option><option value="openrouter">OpenRouter</option></select></label>
@@ -721,12 +951,20 @@ function TimersManager() {
   </section>;
 }
 
+function AlarmsPage() {
+  return <AppShell page="alarms"><div className="content-page enter">
+    <PageHeading eyebrow="TIME & REMINDERS" title="Scheduled alarms" description="Set a precise nudge, then let it arrive when it matters." />
+    <TimersManager />
+  </div></AppShell>;
+}
+
 function Router() {
   const [location] = useLocation();
   return <ErrorBoundary resetKey={location}><Switch>
     <Route path="/" component={Dashboard} />
     <Route path="/tasks" component={TasksPage} />
     <Route path="/workspace" component={WorkspacePage} />
+    <Route path="/alarms" component={AlarmsPage} />
     <Route path="/settings" component={SettingsPage} />
     <Route component={NotFound} />
   </Switch></ErrorBoundary>;
