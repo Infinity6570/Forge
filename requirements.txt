@@ -12,3 +12,7 @@ duckduckgo-search>=7,<9
 flask>=3.0,<4
 streamlit>=1.40,<2
 websockets>=14,<18
+flask
+pydantic
+streamlit
+websockets

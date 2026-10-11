@@ -288,7 +288,15 @@ function safePreviewUrl(value?: string | null) {
   if (!value) return '';
   try {
     const parsed = new URL(value, window.location.origin);
-    return parsed.origin === window.location.origin && (parsed.protocol === 'http:' || parsed.protocol === 'https:') ? parsed.href : '';
+    const previewPath = parsed.pathname.startsWith('/api/workspace/preview/static/')
+      || parsed.pathname.startsWith('/api/workspace/preview/server/');
+    return parsed.origin === window.location.origin
+      && (parsed.protocol === 'http:' || parsed.protocol === 'https:')
+      && !parsed.username
+      && !parsed.password
+      && previewPath
+      ? parsed.href
+      : '';
   } catch {
     return '';
   }
@@ -302,14 +310,35 @@ function WorkspacePreview() {
   const stopApp = useStopWorkspacePreviewApp();
   const [selectedId, setSelectedId] = useState('static');
   const [refreshKey, setRefreshKey] = useState(0);
+  const [navigatedUrl, setNavigatedUrl] = useState('');
+  const [addressValue, setAddressValue] = useState('');
+  const [addressError, setAddressError] = useState(false);
   const preview = previewQuery.data;
   const apps = preview?.apps ?? [];
   const selectionExists = selectedId === 'static' ? !!preview?.staticAvailable : apps.some((app) => app.id === selectedId);
   const activeId = selectionExists ? selectedId : preview?.staticAvailable ? 'static' : apps[0]?.id ?? '';
   const activeApp = apps.find((app) => app.id === activeId);
   const rawUrl = activeId === 'static' ? preview?.staticPreviewUrl : activeApp?.previewUrl;
-  const iframeUrl = safePreviewUrl(rawUrl);
+  const iframeUrl = safePreviewUrl(navigatedUrl || rawUrl);
   const label = activeId === 'static' ? 'Workspace preview' : activeApp?.entryPath ?? 'Running app';
+  useEffect(() => {
+    const nextUrl = safePreviewUrl(rawUrl);
+    setNavigatedUrl(nextUrl);
+    setAddressValue(nextUrl);
+    setAddressError(false);
+  }, [activeId, rawUrl]);
+  const navigateToAddress = (event: FormEvent) => {
+    event.preventDefault();
+    const nextUrl = safePreviewUrl(addressValue);
+    if (!nextUrl) {
+      setAddressError(true);
+      return;
+    }
+    setNavigatedUrl(nextUrl);
+    setAddressValue(nextUrl);
+    setAddressError(false);
+    setRefreshKey((current) => current + 1);
+  };
   const onStop = (app: WorkspacePreviewApp) => {
     if (!window.confirm(`Stop the ${app.framework} preview at ${app.entryPath}?`)) return;
     stopApp.mutate({ data: { appId: app.id } }, {
@@ -342,9 +371,14 @@ function WorkspacePreview() {
           {activeApp && <div className="preview-app-meta"><span className="preview-status-dot" /> Running on port {activeApp.port} <span className="preview-meta-divider" /> Started {timeAgo(activeApp.startedAt)}</div>}
         </div>
         <div className="preview-address-row">
-          <div className="preview-address" aria-label="Preview URL" data-testid="text-preview-address"><span className="address-lock"><ShieldCheck size={14} /></span><span className="address-host">{iframeUrl ? new URL(iframeUrl).host : 'Preview URL unavailable'}</span><span className="address-path">{iframeUrl ? new URL(iframeUrl).pathname : 'The supplied address is not a safe same-origin URL'}</span></div>
+          <form className="preview-address" onSubmit={navigateToAddress} data-testid="form-preview-address">
+            <span className="address-lock"><ShieldCheck size={14} /></span>
+            <input aria-label="Preview address" aria-invalid={addressError} value={addressValue} onChange={(event) => { setAddressValue(event.target.value); setAddressError(false); }} spellCheck={false} data-testid="input-preview-address" />
+            <button type="submit" data-testid="button-go-preview">Go</button>
+          </form>
           {iframeUrl && <a className="button button-quiet button-small preview-open" href={iframeUrl} target="_blank" rel="noopener noreferrer" data-testid="link-open-preview"><ExternalLink size={14} /> Open in New Tab</a>}
         </div>
+        {addressError && <p className="preview-address-error" role="alert" data-testid="status-preview-address-error">Enter a same-origin workspace preview URL.</p>}
         <div className="preview-frame-shell" data-testid="preview-frame-shell">
           {iframeUrl ? <iframe key={`${activeId}-${refreshKey}-${iframeUrl}`} title={`${label} live preview`} className="preview-frame" src={iframeUrl} sandbox="allow-scripts allow-forms" referrerPolicy="same-origin" data-testid="iframe-live-preview" />
             : <div className="preview-state preview-unavailable"><div className="preview-state-icon"><LockKeyhole size={19} /></div><strong>This preview address can’t be opened safely</strong><p>Only workspace addresses on this site can be loaded here.</p></div>}
@@ -419,24 +453,26 @@ const GEMINI_MODEL_IDS = new Set([
   'gemini-3.5-flash-lite',
   'gemini-3.8-flash',
 ]);
+const DEEPSEEK_MODEL_IDS = new Set(['deepseek-chat', 'deepseek-reasoner']);
 
 function SettingsPage() {
-  const [provider, setProvider] = useState<'openai' | 'gemini' | 'openrouter'>('openai');
-  const [modelId, setModelId] = useState('gpt-4.1-mini');
+  const [provider, setProvider] = useState<'openai' | 'deepseek' | 'gemini' | 'openrouter'>('deepseek');
+  const [modelId, setModelId] = useState('deepseek-chat');
   const [customModelId, setCustomModelId] = useState('');
   const [fallbackModelId, setFallbackModelId] = useState('');
   const [credentialStatus, setCredentialStatus] = useState<{
-    provider: 'openai' | 'gemini' | 'openrouter';
+    provider: 'openai' | 'deepseek' | 'gemini' | 'openrouter';
     modelId: string;
     localSetupAllowed: boolean;
     providerSettingsAllowed: boolean;
     hasOpenaiKey: boolean;
+    hasDeepseekKey: boolean;
     hasGeminiKey: boolean;
     hasOpenrouterKey: boolean;
     codeRunnerEnabled: boolean;
   }>();
   const [providerModalOpen, setProviderModalOpen] = useState(false);
-  const [apiKeys, setApiKeys] = useState({ openaiApiKey: '', geminiApiKey: '', openrouterApiKey: '' });
+  const [apiKeys, setApiKeys] = useState({ openaiApiKey: '', deepseekApiKey: '', geminiApiKey: '', openrouterApiKey: '' });
   const [codeRunnerEnabled, setCodeRunnerEnabled] = useState(false);
   const [providerSaving, setProviderSaving] = useState(false);
   const [providerError, setProviderError] = useState('');
@@ -452,6 +488,10 @@ function SettingsPage() {
       { id: 'gpt-4.1', name: 'GPT-4.1', detail: 'More capacity for complex tasks.', descriptor: 'DEEP FOCUS', color: 'gold' },
       { id: 'gpt-4.1-nano', name: 'GPT-4.1 nano', detail: 'A lighter option for quick work.', descriptor: 'QUICK', color: 'blue' },
     ],
+    deepseek: [
+      { id: 'deepseek-chat', name: 'deepseek-chat', detail: 'Default · Balanced V3/V4-Flash mode · Tool calling', descriptor: 'BALANCED', color: 'sage' },
+      { id: 'deepseek-reasoner', name: 'deepseek-reasoner', detail: 'Thinking mode for complex logic and math', descriptor: 'DEEP FOCUS', color: 'gold' },
+    ],
     gemini: [
       { id: 'gemini-2.5-flash', name: 'gemini-2.5-flash', detail: 'Default · Balanced', descriptor: 'BALANCED', color: 'sage' },
       { id: 'gemini-2.5-pro', name: 'gemini-2.5-pro', detail: 'High reasoning', descriptor: 'DEEP FOCUS', color: 'gold' },
@@ -460,6 +500,8 @@ function SettingsPage() {
       { id: 'gemini-3.8-flash', name: 'gemini-3.8-flash', detail: 'Latest agentic and coding model', descriptor: 'DEEP FOCUS', color: 'gold' },
     ],
     openrouter: [
+      { id: 'deepseek/deepseek-chat', name: 'DeepSeek Chat (OpenRouter)', detail: 'Balanced tool-calling model.', descriptor: 'BALANCED', color: 'sage' },
+      { id: 'anthropic/claude-3.7-sonnet', name: 'Claude 3.7 Sonnet', detail: 'High reasoning for demanding tasks.', descriptor: 'DEEP FOCUS', color: 'gold' },
       { id: 'anthropic/claude-haiku-5.5', name: 'Claude Haiku 5.5', detail: 'A fast model for everyday tasks.', descriptor: 'QUICK', color: 'blue' },
       { id: 'anthropic/claude-sonnet-5.5', name: 'Claude Sonnet 5.5', detail: 'A balanced model for broader work.', descriptor: 'BALANCED', color: 'sage' },
       { id: 'anthropic/claude-opus-5.5', name: 'Claude Opus 5.5', detail: 'More capacity for demanding tasks.', descriptor: 'DEEP FOCUS', color: 'gold' },
@@ -478,7 +520,13 @@ function SettingsPage() {
         setProvider(data.provider);
         setModelId(data.modelId);
         setFallbackModelId(data.fallbackModelId ?? '');
-        setCustomModelId(data.provider === 'gemini' && !GEMINI_MODEL_IDS.has(data.modelId) ? data.modelId : '');
+        setCustomModelId(
+          data.provider === 'gemini' && !GEMINI_MODEL_IDS.has(data.modelId)
+            ? data.modelId
+            : data.provider === 'deepseek' && !DEEPSEEK_MODEL_IDS.has(data.modelId)
+              ? data.modelId
+              : '',
+        );
         setCodeRunnerEnabled(data.codeRunnerEnabled);
       })
       .catch(() => {
@@ -489,6 +537,8 @@ function SettingsPage() {
   const activeModels = models[provider];
   const configured = provider === 'openai'
     ? credentialStatus?.hasOpenaiKey
+    : provider === 'deepseek'
+      ? credentialStatus?.hasDeepseekKey
     : provider === 'gemini'
       ? credentialStatus?.hasGeminiKey
       : credentialStatus?.hasOpenrouterKey;
@@ -496,7 +546,7 @@ function SettingsPage() {
     setProviderSaving(true);
     setProviderError('');
     setProviderSaved(false);
-    const selectedModelId = provider === 'gemini' && customModelId.trim() ? customModelId.trim() : modelId;
+    const selectedModelId = (provider === 'gemini' || provider === 'deepseek') && customModelId.trim() ? customModelId.trim() : modelId;
     const payload: Record<string, unknown> = { provider, modelId: selectedModelId, codeRunnerEnabled };
     if (provider === 'gemini') payload.fallbackModelId = fallbackModelId.trim();
     for (const [field, value] of Object.entries(apiKeys)) {
@@ -513,7 +563,7 @@ function SettingsPage() {
       if (!response.ok) throw new Error(result.detail || 'Settings could not be saved.');
       setCredentialStatus(result);
       setModelId(selectedModelId);
-      setApiKeys({ openaiApiKey: '', geminiApiKey: '', openrouterApiKey: '' });
+       setApiKeys({ openaiApiKey: '', deepseekApiKey: '', geminiApiKey: '', openrouterApiKey: '' });
       setProviderSaved(true);
     } catch (error) {
       setProviderError(error instanceof Error ? error.message : 'Settings could not be saved.');
@@ -524,9 +574,9 @@ function SettingsPage() {
   return <AppShell page="settings"><div className="content-page settings-page enter">
     <PageHeading eyebrow="AGENT CONFIGURATION" title="Preferences" description="Choose how your agent works and where it should pause for your approval." />
     <section className="settings-section model-section"><div className="settings-section-heading"><div className="section-symbol"><Zap size={17} /></div><div><h2>Model selection</h2><p>Choose a provider and working model for new tasks.</p></div><button className="button button-quiet button-small" onClick={() => { setProviderError(''); setProviderModalOpen(true); }} data-testid="button-configure-provider"><KeyRound size={14} /> Configure provider</button></div>
-      <label className="form-label provider-select-label">Provider<select value={provider} onChange={(event) => { const next = event.target.value as typeof provider; setProvider(next); setModelId(models[next][0].id); setCustomModelId(''); }} data-testid="select-model-provider"><option value="openai">OpenAI</option><option value="gemini">Google Gemini</option><option value="openrouter">OpenRouter (Anthropic)</option></select></label>
+      <label className="form-label provider-select-label">Provider<select value={provider} onChange={(event) => { const next = event.target.value as typeof provider; setProvider(next); setModelId(models[next][0].id); setCustomModelId(''); }} data-testid="select-model-provider"><option value="openai">OpenAI</option><option value="deepseek">DeepSeek</option><option value="gemini">Google Gemini</option><option value="openrouter">OpenRouter</option></select></label>
       <div className="model-options">{activeModels.map((item) => <button className={`model-option ${modelId === item.id && !customModelId ? 'chosen' : ''}`} key={item.id} onClick={() => { setModelId(item.id); setCustomModelId(''); setSaved(false); }} data-testid={`button-model-${item.id}`}><span className={`model-mark ${item.color}`}>{item.descriptor === 'QUICK' ? <Zap size={17} /> : item.descriptor === 'DEEP FOCUS' ? <Search size={17} /> : <Layers3 size={17} />}</span><span className="model-copy"><strong>{item.name} {item.descriptor === 'BALANCED' && <span className="recommended">BALANCED</span>}</strong><span>{item.detail}</span></span><span className="model-descriptor">{item.descriptor}</span><span className={`radio-mark ${modelId === item.id && !customModelId ? 'checked' : ''}`}>{modelId === item.id && !customModelId && <Check size={12} />}</span></button>)}</div>
-      {provider === 'gemini' && customModelId && <p className="settings-footnote">Custom Gemini model active: <strong>{customModelId}</strong></p>}
+      {(provider === 'gemini' || provider === 'deepseek') && customModelId && <p className="settings-footnote">Custom {provider === 'deepseek' ? 'DeepSeek' : 'Gemini'} model active: <strong>{customModelId}</strong></p>}
       <p className="settings-footnote"><LockKeyhole size={13} /> {configured ? 'Provider key configured.' : 'Add a provider key to run tasks.'} Keys are never sent back to the browser.</p>
     </section>
     <section className="settings-section safety-section"><div className="settings-section-heading"><div className="section-symbol amber"><ShieldCheck size={18} /></div><div><h2>Local code runner</h2><p>Optional Python execution in the local workspace, disabled by default.</p></div></div>
@@ -544,11 +594,12 @@ function SettingsPage() {
     <TimersManager />
     {providerModalOpen && <Modal title="Connect an AI provider" onClose={() => setProviderModalOpen(false)}><form className="form-stack" onSubmit={(event) => { event.preventDefault(); void saveProviderSettings(); }}>
       <p className="modal-description">Keys are saved to the .env file for the environment running this app and are never returned to the browser. In Replit they stay in this workspace; in a local copy they stay on your PC.</p>
-      <label className="form-label">Default provider<select value={provider} onChange={(event) => { const next = event.target.value as typeof provider; setProvider(next); setModelId(models[next][0].id); setCustomModelId(''); }} data-testid="select-settings-provider"><option value="openai">OpenAI</option><option value="gemini">Google Gemini</option><option value="openrouter">OpenRouter</option></select></label>
+      <label className="form-label">Default provider<select value={provider} onChange={(event) => { const next = event.target.value as typeof provider; setProvider(next); setModelId(models[next][0].id); setCustomModelId(''); }} data-testid="select-settings-provider"><option value="openai">OpenAI</option><option value="deepseek">DeepSeek</option><option value="gemini">Google Gemini</option><option value="openrouter">OpenRouter</option></select></label>
       <label className="form-label">Default model<select value={customModelId.trim() || modelId} onChange={(event) => { setModelId(event.target.value); setCustomModelId(''); }} data-testid="select-settings-model">{customModelId.trim() && !models[provider].some((item) => item.id === customModelId.trim()) && <option value={customModelId.trim()}>{customModelId.trim()} (custom)</option>}{models[provider].map((item) => <option key={item.id} value={item.id}>{item.id} — {item.detail}</option>)}</select></label>
-      {provider === 'gemini' && <label className="form-label">Custom Model ID <span className="optional-label">Optional; overrides the selected model. Use an available fallback if a request returns 429 or 503.</span><input type="text" autoComplete="off" spellCheck={false} value={customModelId} onChange={(event) => { setCustomModelId(event.target.value); setProviderSaved(false); }} placeholder="e.g. gemini-3.1-pro-preview" data-testid="input-custom-model-id" /></label>}
+      {(provider === 'gemini' || provider === 'deepseek') && <label className="form-label">Custom Model ID <span className="optional-label">Optional; overrides the selected model.</span><input type="text" autoComplete="off" spellCheck={false} value={customModelId} onChange={(event) => { setCustomModelId(event.target.value); setProviderSaved(false); }} placeholder={provider === 'deepseek' ? 'e.g. deepseek-v4-flash' : 'e.g. gemini-3.1-pro-preview'} data-testid="input-custom-model-id" /></label>}
       {provider === 'gemini' && <label className="form-label">Automatic fallback model <span className="optional-label">Optional; retry once after a Gemini 429 or 503. Leave blank to disable.</span><input type="text" autoComplete="off" spellCheck={false} value={fallbackModelId} onChange={(event) => { setFallbackModelId(event.target.value); setProviderSaved(false); }} placeholder="e.g. gemini-2.5-flash-lite" data-testid="input-gemini-fallback-model-id" /></label>}
       <label className="form-label">OpenAI API key <span className="optional-label">{credentialStatus?.hasOpenaiKey ? 'configured — leave blank to keep' : 'optional'}</span><input type="password" autoComplete="new-password" value={apiKeys.openaiApiKey} onChange={(event) => setApiKeys({ ...apiKeys, openaiApiKey: event.target.value })} placeholder="sk-…" disabled={!credentialStatus?.providerSettingsAllowed} data-testid="input-openai-api-key" /></label>
+      <label className="form-label">DeepSeek API key <span className="optional-label">{credentialStatus?.hasDeepseekKey ? 'configured — leave blank to keep' : 'optional'}</span><input type="password" autoComplete="new-password" value={apiKeys.deepseekApiKey} onChange={(event) => setApiKeys({ ...apiKeys, deepseekApiKey: event.target.value })} placeholder="Enter your DeepSeek key" disabled={!credentialStatus?.providerSettingsAllowed} data-testid="input-deepseek-api-key" /></label>
       <label className="form-label">Gemini API key <span className="optional-label">{credentialStatus?.hasGeminiKey ? 'configured — leave blank to keep' : 'optional'}</span><input type="password" autoComplete="new-password" value={apiKeys.geminiApiKey} onChange={(event) => setApiKeys({ ...apiKeys, geminiApiKey: event.target.value })} placeholder="Enter your Gemini key" disabled={!credentialStatus?.providerSettingsAllowed} data-testid="input-gemini-api-key" /></label>
       <label className="form-label">OpenRouter API key <span className="optional-label">{credentialStatus?.hasOpenrouterKey ? 'configured — leave blank to keep' : 'optional'}</span><input type="password" autoComplete="new-password" value={apiKeys.openrouterApiKey} onChange={(event) => setApiKeys({ ...apiKeys, openrouterApiKey: event.target.value })} placeholder="sk-or-…" disabled={!credentialStatus?.providerSettingsAllowed} data-testid="input-openrouter-api-key" /></label>
       {providerError && <p className="field-error" role="alert">{providerError}</p>}

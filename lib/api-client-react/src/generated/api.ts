@@ -1486,7 +1486,7 @@ export const getGetWorkspacePreviewUrl = () => {
 
 
 
-  return `/api/assistant/workspace/preview`
+  return `/api/workspace/preview`
 }
 
 /**
@@ -1509,7 +1509,7 @@ export const getWorkspacePreview = async ( options?: Parameters<typeof customFet
 
 export const getGetWorkspacePreviewQueryKey = () => {
     return [
-    `/api/assistant/workspace/preview`
+    `/api/workspace/preview`
     ] as const;
     }
 
@@ -1563,7 +1563,7 @@ export const getStopWorkspacePreviewAppUrl = () => {
 
 
 
-  return `/api/assistant/workspace/preview/stop`
+  return `/api/workspace/preview/stop`
 }
 
 /**
@@ -1651,7 +1651,7 @@ export const getGetWorkspacePreviewAssetUrl = (path: string,) => {
 
 
 
-  return `/api/assistant/workspace/preview/static/${path}`
+  return `/api/workspace/preview/static/${path}`
 }
 
 /**
@@ -1674,7 +1674,7 @@ export const getWorkspacePreviewAsset = async (path: string, options?: Parameter
 
 export const getGetWorkspacePreviewAssetQueryKey = (path: string,) => {
     return [
-    `/api/assistant/workspace/preview/static/${path}`
+    `/api/workspace/preview/static/${path}`
     ] as const;
     }
 
@@ -1729,7 +1729,7 @@ export const getGetWorkspacePreviewServerAssetUrl = (appId: string,
 
 
 
-  return `/api/assistant/workspace/preview/server/${appId}/${path}`
+  return `/api/workspace/preview/server/${appId}/${path}`
 }
 
 /**
@@ -1754,7 +1754,7 @@ export const getWorkspacePreviewServerAsset = async (appId: string,
 export const getGetWorkspacePreviewServerAssetQueryKey = (appId: string,
     path: string,) => {
     return [
-    `/api/assistant/workspace/preview/server/${appId}/${path}`
+    `/api/workspace/preview/server/${appId}/${path}`
     ] as const;
     }
 
@@ -1811,7 +1811,7 @@ export const getPostWorkspacePreviewServerAssetUrl = (appId: string,
 
 
 
-  return `/api/assistant/workspace/preview/server/${appId}/${path}`
+  return `/api/workspace/preview/server/${appId}/${path}`
 }
 
 /**
@@ -1887,7 +1887,7 @@ export const getPutWorkspacePreviewServerAssetUrl = (appId: string,
 
 
 
-  return `/api/assistant/workspace/preview/server/${appId}/${path}`
+  return `/api/workspace/preview/server/${appId}/${path}`
 }
 
 /**
@@ -1963,7 +1963,7 @@ export const getPatchWorkspacePreviewServerAssetUrl = (appId: string,
 
 
 
-  return `/api/assistant/workspace/preview/server/${appId}/${path}`
+  return `/api/workspace/preview/server/${appId}/${path}`
 }
 
 /**
@@ -2039,7 +2039,7 @@ export const getDeleteWorkspacePreviewServerAssetUrl = (appId: string,
 
 
 
-  return `/api/assistant/workspace/preview/server/${appId}/${path}`
+  return `/api/workspace/preview/server/${appId}/${path}`
 }
 
 /**

@@ -26,5 +26,7 @@ Personal assistant dashboard for local AI tasks, reminders, workspace files, and
 - Provider keys belong in the `.env` file for the running environment, not in SQLite. The settings endpoint must never return key values; local changes require loopback access and Replit preview changes require a same-origin request.
 - The provider settings modal is intentionally editable in Replit preview. Its keys are stored in that Replit workspace's ignored `.env` file; tell users this before they enter keys.
 - Keep the `.env` file out of source control, static serving, and workspace exports.
+- Live workspace preview may serve only allowlisted web assets; never expose dotfiles, uploads, notes, SQLite data, or environment files. Keep preview frames sandboxed without `allow-same-origin`.
+- Agent-created sites may write only requested web assets under `workspace/`; Flask and Streamlit run as fixed local-only child processes and are proxied through the registered preview route. Do not pass provider credentials or Replit headers into those processes, and stop them during server shutdown.
 - The optional Python runner is disabled by default, requires explicit local opt-in, and must remain disabled in Replit.
 - This is a single-user local app; do not publish it as a public service without adding authentication and per-user storage.

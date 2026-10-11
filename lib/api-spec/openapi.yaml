@@ -109,6 +109,56 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AssistantTask"
+  /assistant/tasks/{id}/model-choice:
+    post:
+      operationId: chooseAssistantTaskModel
+      tags: [assistant]
+      summary: Confirm whether to use the recommended high-capability model for this task
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TaskModelChoiceInput"
+      responses:
+        "200":
+          description: Task queued with the selected model
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantTask"
+        "409":
+          description: Task is not waiting for a model choice
+  /assistant/tasks/{id}/fallback-choice:
+    post:
+      operationId: retryAssistantTaskStep
+      tags: [assistant]
+      summary: Retry a failed specialist step with its recommended model
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TaskFallbackChoiceInput"
+      responses:
+        "200":
+          description: Updated task state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantTask"
+        "409":
+          description: No failed specialist step is waiting to be retried
   /assistant/timers:
     get:
       operationId: listAssistantTimers
@@ -431,13 +481,13 @@ components:
             $ref: "#/components/schemas/AssistantTask"
     AssistantTask:
       type: object
-      required: [id, objective, status, currentStep, result, error, logs, provider, modelId, createdAt, updatedAt]
+      required: [id, objective, status, currentStep, result, error, logs, provider, modelId, recommendationKind, recommendationReason, recommendedProvider, recommendedModelId, retryAvailable, createdAt, updatedAt]
       properties:
         id: { type: string, format: uuid }
         objective: { type: string }
         status:
           type: string
-          enum: [queued, running, completed, failed, cancelled]
+          enum: [queued, running, awaiting_confirmation, completed, failed, cancelled]
         currentStep: { type: ["string", "null"] }
         result: { type: ["string", "null"] }
         error: { type: ["string", "null"] }
@@ -445,8 +495,13 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/TaskLog"
-        provider: { type: string, enum: [openai, gemini, openrouter] }
+        provider: { type: string, enum: [openai, deepseek, gemini, openrouter] }
         modelId: { type: string }
+        recommendationKind: { type: ["string", "null"], enum: [complexity, fallback, null] }
+        recommendationReason: { type: ["string", "null"] }
+        recommendedProvider: { type: ["string", "null"], enum: [openai, deepseek, gemini, openrouter, null] }
+        recommendedModelId: { type: ["string", "null"] }
+        retryAvailable: { type: boolean }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
     TaskLog:
@@ -466,13 +521,23 @@ components:
         objective: { type: string, minLength: 1, maxLength: 12000 }
         provider:
           type: string
-          enum: [openai, gemini, openrouter]
+          enum: [openai, deepseek, gemini, openrouter]
         modelId:
           type: string
           maxLength: 120
         fileIds:
           type: array
           items: { type: string, format: uuid }
+    TaskModelChoiceInput:
+      type: object
+      required: [switchToRecommendation]
+      properties:
+        switchToRecommendation: { type: boolean }
+    TaskFallbackChoiceInput:
+      type: object
+      required: [retry]
+      properties:
+        retry: { type: boolean }
     AssistantTimer:
       type: object
       required: [id, label, kind, scheduledFor, status, createdAt]
@@ -571,14 +636,15 @@ components:
         appId: { type: string, format: uuid }
     AssistantSettings:
       type: object
-      required: [provider, modelId, fallbackModelId, localSetupAllowed, providerSettingsAllowed, hasOpenaiKey, hasGeminiKey, hasOpenrouterKey, codeRunnerEnabled]
+      required: [provider, modelId, fallbackModelId, localSetupAllowed, providerSettingsAllowed, hasOpenaiKey, hasDeepseekKey, hasGeminiKey, hasOpenrouterKey, codeRunnerEnabled]
       properties:
-        provider: { type: string, enum: [openai, gemini, openrouter] }
+        provider: { type: string, enum: [openai, deepseek, gemini, openrouter] }
         modelId: { type: string }
         fallbackModelId: { type: string }
         localSetupAllowed: { type: boolean }
         providerSettingsAllowed: { type: boolean }
         hasOpenaiKey: { type: boolean }
+        hasDeepseekKey: { type: boolean }
         hasGeminiKey: { type: boolean }
         hasOpenrouterKey: { type: boolean }
         codeRunnerEnabled: { type: boolean }
@@ -586,10 +652,11 @@ components:
       type: object
       required: [provider, modelId]
       properties:
-        provider: { type: string, enum: [openai, gemini, openrouter] }
+        provider: { type: string, enum: [openai, deepseek, gemini, openrouter] }
         modelId: { type: string, minLength: 1, maxLength: 120, pattern: '^[A-Za-z0-9][A-Za-z0-9._:/-]{0,119}$' }
         fallbackModelId: { type: string, maxLength: 120, pattern: '^$|^[A-Za-z0-9][A-Za-z0-9._:/-]{0,119}$' }
         openaiApiKey: { type: ["string", "null"], maxLength: 1000 }
+        deepseekApiKey: { type: ["string", "null"], maxLength: 1000 }
         geminiApiKey: { type: ["string", "null"], maxLength: 1000 }
         openrouterApiKey: { type: ["string", "null"], maxLength: 1000 }
         codeRunnerEnabled: { type: boolean }

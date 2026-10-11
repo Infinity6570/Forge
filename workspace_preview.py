@@ -22,6 +22,7 @@ STATIC_SUFFIXES = {
     ".svg", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico",
     ".woff", ".woff2", ".ttf", ".otf",
 }
+WRITABLE_SUFFIXES = STATIC_SUFFIXES | {".py"}
 MAX_PREVIEW_FILE_BYTES = 2 * 1024 * 1024
 MAX_RUNNING_APPS = 3
 STARTUP_TIMEOUT_SECONDS = 30
@@ -48,7 +49,15 @@ def resolve_workspace_asset(workspace: Path, relative_path: str, *, allow_missin
     parts = _safe_relative_parts(relative_path)
     path = (workspace.resolve() / Path(*parts)).resolve(strict=not allow_missing)
     root = workspace.resolve()
-    if not path.is_relative_to(root) or path.suffix.lower() not in STATIC_SUFFIXES:
+    if not path.is_relative_to(root):
+        raise WorkspacePreviewError("Only supported web assets inside the workspace can be previewed.")
+    resolved_parts = path.relative_to(root).parts
+    if (
+        not resolved_parts
+        or resolved_parts[0].lower() in {"uploads", "notes", "preview-runtime"}
+        or any(part.startswith(".") for part in resolved_parts)
+        or path.suffix.lower() not in STATIC_SUFFIXES
+    ):
         raise WorkspacePreviewError("Only supported web assets inside the workspace can be previewed.")
     if not allow_missing and (not path.is_file() or path.stat().st_size > MAX_PREVIEW_FILE_BYTES):
         raise WorkspacePreviewError("The preview file is missing or larger than 2 MB.")
@@ -58,7 +67,15 @@ def resolve_workspace_asset(workspace: Path, relative_path: str, *, allow_missin
 def resolve_workspace_script(workspace: Path, relative_path: str) -> Path:
     parts = _safe_relative_parts(relative_path)
     path = (workspace.resolve() / Path(*parts)).resolve(strict=True)
-    if not path.is_relative_to(workspace.resolve()) or path.suffix.lower() != ".py" or not path.is_file():
+    root = workspace.resolve()
+    resolved_parts = path.relative_to(root).parts if path.is_relative_to(root) else ()
+    if (
+        not resolved_parts
+        or resolved_parts[0].lower() in {"uploads", "notes", "preview-runtime"}
+        or any(part.startswith(".") for part in resolved_parts)
+        or path.suffix.lower() != ".py"
+        or not path.is_file()
+    ):
         raise WorkspacePreviewError("Choose a Python script inside the workspace.")
     return path
 
@@ -66,6 +83,51 @@ def resolve_workspace_script(workspace: Path, relative_path: str) -> Path:
 def static_preview_url(relative_path: str) -> str:
     parts = _safe_relative_parts(relative_path)
     return f"/api/workspace/preview/static/{quote('/'.join(parts), safe='/')}"
+
+
+def write_workspace_asset(
+    workspace: Path,
+    relative_path: str,
+    content: str,
+    *,
+    overwrite: bool = False,
+) -> dict[str, Any]:
+    payload = content.encode("utf-8")
+    if len(payload) > MAX_PREVIEW_FILE_BYTES:
+        raise WorkspacePreviewError("Generated app files must be 2 MB or smaller.")
+    parts = _safe_relative_parts(relative_path)
+    root = workspace.resolve()
+    path = (root / Path(*parts)).resolve(strict=False)
+    resolved_parts = path.relative_to(root).parts if path.is_relative_to(root) else ()
+    if (
+        not resolved_parts
+        or resolved_parts[0].lower() in {"uploads", "notes", "preview-runtime"}
+        or any(part.startswith(".") for part in resolved_parts)
+        or path.suffix.lower() not in WRITABLE_SUFFIXES
+    ):
+        raise WorkspacePreviewError("Only supported web assets or Python app files inside the workspace can be written.")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.exists() and not overwrite:
+        raise WorkspacePreviewError("That workspace file already exists. Ask before replacing it.")
+    if overwrite:
+        temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
+        try:
+            temporary.write_bytes(payload)
+            temporary.replace(path)
+        finally:
+            temporary.unlink(missing_ok=True)
+    else:
+        try:
+            with path.open("xb") as output:
+                output.write(payload)
+        except FileExistsError as exc:
+            raise WorkspacePreviewError("That workspace file already exists. Ask before replacing it.") from exc
+    return {
+        "saved": True,
+        "path": path.relative_to(workspace.resolve()).as_posix(),
+        "sizeBytes": len(payload),
+        "previewable": path.suffix.lower() in {".html", ".htm"},
+    }
 
 
 @dataclass
@@ -119,10 +181,11 @@ class WorkspacePreviewManager:
             "SYSTEMROOT", "WINDIR", "LANG", "LC_ALL", "VIRTUAL_ENV",
         }
         child_env = {key: value for key, value in os.environ.items() if key in allowed}
+        python_paths = [str(self.workspace)] + [value for value in sys.path if value and Path(value).is_dir()]
         child_env.update(
             {
                 "PYTHONUNBUFFERED": "1",
-                "PYTHONPATH": str(self.workspace),
+                "PYTHONPATH": os.pathsep.join(dict.fromkeys(python_paths)),
                 "PORT": str(port),
                 "HOST": "127.0.0.1",
                 "BIND_HOST": "127.0.0.1",
@@ -263,6 +326,24 @@ class WorkspacePreviewManager:
             "previewUrl": app.preview_url,
             "status": "running",
             "startedAt": app.started_at,
+        }
+
+    def get_status(self) -> dict[str, Any]:
+        self._purge_exited()
+        entry_path = "index.html"
+        try:
+            entry = resolve_workspace_asset(self.workspace, entry_path)
+            if entry.suffix.lower() not in {".html", ".htm"}:
+                entry = None
+        except (WorkspacePreviewError, OSError):
+            entry = None
+        with self._lock:
+            apps = [self._public_app(app) for app in self._apps.values()]
+        return {
+            "staticAvailable": entry is not None,
+            "staticEntryPath": entry_path if entry is not None else None,
+            "staticPreviewUrl": static_preview_url(entry_path) if entry is not None else None,
+            "apps": apps,
         }
 
     def list_apps(self) -> list[dict[str, Any]]:
