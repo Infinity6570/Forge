@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import shutil
 import signal
 import socket
 import subprocess
@@ -25,11 +26,17 @@ WRITABLE_SUFFIXES = STATIC_SUFFIXES
 MAX_PREVIEW_FILE_BYTES = 2 * 1024 * 1024
 MAX_RUNNING_APPS = 3
 STARTUP_TIMEOUT_SECONDS = 30
+MAX_PREVIEW_RUNTIME_SECONDS = 60 * 60
 APP_URL_PREFIX = "/api/workspace/preview/server"
 
 
 class WorkspacePreviewError(ValueError):
     pass
+
+
+def local_app_previews_enabled() -> bool:
+    in_replit = any(os.getenv(name) for name in ("REPL_ID", "REPLIT_DEV_DOMAIN", "REPLIT_DOMAINS"))
+    return not in_replit and os.getenv("RUN_LOCAL_APP_PREVIEWS", "false").strip().lower() == "true"
 
 
 def resolve_workspace_path(
@@ -163,6 +170,51 @@ def write_workspace_asset(
     }
 
 
+def write_workspace_app_script(
+    workspace: Path,
+    relative_path: str,
+    content: str,
+    *,
+    overwrite: bool = False,
+) -> dict[str, Any]:
+    payload = content.encode("utf-8")
+    if len(payload) > MAX_PREVIEW_FILE_BYTES:
+        raise WorkspacePreviewError("Generated Python files must be 2 MB or smaller.")
+    parts = _safe_relative_parts(relative_path)
+    root = workspace.resolve()
+    path = resolve_workspace_path(workspace, Path(*parts), allow_missing=True)
+    resolved_parts = path.relative_to(root).parts
+    if (
+        not resolved_parts
+        or resolved_parts[0].lower() in {"uploads", "notes", "preview-runtime"}
+        or any(part.startswith(".") for part in resolved_parts)
+        or path.suffix.lower() != ".py"
+    ):
+        raise WorkspacePreviewError("Only Python source files inside the workspace can be written.")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.exists() and not overwrite:
+        raise WorkspacePreviewError("That workspace file already exists. Ask before replacing it.")
+    if overwrite:
+        temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
+        try:
+            temporary.write_bytes(payload)
+            temporary.replace(path)
+        finally:
+            temporary.unlink(missing_ok=True)
+    else:
+        try:
+            with path.open("xb") as output:
+                output.write(payload)
+        except FileExistsError as exc:
+            raise WorkspacePreviewError("That workspace file already exists. Ask before replacing it.") from exc
+    return {
+        "saved": True,
+        "path": path.relative_to(root).as_posix(),
+        "sizeBytes": len(payload),
+        "previewable": False,
+    }
+
+
 @dataclass
 class PreviewProcess:
     app_id: str
@@ -174,6 +226,8 @@ class PreviewProcess:
     started_at: str
     process: subprocess.Popen[str]
     wrapper_path: Path | None = None
+    runtime_path: Path | None = None
+    runtime_timer: threading.Timer | None = None
     output_lines: deque[str] = field(default_factory=lambda: deque(maxlen=80))
     output_lock: threading.Lock = field(default_factory=threading.Lock)
     reader_thread: threading.Thread | None = None
@@ -209,25 +263,45 @@ class WorkspacePreviewManager:
             return int(sock.getsockname()[1])
 
     def _child_environment(self, port: int, prefix: str) -> dict[str, str]:
-        allowed = {
-            "PATH", "HOME", "USERPROFILE", "TMP", "TEMP", "TMPDIR",
-            "SYSTEMROOT", "WINDIR", "LANG", "LC_ALL", "VIRTUAL_ENV",
-        }
-        child_env = {key: value for key, value in os.environ.items() if key in allowed}
-        python_paths = [str(self.workspace)] + [value for value in sys.path if value and Path(value).is_dir()]
-        child_env.update(
-            {
-                "PYTHONUNBUFFERED": "1",
-                "PYTHONPATH": os.pathsep.join(dict.fromkeys(python_paths)),
-                "PORT": str(port),
-                "HOST": "127.0.0.1",
-                "BIND_HOST": "127.0.0.1",
-                "WORKSPACE_PREVIEW_BASE_PATH": prefix,
-            }
+        app_id = prefix.rsplit("/", 1)[-1]
+        runtime_dir = resolve_workspace_path(
+            self.workspace, Path("preview-runtime") / app_id, allow_missing=True
         )
+        home_dir = runtime_dir / "home"
+        temp_dir = runtime_dir / "tmp"
+        home_dir.mkdir(parents=True, exist_ok=True)
+        temp_dir.mkdir(parents=True, exist_ok=True)
+        child_env = {
+            "PATH": os.environ.get("PATH", os.defpath),
+            "HOME": str(home_dir),
+            "USERPROFILE": str(home_dir),
+            "TMP": str(temp_dir),
+            "TEMP": str(temp_dir),
+            "TMPDIR": str(temp_dir),
+            "LANG": os.environ.get("LANG", "C.UTF-8"),
+            "LC_ALL": os.environ.get("LC_ALL", "C.UTF-8"),
+            "PYTHONUNBUFFERED": "1",
+            "PYTHONNOUSERSITE": "1",
+            "PYTHONPATH": str(self.workspace),
+            "PORT": str(port),
+            "HOST": "127.0.0.1",
+            "BIND_HOST": "127.0.0.1",
+            "WORKSPACE_PREVIEW_BASE_PATH": prefix,
+        }
+        for name in ("SYSTEMROOT", "WINDIR"):
+            value = os.environ.get(name)
+            if value:
+                child_env[name] = value
         return child_env
 
-    def _command(self, framework: str, script: Path, app_id: str, port: int) -> tuple[list[str], Path | None]:
+    def _command(
+        self,
+        framework: str,
+        script: Path,
+        app_id: str,
+        port: int,
+        runtime_dir: Path,
+    ) -> tuple[list[str], Path | None]:
         prefix = f"{APP_URL_PREFIX}/{app_id}"
         if framework == "streamlit":
             command = [
@@ -241,13 +315,8 @@ class WorkspacePreviewManager:
             ]
             return command, None
         if framework == "flask":
-            runtime_dir = resolve_workspace_path(self.workspace, "preview-runtime", allow_missing=True)
             runtime_dir.mkdir(parents=True, exist_ok=True)
-            wrapper_path = resolve_workspace_path(
-                self.workspace,
-                Path("preview-runtime") / f"workspace-preview-{app_id}.py",
-                allow_missing=True,
-            )
+            wrapper_path = runtime_dir / "workspace-preview-flask.py"
             wrapper_path.write_text(
                 "import importlib.util, sys\n"
                 "from pathlib import Path\n"
@@ -272,7 +341,31 @@ class WorkspacePreviewManager:
                 encoding="utf-8",
             )
             return [sys.executable, str(wrapper_path), str(script), prefix, str(port)], wrapper_path
-        raise WorkspacePreviewError("Choose static, Flask, or Streamlit preview mode.")
+        if framework == "fastapi":
+            runtime_dir.mkdir(parents=True, exist_ok=True)
+            wrapper_path = runtime_dir / "workspace-preview-fastapi.py"
+            wrapper_path.write_text(
+                "import importlib.util, sys\n"
+                "from pathlib import Path\n"
+                "script = Path(sys.argv[1]).resolve()\n"
+                "port = int(sys.argv[2])\n"
+                "prefix = sys.argv[3]\n"
+                "sys.path.insert(0, str(script.parent))\n"
+                "spec = importlib.util.spec_from_file_location('workspace_preview_app', script)\n"
+                "module = importlib.util.module_from_spec(spec)\n"
+                "spec.loader.exec_module(module)\n"
+                "app = getattr(module, 'app', None) or getattr(module, 'application', None)\n"
+                "if app is None and callable(getattr(module, 'create_app', None)):\n"
+                "    app = module.create_app()\n"
+                "if app is None:\n"
+                "    raise RuntimeError('FastAPI script must export app, application, or create_app().')\n"
+                "import uvicorn\n"
+                "uvicorn.run(app, host='127.0.0.1', port=port, root_path=prefix, "
+                "proxy_headers=False, access_log=False)\n",
+                encoding="utf-8",
+            )
+            return [sys.executable, str(wrapper_path), str(script), str(port), prefix], wrapper_path
+        raise WorkspacePreviewError("Choose static, Flask, Streamlit, or FastAPI preview mode.")
 
     async def _wait_for_listening(self, app: PreviewProcess) -> None:
         deadline = time.monotonic() + STARTUP_TIMEOUT_SECONDS
@@ -312,10 +405,69 @@ class WorkspacePreviewManager:
                 "previewUrl": preview_url,
                 "status": "ready",
             }
-        raise PermissionError(
-            "Python app launching is disabled in strict workspace-only mode because the local Python runtime "
-            "cannot be reliably confined to this directory on every supported operating system. Use a static preview."
+        if framework not in {"flask", "streamlit", "fastapi"}:
+            raise WorkspacePreviewError("Choose static, Flask, Streamlit, or FastAPI preview mode.")
+        if not local_app_previews_enabled():
+            raise PermissionError(
+                "Local Python app previews are disabled. Enable “Enable Local App Previews "
+                "(Unrestricted Workspace Execution)” in Preferences on a local copy. They are always "
+                "disabled in Replit Cloud."
+            )
+        script = resolve_workspace_script(self.workspace, entry_path)
+        with self._lock:
+            self._purge_exited()
+            if len(self._apps) >= MAX_RUNNING_APPS:
+                raise WorkspacePreviewError(f"Stop a running preview before starting another (limit {MAX_RUNNING_APPS}).")
+        app_id = str(uuid.uuid4())
+        port = self._choose_port()
+        prefix = f"{APP_URL_PREFIX}/{app_id}"
+        runtime_path = resolve_workspace_path(
+            self.workspace, Path("preview-runtime") / app_id, allow_missing=True
         )
+        runtime_path.mkdir(parents=True, exist_ok=True)
+        command, wrapper_path = self._command(framework, script, app_id, port, runtime_path)
+        child_env = self._child_environment(port, prefix)
+        process_options: dict[str, Any] = {
+            "cwd": str(self.workspace),
+            "env": child_env,
+            "stdout": subprocess.PIPE,
+            "stderr": subprocess.STDOUT,
+            "text": True,
+            "bufsize": 1,
+        }
+        if os.name == "nt":
+            process_options["creationflags"] = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+        else:
+            process_options["start_new_session"] = True
+        try:
+            process = subprocess.Popen(command, **process_options)
+        except (OSError, subprocess.SubprocessError):
+            shutil.rmtree(runtime_path, ignore_errors=True)
+            raise
+        started_at = datetime.now(timezone.utc).isoformat()
+        app = PreviewProcess(
+            app_id=app_id,
+            framework=framework,
+            entry_path=script.relative_to(self.workspace).as_posix(),
+            port=port,
+            local_url=f"http://127.0.0.1:{port}{prefix}",
+            preview_url=prefix,
+            started_at=started_at,
+            process=process,
+            wrapper_path=wrapper_path,
+            runtime_path=runtime_path,
+        )
+        with self._lock:
+            self._apps[app_id] = app
+            app.runtime_timer = threading.Timer(
+                MAX_PREVIEW_RUNTIME_SECONDS, self.stop, args=(app_id,)
+            )
+            app.runtime_timer.daemon = True
+            app.runtime_timer.start()
+        app.reader_thread = threading.Thread(target=self._read_output, args=(app,), daemon=True)
+        app.reader_thread.start()
+        await self._wait_for_listening(app)
+        return {"started": True, **self._public_app(app)}
 
     def _public_app(self, app: PreviewProcess) -> dict[str, Any]:
         return {
@@ -344,6 +496,8 @@ class WorkspacePreviewManager:
             "staticAvailable": entry is not None,
             "staticEntryPath": entry_path if entry is not None else None,
             "staticPreviewUrl": static_preview_url(entry_path) if entry is not None else None,
+            "pythonPreviewsEnabled": local_app_previews_enabled(),
+            "pythonPreviewRuntimeLimitSeconds": MAX_PREVIEW_RUNTIME_SECONDS,
             "apps": apps,
         }
 
@@ -363,10 +517,23 @@ class WorkspacePreviewManager:
 
     def _cleanup(self, app_id: str, app: PreviewProcess, *, terminate: bool) -> None:
         self._apps.pop(app_id, None)
+        if app.runtime_timer and threading.current_thread() is not app.runtime_timer:
+            app.runtime_timer.cancel()
         if terminate and app.process.poll() is None:
             try:
                 if os.name == "nt":
-                    app.process.terminate()
+                    system_root = os.environ.get("SYSTEMROOT", r"C:\Windows")
+                    taskkill = Path(system_root) / "System32" / "taskkill.exe"
+                    subprocess.run(
+                        [str(taskkill), "/PID", str(app.process.pid), "/T", "/F"],
+                        cwd=str(self.workspace),
+                        env={"SYSTEMROOT": system_root, "WINDIR": system_root},
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        timeout=5,
+                        check=False,
+                    )
+                    app.process.wait(timeout=2)
                 else:
                     os.killpg(app.process.pid, signal.SIGTERM)
                 app.process.wait(timeout=3)
@@ -379,7 +546,9 @@ class WorkspacePreviewManager:
                     app.process.wait(timeout=2)
                 except (OSError, subprocess.TimeoutExpired):
                     pass
-        if app.wrapper_path:
+        if app.runtime_path:
+            shutil.rmtree(app.runtime_path, ignore_errors=True)
+        elif app.wrapper_path:
             app.wrapper_path.unlink(missing_ok=True)
 
     def stop(self, app_id: str) -> bool:
@@ -394,10 +563,13 @@ class WorkspacePreviewManager:
             self._cleanup(app_id, app, terminate=True)
             return True
 
-    def stop_all(self) -> None:
+    def stop_all(self) -> int:
         with self._lock:
+            stopped = 0
             for app_id in list(self._apps):
                 app = self._apps.get(app_id)
                 if app:
                     self._cleanup(app_id, app, terminate=True)
+                    stopped += 1
+            return stopped
 
