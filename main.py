@@ -258,15 +258,6 @@ def is_same_origin_preview_request(request: Request) -> bool:
         return False
     origin_host = parsed_origin.hostname.lower()
 
-    forwarded_hosts = {
-        host
-        for header in ("x-forwarded-host", "host")
-        for host in [_host_name((request.headers.get(header) or "").split(",", 1)[0].strip())]
-        if host
-    }
-    if origin_host in forwarded_hosts:
-        return True
-
     configured_domains = {
         host
         for name in ("REPLIT_DEV_DOMAIN", "REPLIT_DOMAINS")
@@ -274,7 +265,10 @@ def is_same_origin_preview_request(request: Request) -> bool:
         for host in [_host_name(domain.strip())]
         if host
     }
-    return origin_host in configured_domains
+    if origin_host in configured_domains:
+        return True
+    # Replit's workspace preview can present its same-origin browser context via loopback.
+    return origin_host in {"localhost", "127.0.0.1", "::1"}
 
 
 def can_manage_provider_settings(request: Request) -> bool:
