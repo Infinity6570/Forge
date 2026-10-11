@@ -159,6 +159,31 @@ paths:
                 $ref: "#/components/schemas/AssistantTask"
         "409":
           description: No failed specialist step is waiting to be retried
+  /assistant/tasks/{id}/approval-choice:
+    post:
+      operationId: chooseAssistantTaskApproval
+      tags: [assistant]
+      summary: Approve or reject a paused workspace file operation
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TaskApprovalInput"
+      responses:
+        "200":
+          description: Updated task after applying the approval decision
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantTask"
+        "409":
+          description: Approval request is no longer pending
   /assistant/timers:
     get:
       operationId: listAssistantTimers
@@ -481,13 +506,13 @@ components:
             $ref: "#/components/schemas/AssistantTask"
     AssistantTask:
       type: object
-      required: [id, objective, status, currentStep, result, error, logs, provider, modelId, recommendationKind, recommendationReason, recommendedProvider, recommendedModelId, retryAvailable, requiresModelConfirmation, createdAt, updatedAt]
+      required: [id, objective, status, currentStep, result, error, logs, provider, modelId, recommendationKind, recommendationReason, recommendedProvider, recommendedModelId, retryAvailable, requiresModelConfirmation, pendingApprovalId, approvalSummary, requiresApproval, createdAt, updatedAt]
       properties:
         id: { type: string, format: uuid }
         objective: { type: string }
         status:
           type: string
-          enum: [queued, running, awaiting_confirmation, completed, failed, cancelled]
+          enum: [queued, running, awaiting_confirmation, awaiting_approval, completed, failed, cancelled]
         currentStep: { type: ["string", "null"] }
         result: { type: ["string", "null"] }
         error: { type: ["string", "null"] }
@@ -503,6 +528,9 @@ components:
         recommendedModelId: { type: ["string", "null"] }
         retryAvailable: { type: boolean }
         requiresModelConfirmation: { type: boolean }
+        pendingApprovalId: { type: ["string", "null"] }
+        approvalSummary: { type: ["string", "null"] }
+        requiresApproval: { type: boolean }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
     TaskLog:
@@ -539,6 +567,12 @@ components:
       required: [retry]
       properties:
         retry: { type: boolean }
+    TaskApprovalInput:
+      type: object
+      required: [approvalId, approve]
+      properties:
+        approvalId: { type: string, minLength: 1, maxLength: 64 }
+        approve: { type: boolean }
     AssistantTimer:
       type: object
       required: [id, label, kind, scheduledFor, status, createdAt]

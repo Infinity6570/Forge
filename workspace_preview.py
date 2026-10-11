@@ -6,7 +6,6 @@ import signal
 import socket
 import subprocess
 import sys
-import tempfile
 import threading
 import time
 import uuid
@@ -22,7 +21,7 @@ STATIC_SUFFIXES = {
     ".svg", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico",
     ".woff", ".woff2", ".ttf", ".otf",
 }
-WRITABLE_SUFFIXES = STATIC_SUFFIXES | {".py"}
+WRITABLE_SUFFIXES = STATIC_SUFFIXES
 MAX_PREVIEW_FILE_BYTES = 2 * 1024 * 1024
 MAX_RUNNING_APPS = 3
 STARTUP_TIMEOUT_SECONDS = 30
@@ -70,9 +69,11 @@ def _safe_relative_parts(value: str) -> tuple[str, ...]:
         or PureWindowsPath(raw).is_absolute()
         or PureWindowsPath(raw).drive
     ):
-        raise WorkspacePreviewError("Use a workspace-relative path.")
+        raise PermissionError("Workspace operations require a safe workspace-relative path.")
     parts = tuple(part for part in PurePosixPath(raw).parts if part not in {"", "."})
-    if not parts or any(part == ".." or part.startswith(".") for part in parts):
+    if any(part == ".." for part in parts):
+        raise PermissionError("Workspace operations cannot traverse to a parent directory.")
+    if not parts or any(part.startswith(".") for part in parts):
         raise WorkspacePreviewError("Hidden files and parent-directory paths cannot be previewed.")
     if parts[0].lower() in {"uploads", "notes", "preview-runtime"}:
         raise WorkspacePreviewError("That workspace folder is private and cannot be previewed.")
@@ -137,7 +138,7 @@ def write_workspace_asset(
         or any(part.startswith(".") for part in resolved_parts)
         or path.suffix.lower() not in WRITABLE_SUFFIXES
     ):
-        raise WorkspacePreviewError("Only supported web assets or Python app files inside the workspace can be written.")
+        raise WorkspacePreviewError("Only supported static web assets inside the workspace can be written.")
     path.parent.mkdir(parents=True, exist_ok=True)
     if path.exists() and not overwrite:
         raise WorkspacePreviewError("That workspace file already exists. Ask before replacing it.")
@@ -311,48 +312,10 @@ class WorkspacePreviewManager:
                 "previewUrl": preview_url,
                 "status": "ready",
             }
-        if framework not in {"flask", "streamlit"}:
-            raise WorkspacePreviewError("Choose static, Flask, or Streamlit preview mode.")
-        script = resolve_workspace_script(self.workspace, entry_path)
-        with self._lock:
-            self._purge_exited()
-            if len(self._apps) >= MAX_RUNNING_APPS:
-                raise WorkspacePreviewError(f"Stop a running preview first; at most {MAX_RUNNING_APPS} apps can run at once.")
-            app_id = str(uuid.uuid4())
-            port = self._choose_port()
-            prefix = f"{APP_URL_PREFIX}/{app_id}"
-            command, wrapper_path = self._command(framework, script, app_id, port)
-            creationflags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) if os.name == "nt" else 0
-            process = subprocess.Popen(
-                command,
-                cwd=self.workspace,
-                env=self._child_environment(port, prefix),
-                stdin=subprocess.DEVNULL,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                bufsize=1,
-                start_new_session=os.name != "nt",
-                creationflags=creationflags,
-            )
-            app = PreviewProcess(
-                app_id=app_id,
-                framework=framework,
-                entry_path=script.relative_to(self.workspace).as_posix(),
-                port=port,
-                local_url=f"http://127.0.0.1:{port}{prefix}/",
-                preview_url=f"{prefix}/",
-                started_at=datetime.now(timezone.utc).isoformat(),
-                process=process,
-                wrapper_path=wrapper_path,
-            )
-            self._apps[app_id] = app
-            app.reader_thread = threading.Thread(target=self._read_output, args=(app,), daemon=True)
-            app.reader_thread.start()
-        await self._wait_for_listening(app)
-        return {"started": True, **self._public_app(app)}
+        raise PermissionError(
+            "Python app launching is disabled in strict workspace-only mode because the local Python runtime "
+            "cannot be reliably confined to this directory on every supported operating system. Use a static preview."
+        )
 
     def _public_app(self, app: PreviewProcess) -> dict[str, Any]:
         return {

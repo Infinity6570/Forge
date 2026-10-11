@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/reac
 import { Link, Route, Router as WouterRouter, Switch, useLocation } from 'wouter';
 import {
   useAbortAssistantTask,
+  useChooseAssistantTaskApproval,
   useChooseAssistantTaskModel,
   useCreateAssistantNote,
   useCreateAssistantTask,
@@ -72,14 +73,14 @@ function formatSize(bytes: number) {
 }
 
 function statusTone(status: string) {
-  if (status === 'running' || status === 'queued' || status === 'awaiting_confirmation' || status === 'active') return 'live';
+  if (status === 'running' || status === 'queued' || status === 'awaiting_confirmation' || status === 'awaiting_approval' || status === 'active') return 'live';
   if (status === 'completed' || status === 'fired') return 'done';
   if (status === 'failed' || status === 'cancelled') return 'issue';
   return 'neutral';
 }
 
 function StatusPill({ status }: { status: string }) {
-  const label = status === 'awaiting_confirmation' ? 'awaiting confirmation' : status;
+  const label = status === 'awaiting_confirmation' ? 'awaiting confirmation' : status === 'awaiting_approval' ? 'approval needed' : status;
   return <span className={`status-pill ${statusTone(status)}`} data-testid={`status-${status}`}>{label}</span>;
 }
 
@@ -196,7 +197,7 @@ function ReminderNotifications() {
 
 function TaskStatusLine({ task, compact = false, onClick }: { task: AssistantTask; compact?: boolean; onClick?: () => void }) {
   return <button className={`task-row ${compact ? 'compact' : ''}`} onClick={onClick} data-testid={`button-task-${task.id}`}>
-    <span className={`task-symbol ${statusTone(task.status)}`}>{task.status === 'completed' ? <Check size={14} /> : task.status === 'failed' ? <AlertCircle size={14} /> : task.status === 'cancelled' ? <StopCircle size={14} /> : task.status === 'awaiting_confirmation' ? <CircleHelp size={14} /> : <span className="tiny-spinner" />}</span>
+    <span className={`task-symbol ${statusTone(task.status)}`}>{task.status === 'completed' ? <Check size={14} /> : task.status === 'failed' ? <AlertCircle size={14} /> : task.status === 'cancelled' ? <StopCircle size={14} /> : task.status === 'awaiting_confirmation' || task.status === 'awaiting_approval' ? <CircleHelp size={14} /> : <span className="tiny-spinner" />}</span>
     <span className="task-row-main"><strong>{task.objective}</strong><span>{task.currentStep || task.result || task.error || (task.status === 'queued' ? 'Queued for the agent' : 'Task updated')} </span></span>
     <span className="task-row-side"><StatusPill status={task.status} /><time>{timeAgo(task.updatedAt)}</time></span>
     {!compact && <ArrowRight className="task-arrow" size={15} />}
@@ -213,7 +214,7 @@ function Dashboard() {
   const [selectedTaskId, setSelectedTaskId] = useState<string>();
   const details = useGetAssistantTask(selectedTaskId ?? '', { query: { enabled: !!selectedTaskId, queryKey: getGetAssistantTaskQueryKey(selectedTaskId ?? ''), refetchInterval: (query) => {
     const task = query.state.data;
-    return task && ['queued', 'running'].includes(task.status) ? 2500 : false;
+    return task && ['queued', 'running', 'awaiting_approval', 'awaiting_confirmation'].includes(task.status) ? 2500 : false;
   } } });
   const abort = useAbortAssistantTask();
   const tasks = summary.data?.recentTasks ?? listTasks.data ?? [];
@@ -262,6 +263,7 @@ function Dashboard() {
 
 function TaskDetailDialog({ task, loading, error, retry, close, abort, aborting }: { task?: AssistantTask; loading: boolean; error: boolean; retry: () => void; close: () => void; abort: (id: string) => void; aborting: boolean }) {
   const qc = useQueryClient();
+  const resolveApproval = useChooseAssistantTaskApproval();
   const chooseModel = useChooseAssistantTaskModel();
   const retryStep = useRetryAssistantTaskStep();
   const [actionError, setActionError] = useState('');
@@ -287,12 +289,21 @@ function TaskDetailDialog({ task, loading, error, retry, close, abort, aborting 
       onError: () => setActionError('The specialist retry could not be started. Please try again.'),
     });
   };
+  const decideApproval = (approve: boolean) => {
+    if (!task?.pendingApprovalId) return;
+    setActionError('');
+    resolveApproval.mutate({ id: task.id, data: { approvalId: task.pendingApprovalId, approve } }, {
+      onSuccess: updateTask,
+      onError: () => setActionError('The workspace approval decision could not be saved. Please try again.'),
+    });
+  };
   return <Modal title="Task details" onClose={close}>{loading ? <Skeleton rows={5} /> : error || !task ? <QueryProblem retry={retry} /> : <div className="detail-content"><div className="detail-objective"><StatusPill status={task.status} /><h3>{task.objective}</h3><p>Started {formatDate(task.createdAt)} <span>·</span> Updated {timeAgo(task.updatedAt)}</p></div>
     <p className="settings-footnote">Model used: <strong>{task.modelId}</strong></p>
+    {task.requiresApproval && task.pendingApprovalId && <section className="model-recommendation approval-recommendation" aria-live="polite" data-testid="task-workspace-approval"><strong>Workspace action needs your approval</strong><p>{task.approvalSummary} The agent is paused; no change has been made yet.</p><div className="model-recommendation-actions"><button className="button button-primary" onClick={() => decideApproval(true)} disabled={resolveApproval.isPending} data-testid="button-approve-workspace-action">{resolveApproval.isPending ? 'Applying…' : 'Approve and continue'}</button><button className="button button-quiet" onClick={() => decideApproval(false)} disabled={resolveApproval.isPending} data-testid="button-reject-workspace-action">Reject and continue</button></div></section>}
     {task.requiresModelConfirmation && <section className="model-recommendation" aria-live="polite" data-testid="task-model-recommendation"><strong>💡 Recommendation:</strong><p>This task involves {task.recommendationReason}. Running on a high-capability model like {recommendedName} may produce better results. Would you like to switch for this task?</p><div className="model-recommendation-actions"><button className="button button-primary" onClick={() => choose(true)} disabled={chooseModel.isPending} data-testid="button-switch-recommended-model">{chooseModel.isPending ? 'Saving choice…' : 'Switch to Recommended Model'}</button><button className="button button-quiet" onClick={() => choose(false)} disabled={chooseModel.isPending} data-testid="button-stay-current-model">Stay on Current Model</button></div></section>}
     {task.recommendationKind === 'fallback' && task.retryAvailable && task.status !== 'running' && <section className="model-recommendation fallback-recommendation" aria-live="polite" data-testid="task-fallback-recommendation"><strong>⚠️ Task encountered persistent errors on the current model.</strong><p>Would you like to retry this step with {recommendedName}?</p><div className="model-recommendation-actions"><button className="button button-primary" onClick={() => retryFailedStep(true)} disabled={retryStep.isPending} data-testid="button-retry-step-recommended">{retryStep.isPending ? 'Starting retry…' : 'Retry this step with Recommended Pro Model'}</button><button className="button button-quiet" onClick={() => retryFailedStep(false)} disabled={retryStep.isPending} data-testid="button-dismiss-retry-suggestion">Not now</button></div></section>}
     {actionError && <p className="field-error" role="alert">{actionError}</p>}
-    {task.currentStep && <div className="current-step"><span>{task.status === 'awaiting_confirmation' ? <CircleHelp size={16} /> : <span className="tiny-spinner" />}</span><div><small>{task.status === 'awaiting_confirmation' ? 'WAITING FOR YOU' : 'CURRENT STEP'}</small><strong>{task.currentStep}</strong></div></div>}
+    {task.currentStep && <div className="current-step"><span>{task.status === 'awaiting_confirmation' || task.status === 'awaiting_approval' ? <CircleHelp size={16} /> : <span className="tiny-spinner" />}</span><div><small>{task.status === 'awaiting_confirmation' || task.status === 'awaiting_approval' ? 'WAITING FOR YOU' : 'CURRENT STEP'}</small><strong>{task.currentStep}</strong></div></div>}
     {task.result && <div className="outcome-box"><strong><CheckCircle2 size={16} /> Outcome</strong><p>{task.result}</p></div>}
     {task.error && <div className="error-box"><strong><AlertCircle size={16} /> What happened</strong><p>{task.error}</p></div>}
     <div className="log-heading"><strong>Execution log</strong><span>{task.logs?.length ?? 0} entries</span></div>
@@ -307,17 +318,17 @@ function TasksPage() {
   const [selected, setSelected] = useState<string>();
   const detail = useGetAssistantTask(selected ?? '', { query: { enabled: !!selected, queryKey: getGetAssistantTaskQueryKey(selected ?? ''), refetchInterval: (query) => {
     const item = query.state.data;
-    return item && ['running', 'queued'].includes(item.status) ? 2500 : false;
+    return item && ['running', 'queued', 'awaiting_approval', 'awaiting_confirmation'].includes(item.status) ? 2500 : false;
   } } });
   const abort = useAbortAssistantTask();
   const [filter, setFilter] = useState('all');
   const [search, setSearch] = useState('');
-  const options = ['all', 'running', 'queued', 'awaiting_confirmation', 'completed', 'failed', 'cancelled'];
+  const options = ['all', 'running', 'queued', 'awaiting_confirmation', 'awaiting_approval', 'completed', 'failed', 'cancelled'];
   const tasks = useMemo(() => (tasksQuery.data ?? []).filter((task) => (filter === 'all' || task.status === filter) && task.objective.toLowerCase().includes(search.toLowerCase())), [tasksQuery.data, filter, search]);
   return <AppShell page="tasks"><div className="content-page enter">
     <PageHeading eyebrow="EXECUTION LOG" title="Task activity" description="A clear view of every request, from first thought to finished result." right={<Link href="/" className="button button-primary" data-testid="link-new-task"><Plus size={16} /> New task</Link>} />
     <div className="task-overview-strip"><div><span className="strip-icon"><Activity size={17} /></span><div><strong>Every step, in view</strong><span>Open any task to follow its execution log.</span></div></div><span className="live-label"><span className="online-pip" />LIVE UPDATES</span></div>
-    <section className="panel tasks-table-panel"><div className="list-toolbar"><div className="filter-pills">{options.map((option) => <button key={option} onClick={() => setFilter(option)} className={`filter-pill ${filter === option ? 'selected' : ''}`} data-testid={`filter-task-${option}`}>{option === 'all' ? 'All tasks' : option === 'awaiting_confirmation' ? 'Awaiting confirmation' : option}</button>)}</div><label className="search-box"><Search size={15} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search tasks" aria-label="Search tasks" data-testid="input-search-tasks" /></label></div>
+      <section className="panel tasks-table-panel"><div className="list-toolbar"><div className="filter-pills">{options.map((option) => <button key={option} onClick={() => setFilter(option)} className={`filter-pill ${filter === option ? 'selected' : ''}`} data-testid={`filter-task-${option}`}>{option === 'all' ? 'All tasks' : option === 'awaiting_confirmation' ? 'Awaiting confirmation' : option === 'awaiting_approval' ? 'Approval needed' : option}</button>)}</div><label className="search-box"><Search size={15} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search tasks" aria-label="Search tasks" data-testid="input-search-tasks" /></label></div>
       {tasksQuery.isLoading ? <div className="table-loading"><Skeleton rows={7} /></div> : tasksQuery.isError ? <QueryProblem retry={() => tasksQuery.refetch()} /> : tasks.length ? <div className="full-task-list">{tasks.map((task) => <TaskStatusLine key={task.id} task={task} onClick={() => setSelected(task.id)} />)}</div> : <div className="empty-state"><div className="empty-mark"><Activity size={20} /></div><strong>{search || filter !== 'all' ? 'No matching tasks' : 'Nothing in the queue'}</strong><p>{search || filter !== 'all' ? 'Try another search or status filter.' : 'Send your first request and watch the work unfold here.'}</p>{!search && filter === 'all' && <Link href="/" className="button button-primary button-small" data-testid="link-first-task"><Plus size={14} /> Create a task</Link>}</div>}
     </section>
     {selected && <TaskDetailDialog task={detail.data} loading={detail.isLoading} error={detail.isError} retry={() => detail.refetch()} close={() => setSelected(undefined)} abort={(id) => abort.mutate({ id }, { onSuccess: () => { qc.invalidateQueries({ queryKey: getListAssistantTasksQueryKey() }); qc.invalidateQueries({ queryKey: getGetAssistantDashboardQueryKey() }); } })} aborting={abort.isPending} />}
@@ -398,7 +409,7 @@ function WorkspacePreview() {
     </div>
     {previewQuery.isLoading ? <div className="preview-loading" aria-label="Loading previews"><div className="preview-loading-bar" /><div className="preview-loading-stage" /></div>
       : previewQuery.isError ? <div className="preview-state preview-error"><div className="preview-state-icon"><AlertCircle size={20} /></div><strong>Preview status is unavailable</strong><p>We couldn’t reach the workspace preview service.</p><button className="button button-primary button-small" onClick={() => void previewQuery.refetch()} data-testid="button-retry-preview"><RefreshCw size={14} /> Try again</button></div>
-      : !preview?.staticAvailable && apps.length === 0 ? <div className="preview-state preview-empty"><div className="preview-empty-art"><span /><span /><span /></div><strong>No app previews yet</strong><p>When your agent builds a small app or a static workspace, it will appear here.</p></div>
+       : !preview?.staticAvailable && apps.length === 0 ? <div className="preview-state preview-empty"><div className="preview-empty-art"><span /><span /><span /></div><strong>No static preview yet</strong><p>Create workspace/index.html to preview a static site. Python app processes are disabled in strict workspace-only safety mode.</p></div>
       : <>
         <div className="preview-controls">
           <div className="preview-choices" role="group" aria-label="Choose a preview">
@@ -620,7 +631,7 @@ function SettingsPage() {
       <p className="settings-footnote"><LockKeyhole size={13} /> {configured ? 'Provider key configured.' : 'Add a provider key to run tasks.'} Keys are never sent back to the browser.</p>
     </section>
     <section className="settings-section safety-section"><div className="settings-section-heading"><div className="section-symbol amber"><ShieldCheck size={18} /></div><div><h2>Local code runner</h2><p>Optional Python execution in the local workspace, disabled by default.</p></div></div>
-      <div className="setting-row"><div className="setting-row-icon"><KeyRound size={16} /></div><div className="setting-copy"><strong>Allow short Python runs</strong><span>Local-only and off by default. If enabled, generated code can access files and run commands with your account's normal computer permissions.</span></div><button className={`switch ${codeRunnerEnabled ? 'on' : ''}`} role="switch" aria-checked={codeRunnerEnabled} disabled={!credentialStatus?.localSetupAllowed} onClick={() => { setCodeRunnerEnabled(!codeRunnerEnabled); setProviderSaved(false); }} aria-label="Allow local Python code runner" data-testid="switch-local-code-runner"><span /></button></div>
+      <div className="setting-row"><div className="setting-row-icon"><KeyRound size={16} /></div><div className="setting-copy"><strong>Allow safe workspace commands</strong><span>Local-only and off by default. Only read-only commands are supported, restricted to workspace files, and limited to 30 seconds.</span></div><button className={`switch ${codeRunnerEnabled ? 'on' : ''}`} role="switch" aria-checked={codeRunnerEnabled} disabled={!credentialStatus?.localSetupAllowed} onClick={() => { setCodeRunnerEnabled(!codeRunnerEnabled); setProviderSaved(false); }} aria-label="Allow safe workspace commands" data-testid="switch-local-code-runner"><span /></button></div>
       <div className="setting-row"><div className="setting-row-icon"><Bell size={16} /></div><div className="setting-copy"><strong>Desktop notifications</strong><span>Show browser notifications when a scheduled reminder fires.</span></div><button className="button button-quiet button-small" onClick={() => { if ('Notification' in window) void Notification.requestPermission(); }} data-testid="button-enable-notifications">Enable alerts</button></div>
       {!credentialStatus?.localSetupAllowed && <p className="settings-footnote"><LockKeyhole size={13} /> The local code runner can only be enabled from a localhost copy of the app.</p>}
     </section>

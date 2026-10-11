@@ -13,6 +13,7 @@ export const AssistantTaskStatus = {
   queued: 'queued',
   running: 'running',
   awaiting_confirmation: 'awaiting_confirmation',
+  awaiting_approval: 'awaiting_approval',
   completed: 'completed',
   failed: 'failed',
   cancelled: 'cancelled',

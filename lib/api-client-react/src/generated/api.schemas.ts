@@ -16,6 +16,7 @@ export const AssistantTaskStatus = {
   queued: 'queued',
   running: 'running',
   awaiting_confirmation: 'awaiting_confirmation',
+  awaiting_approval: 'awaiting_approval',
   completed: 'completed',
   failed: 'failed',
   cancelled: 'cancelled',
@@ -99,6 +100,11 @@ export interface AssistantTask {
   recommendedModelId: string | null;
   retryAvailable: boolean;
   requiresModelConfirmation: boolean;
+  /** @nullable */
+  pendingApprovalId: string | null;
+  /** @nullable */
+  approvalSummary: string | null;
+  requiresApproval: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -140,6 +146,15 @@ export interface TaskModelChoiceInput {
 
 export interface TaskFallbackChoiceInput {
   retry: boolean;
+}
+
+export interface TaskApprovalInput {
+  /**
+     * @minLength 1
+     * @maxLength 64
+     */
+  approvalId: string;
+  approve: boolean;
 }
 
 export type AssistantTimerKind = typeof AssistantTimerKind[keyof typeof AssistantTimerKind];

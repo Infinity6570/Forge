@@ -29,7 +29,7 @@ export const GetAssistantDashboardResponse = zod.object({
   "recentTasks": zod.array(zod.object({
   "id": zod.string().uuid(),
   "objective": zod.string(),
-  "status": zod.enum(['queued', 'running', 'awaiting_confirmation', 'completed', 'failed', 'cancelled']),
+  "status": zod.enum(['queued', 'running', 'awaiting_confirmation', 'awaiting_approval', 'completed', 'failed', 'cancelled']),
   "currentStep": zod.string().nullable(),
   "result": zod.string().nullable(),
   "error": zod.string().nullable(),
@@ -47,6 +47,9 @@ export const GetAssistantDashboardResponse = zod.object({
   "recommendedModelId": zod.string().nullable(),
   "retryAvailable": zod.boolean(),
   "requiresModelConfirmation": zod.boolean(),
+  "pendingApprovalId": zod.string().nullable(),
+  "approvalSummary": zod.string().nullable(),
+  "requiresApproval": zod.boolean(),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
 }))
@@ -59,7 +62,7 @@ export const GetAssistantDashboardResponse = zod.object({
 export const ListAssistantTasksResponseItem = zod.object({
   "id": zod.string().uuid(),
   "objective": zod.string(),
-  "status": zod.enum(['queued', 'running', 'awaiting_confirmation', 'completed', 'failed', 'cancelled']),
+  "status": zod.enum(['queued', 'running', 'awaiting_confirmation', 'awaiting_approval', 'completed', 'failed', 'cancelled']),
   "currentStep": zod.string().nullable(),
   "result": zod.string().nullable(),
   "error": zod.string().nullable(),
@@ -77,6 +80,9 @@ export const ListAssistantTasksResponseItem = zod.object({
   "recommendedModelId": zod.string().nullable(),
   "retryAvailable": zod.boolean(),
   "requiresModelConfirmation": zod.boolean(),
+  "pendingApprovalId": zod.string().nullable(),
+  "approvalSummary": zod.string().nullable(),
+  "requiresApproval": zod.boolean(),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
 })
@@ -102,7 +108,7 @@ export const CreateAssistantTaskBody = zod.object({
 export const CreateAssistantTaskResponse = zod.object({
   "id": zod.string().uuid(),
   "objective": zod.string(),
-  "status": zod.enum(['queued', 'running', 'awaiting_confirmation', 'completed', 'failed', 'cancelled']),
+  "status": zod.enum(['queued', 'running', 'awaiting_confirmation', 'awaiting_approval', 'completed', 'failed', 'cancelled']),
   "currentStep": zod.string().nullable(),
   "result": zod.string().nullable(),
   "error": zod.string().nullable(),
@@ -120,6 +126,9 @@ export const CreateAssistantTaskResponse = zod.object({
   "recommendedModelId": zod.string().nullable(),
   "retryAvailable": zod.boolean(),
   "requiresModelConfirmation": zod.boolean(),
+  "pendingApprovalId": zod.string().nullable(),
+  "approvalSummary": zod.string().nullable(),
+  "requiresApproval": zod.boolean(),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
 })
@@ -135,7 +144,7 @@ export const GetAssistantTaskParams = zod.object({
 export const GetAssistantTaskResponse = zod.object({
   "id": zod.string().uuid(),
   "objective": zod.string(),
-  "status": zod.enum(['queued', 'running', 'awaiting_confirmation', 'completed', 'failed', 'cancelled']),
+  "status": zod.enum(['queued', 'running', 'awaiting_confirmation', 'awaiting_approval', 'completed', 'failed', 'cancelled']),
   "currentStep": zod.string().nullable(),
   "result": zod.string().nullable(),
   "error": zod.string().nullable(),
@@ -153,6 +162,9 @@ export const GetAssistantTaskResponse = zod.object({
   "recommendedModelId": zod.string().nullable(),
   "retryAvailable": zod.boolean(),
   "requiresModelConfirmation": zod.boolean(),
+  "pendingApprovalId": zod.string().nullable(),
+  "approvalSummary": zod.string().nullable(),
+  "requiresApproval": zod.boolean(),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
 })
@@ -168,7 +180,7 @@ export const AbortAssistantTaskParams = zod.object({
 export const AbortAssistantTaskResponse = zod.object({
   "id": zod.string().uuid(),
   "objective": zod.string(),
-  "status": zod.enum(['queued', 'running', 'awaiting_confirmation', 'completed', 'failed', 'cancelled']),
+  "status": zod.enum(['queued', 'running', 'awaiting_confirmation', 'awaiting_approval', 'completed', 'failed', 'cancelled']),
   "currentStep": zod.string().nullable(),
   "result": zod.string().nullable(),
   "error": zod.string().nullable(),
@@ -186,6 +198,9 @@ export const AbortAssistantTaskResponse = zod.object({
   "recommendedModelId": zod.string().nullable(),
   "retryAvailable": zod.boolean(),
   "requiresModelConfirmation": zod.boolean(),
+  "pendingApprovalId": zod.string().nullable(),
+  "approvalSummary": zod.string().nullable(),
+  "requiresApproval": zod.boolean(),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
 })
@@ -205,7 +220,7 @@ export const ChooseAssistantTaskModelBody = zod.object({
 export const ChooseAssistantTaskModelResponse = zod.object({
   "id": zod.string().uuid(),
   "objective": zod.string(),
-  "status": zod.enum(['queued', 'running', 'awaiting_confirmation', 'completed', 'failed', 'cancelled']),
+  "status": zod.enum(['queued', 'running', 'awaiting_confirmation', 'awaiting_approval', 'completed', 'failed', 'cancelled']),
   "currentStep": zod.string().nullable(),
   "result": zod.string().nullable(),
   "error": zod.string().nullable(),
@@ -223,6 +238,9 @@ export const ChooseAssistantTaskModelResponse = zod.object({
   "recommendedModelId": zod.string().nullable(),
   "retryAvailable": zod.boolean(),
   "requiresModelConfirmation": zod.boolean(),
+  "pendingApprovalId": zod.string().nullable(),
+  "approvalSummary": zod.string().nullable(),
+  "requiresApproval": zod.boolean(),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
 })
@@ -242,7 +260,7 @@ export const RetryAssistantTaskStepBody = zod.object({
 export const RetryAssistantTaskStepResponse = zod.object({
   "id": zod.string().uuid(),
   "objective": zod.string(),
-  "status": zod.enum(['queued', 'running', 'awaiting_confirmation', 'completed', 'failed', 'cancelled']),
+  "status": zod.enum(['queued', 'running', 'awaiting_confirmation', 'awaiting_approval', 'completed', 'failed', 'cancelled']),
   "currentStep": zod.string().nullable(),
   "result": zod.string().nullable(),
   "error": zod.string().nullable(),
@@ -260,6 +278,54 @@ export const RetryAssistantTaskStepResponse = zod.object({
   "recommendedModelId": zod.string().nullable(),
   "retryAvailable": zod.boolean(),
   "requiresModelConfirmation": zod.boolean(),
+  "pendingApprovalId": zod.string().nullable(),
+  "approvalSummary": zod.string().nullable(),
+  "requiresApproval": zod.boolean(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Approve or reject a paused workspace file operation
+ */
+export const ChooseAssistantTaskApprovalParams = zod.object({
+  "id": zod.coerce.string().uuid()
+})
+
+export const chooseAssistantTaskApprovalBodyApprovalIdMax = 64;
+
+
+
+export const ChooseAssistantTaskApprovalBody = zod.object({
+  "approvalId": zod.string().min(1).max(chooseAssistantTaskApprovalBodyApprovalIdMax),
+  "approve": zod.boolean()
+})
+
+export const ChooseAssistantTaskApprovalResponse = zod.object({
+  "id": zod.string().uuid(),
+  "objective": zod.string(),
+  "status": zod.enum(['queued', 'running', 'awaiting_confirmation', 'awaiting_approval', 'completed', 'failed', 'cancelled']),
+  "currentStep": zod.string().nullable(),
+  "result": zod.string().nullable(),
+  "error": zod.string().nullable(),
+  "logs": zod.array(zod.object({
+  "id": zod.string(),
+  "kind": zod.enum(['plan', 'agent', 'tool', 'result', 'error', 'info', 'warning', 'success']),
+  "message": zod.string(),
+  "createdAt": zod.coerce.date()
+})),
+  "provider": zod.enum(['openai', 'deepseek', 'gemini', 'openrouter']),
+  "modelId": zod.string(),
+  "recommendationKind": zod.union([zod.literal('complexity'),zod.literal('fallback'),zod.literal(null)]).nullable(),
+  "recommendationReason": zod.string().nullable(),
+  "recommendedProvider": zod.union([zod.literal('openai'),zod.literal('deepseek'),zod.literal('gemini'),zod.literal('openrouter'),zod.literal(null)]).nullable(),
+  "recommendedModelId": zod.string().nullable(),
+  "retryAvailable": zod.boolean(),
+  "requiresModelConfirmation": zod.boolean(),
+  "pendingApprovalId": zod.string().nullable(),
+  "approvalSummary": zod.string().nullable(),
+  "requiresApproval": zod.boolean(),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
 })

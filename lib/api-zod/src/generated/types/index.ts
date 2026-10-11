@@ -24,6 +24,7 @@ export * from './dashboardSummary';
 export * from './fileUploadInput';
 export * from './healthStatus';
 export * from './noteInput';
+export * from './taskApprovalInput';
 export * from './taskFallbackChoiceInput';
 export * from './taskInput';
 export * from './taskInputProvider';

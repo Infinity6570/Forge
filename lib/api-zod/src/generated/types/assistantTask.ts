@@ -34,6 +34,11 @@ export interface AssistantTask {
   recommendedModelId: string | null;
   retryAvailable: boolean;
   requiresModelConfirmation: boolean;
+  /** @nullable */
+  pendingApprovalId: string | null;
+  /** @nullable */
+  approvalSummary: string | null;
+  requiresApproval: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
