@@ -75,6 +75,7 @@ MODEL_OPTIONS = {
     },
 }
 MODEL_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,119}$")
+GEMINI_MODEL_ID_PATTERN = re.compile(r"^(?:models/)?gemini-[A-Za-z0-9][A-Za-z0-9._-]*$")
 KEY_NAMES = {
     "openai": "OPENAI_API_KEY",
     "deepseek": "DEEPSEEK_API_KEY",
@@ -328,7 +329,7 @@ def get_settings(local_allowed: bool, provider_settings_allowed: bool) -> dict[s
         "modelId": model,
         "fallbackModelId": (
             os.getenv("GEMINI_FALLBACK_MODEL", "").strip()
-            if MODEL_ID_PATTERN.fullmatch(os.getenv("GEMINI_FALLBACK_MODEL", "").strip())
+            if GEMINI_MODEL_ID_PATTERN.fullmatch(os.getenv("GEMINI_FALLBACK_MODEL", "").strip())
             else ""
         ),
         "localSetupAllowed": local_allowed,
@@ -1574,7 +1575,9 @@ async def update_settings(body: SettingsInput, request: Request) -> dict[str, An
     if body.codeRunnerEnabled and not local_allowed:
         raise HTTPException(status_code=403, detail="The local code runner is available only in a local copy.")
     fallback_model = (body.fallbackModelId or "").strip()
-    if body.provider == "gemini" and fallback_model and not MODEL_ID_PATTERN.fullmatch(fallback_model):
+    if body.provider == "gemini" and not GEMINI_MODEL_ID_PATTERN.fullmatch(body.modelId):
+        raise HTTPException(status_code=422, detail="That Gemini model ID is not valid.")
+    if body.provider == "gemini" and fallback_model and not GEMINI_MODEL_ID_PATTERN.fullmatch(fallback_model):
         raise HTTPException(status_code=422, detail="That Gemini fallback model ID is not valid.")
     values = {
         "OPENAI_API_KEY": body.openaiApiKey,

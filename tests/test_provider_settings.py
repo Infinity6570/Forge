@@ -249,6 +249,74 @@ class ProviderSettingsTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(custom_response.json()["modelId"], custom_id)
         self.assertEqual(dotenv_values(self.env_file)["AGENT_MODEL"], custom_id)
 
+    async def test_malformed_gemini_model_does_not_replace_saved_settings(self) -> None:
+        saved_response = await self.put_settings(
+            base_url="http://127.0.0.1",
+            model_id="gemini-2.5-flash",
+            fallbackModelId="gemini-2.5-flash-lite",
+            geminiApiKey="saved-gemini-key",
+        )
+        self.assertEqual(saved_response.status_code, 200, saved_response.text)
+        saved_env = self.env_file.read_text()
+
+        invalid_response = await self.put_settings(
+            base_url="http://127.0.0.1",
+            model_id="gemini-2.5-flash?invalid",
+            fallbackModelId="gemini-2.5-pro",
+            geminiApiKey="replacement-gemini-key",
+        )
+
+        self.assertEqual(invalid_response.status_code, 422, invalid_response.text)
+        self.assertEqual(self.env_file.read_text(), saved_env)
+        self.assertEqual(os.environ["AGENT_MODEL"], "gemini-2.5-flash")
+        self.assertEqual(os.environ["GEMINI_FALLBACK_MODEL"], "gemini-2.5-flash-lite")
+        self.assertEqual(os.environ["GEMINI_API_KEY"], "saved-gemini-key")
+
+        wrong_provider_response = await self.put_settings(
+            base_url="http://127.0.0.1",
+            model_id="gpt-4.1-mini",
+            fallbackModelId="gemini-2.5-pro",
+            geminiApiKey="replacement-gemini-key",
+        )
+
+        self.assertEqual(wrong_provider_response.status_code, 422, wrong_provider_response.text)
+        self.assertIn("Gemini model ID", wrong_provider_response.json()["detail"])
+        self.assertEqual(self.env_file.read_text(), saved_env)
+        self.assertEqual(os.environ["AGENT_MODEL"], "gemini-2.5-flash")
+        self.assertEqual(os.environ["GEMINI_FALLBACK_MODEL"], "gemini-2.5-flash-lite")
+        self.assertEqual(os.environ["GEMINI_API_KEY"], "saved-gemini-key")
+    async def test_non_gemini_fallback_does_not_replace_saved_settings(self) -> None:
+        saved_response = await self.put_settings(
+            base_url="http://127.0.0.1",
+            model_id="gemini-2.5-flash",
+            fallbackModelId="gemini-2.5-flash-lite",
+            geminiApiKey="saved-gemini-key",
+        )
+        self.assertEqual(saved_response.status_code, 200, saved_response.text)
+        saved_env = self.env_file.read_text()
+
+        invalid_response = await self.put_settings(
+            base_url="http://127.0.0.1",
+            model_id="gemini-2.5-pro",
+            fallbackModelId="gpt-4.1-mini",
+            geminiApiKey="replacement-gemini-key",
+        )
+
+        self.assertEqual(invalid_response.status_code, 422, invalid_response.text)
+        self.assertIn("Gemini fallback", invalid_response.json()["detail"])
+        self.assertEqual(self.env_file.read_text(), saved_env)
+        self.assertEqual(os.environ["AGENT_MODEL"], "gemini-2.5-flash")
+        self.assertEqual(os.environ["GEMINI_FALLBACK_MODEL"], "gemini-2.5-flash-lite")
+        self.assertEqual(os.environ["GEMINI_API_KEY"], "saved-gemini-key")
+
+    async def test_invalid_saved_gemini_fallback_is_not_returned(self) -> None:
+        os.environ["GEMINI_FALLBACK_MODEL"] = "gpt-4.1-mini"
+
+        response = await self.get_settings()
+
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["fallbackModelId"], "")
+
 
 if __name__ == "__main__":
     unittest.main()
