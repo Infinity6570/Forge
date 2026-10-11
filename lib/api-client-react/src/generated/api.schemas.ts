@@ -171,6 +171,49 @@ export interface FileUploadInput {
   file: Blob;
 }
 
+export type WorkspacePreviewAppFramework = typeof WorkspacePreviewAppFramework[keyof typeof WorkspacePreviewAppFramework];
+
+
+export const WorkspacePreviewAppFramework = {
+  streamlit: 'streamlit',
+  flask: 'flask',
+} as const;
+
+export type WorkspacePreviewAppStatus = typeof WorkspacePreviewAppStatus[keyof typeof WorkspacePreviewAppStatus];
+
+
+export const WorkspacePreviewAppStatus = {
+  running: 'running',
+} as const;
+
+export interface WorkspacePreviewApp {
+  id: string;
+  framework: WorkspacePreviewAppFramework;
+  entryPath: string;
+  /**
+     * @minimum 1
+     * @maximum 65535
+     */
+  port: number;
+  localUrl: string;
+  previewUrl: string;
+  status: WorkspacePreviewAppStatus;
+  startedAt: string;
+}
+
+export interface WorkspacePreviewStatus {
+  staticAvailable: boolean;
+  /** @nullable */
+  staticEntryPath: string | null;
+  /** @nullable */
+  staticPreviewUrl: string | null;
+  apps: WorkspacePreviewApp[];
+}
+
+export interface WorkspacePreviewStopInput {
+  appId: string;
+}
+
 export type AssistantSettingsProvider = typeof AssistantSettingsProvider[keyof typeof AssistantSettingsProvider];
 
 

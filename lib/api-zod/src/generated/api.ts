@@ -346,3 +346,120 @@ export const UpdateAssistantSettingsResponse = zod.object({
 export const DownloadAssistantWorkspaceResponse = zod.unknown()
 
 
+/**
+ * @summary Get the available workspace previews and running apps
+ */
+export const getWorkspacePreviewResponseAppsItemPortMax = 65535;
+
+
+
+export const GetWorkspacePreviewResponse = zod.object({
+  "staticAvailable": zod.boolean(),
+  "staticEntryPath": zod.string().nullable(),
+  "staticPreviewUrl": zod.string().nullable(),
+  "apps": zod.array(zod.object({
+  "id": zod.string().uuid(),
+  "framework": zod.enum(['streamlit', 'flask']),
+  "entryPath": zod.string(),
+  "port": zod.number().int().min(1).max(getWorkspacePreviewResponseAppsItemPortMax),
+  "localUrl": zod.string().url(),
+  "previewUrl": zod.string(),
+  "status": zod.enum(['running']),
+  "startedAt": zod.coerce.date()
+}))
+})
+
+
+/**
+ * @summary Stop a workspace app started by the assistant
+ */
+export const StopWorkspacePreviewAppBody = zod.object({
+  "appId": zod.string().uuid()
+})
+
+export const stopWorkspacePreviewAppResponseAppsItemPortMax = 65535;
+
+
+
+export const StopWorkspacePreviewAppResponse = zod.object({
+  "staticAvailable": zod.boolean(),
+  "staticEntryPath": zod.string().nullable(),
+  "staticPreviewUrl": zod.string().nullable(),
+  "apps": zod.array(zod.object({
+  "id": zod.string().uuid(),
+  "framework": zod.enum(['streamlit', 'flask']),
+  "entryPath": zod.string(),
+  "port": zod.number().int().min(1).max(stopWorkspacePreviewAppResponseAppsItemPortMax),
+  "localUrl": zod.string().url(),
+  "previewUrl": zod.string(),
+  "status": zod.enum(['running']),
+  "startedAt": zod.coerce.date()
+}))
+})
+
+
+/**
+ * @summary Serve a safe HTML app asset from the workspace root
+ */
+export const GetWorkspacePreviewAssetParams = zod.object({
+  "path": zod.coerce.string()
+})
+
+export const GetWorkspacePreviewAssetResponse = zod.unknown()
+
+
+/**
+ * @summary Proxy a GET request to a running workspace app
+ */
+export const GetWorkspacePreviewServerAssetParams = zod.object({
+  "app_id": zod.coerce.string().uuid(),
+  "path": zod.coerce.string()
+})
+
+export const GetWorkspacePreviewServerAssetResponse = zod.unknown()
+
+
+/**
+ * @summary Proxy a POST request to a running workspace app
+ */
+export const PostWorkspacePreviewServerAssetParams = zod.object({
+  "app_id": zod.coerce.string().uuid(),
+  "path": zod.coerce.string()
+})
+
+export const PostWorkspacePreviewServerAssetResponse = zod.unknown()
+
+
+/**
+ * @summary Proxy a PUT request to a running workspace app
+ */
+export const PutWorkspacePreviewServerAssetParams = zod.object({
+  "app_id": zod.coerce.string().uuid(),
+  "path": zod.coerce.string()
+})
+
+export const PutWorkspacePreviewServerAssetResponse = zod.unknown()
+
+
+/**
+ * @summary Proxy a PATCH request to a running workspace app
+ */
+export const PatchWorkspacePreviewServerAssetParams = zod.object({
+  "app_id": zod.coerce.string().uuid(),
+  "path": zod.coerce.string()
+})
+
+export const PatchWorkspacePreviewServerAssetResponse = zod.unknown()
+
+
+/**
+ * @summary Proxy a DELETE request to a running workspace app
+ */
+export const DeleteWorkspacePreviewServerAssetParams = zod.object({
+  "app_id": zod.coerce.string().uuid(),
+  "path": zod.coerce.string()
+})
+
+export const DeleteWorkspacePreviewServerAssetResponse = zod.unknown()
+
+

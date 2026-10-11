@@ -289,6 +289,124 @@ paths:
               schema:
                 type: string
                 format: binary
+  /workspace/preview:
+    get:
+      operationId: getWorkspacePreview
+      tags: [assistant]
+      summary: Get the available workspace previews and running apps
+      responses:
+        "200":
+          description: Preview state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspacePreviewStatus"
+  /workspace/preview/stop:
+    post:
+      operationId: stopWorkspacePreviewApp
+      tags: [assistant]
+      summary: Stop a workspace app started by the assistant
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkspacePreviewStopInput"
+      responses:
+        "200":
+          description: Updated preview state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspacePreviewStatus"
+        "404":
+          description: App process not found
+  /workspace/preview/static/{path}:
+    get:
+      operationId: getWorkspacePreviewAsset
+      tags: [assistant]
+      summary: Serve a safe HTML app asset from the workspace root
+      parameters:
+        - name: path
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Workspace preview asset
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+        "404":
+          description: Asset not available for preview
+  /workspace/preview/server/{app_id}/{path}:
+    parameters:
+      - name: app_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+      - name: path
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      operationId: getWorkspacePreviewServerAsset
+      tags: [assistant]
+      summary: Proxy a GET request to a running workspace app
+      responses:
+        "200":
+          description: Response from the running app
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+        "404":
+          description: App process not found
+        "502":
+          description: Workspace app is not responding
+    post:
+      operationId: postWorkspacePreviewServerAsset
+      tags: [assistant]
+      summary: Proxy a POST request to a running workspace app
+      responses:
+        "200":
+          description: Response from the running app
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+        "404":
+          description: App process not found
+        "502":
+          description: Workspace app is not responding
+    put:
+      operationId: putWorkspacePreviewServerAsset
+      tags: [assistant]
+      summary: Proxy a PUT request to a running workspace app
+      responses:
+        "200":
+          description: Response from the running app
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+    patch:
+      operationId: patchWorkspacePreviewServerAsset
+      tags: [assistant]
+      summary: Proxy a PATCH request to a running workspace app
+      responses:
+        "200":
+          description: Response from the running app
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+    delete:
+      operationId: deleteWorkspacePreviewServerAsset
+      tags: [assistant]
+      summary: Proxy a DELETE request to a running workspace app
+      responses:
+        "200":
+          description: Response from the running app
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
 components:
   schemas:
     HealthStatus:
@@ -417,6 +535,38 @@ components:
         file:
           type: string
           format: binary
+    WorkspacePreviewApp:
+      type: object
+      required: [id, framework, entryPath, port, localUrl, previewUrl, status, startedAt]
+      properties:
+        id: { type: string, format: uuid }
+        framework:
+          type: string
+          enum: [streamlit, flask]
+        entryPath: { type: string }
+        port: { type: integer, minimum: 1, maximum: 65535 }
+        localUrl: { type: string, format: uri }
+        previewUrl: { type: string }
+        status:
+          type: string
+          enum: [running]
+        startedAt: { type: string, format: date-time }
+    WorkspacePreviewStatus:
+      type: object
+      required: [staticAvailable, staticEntryPath, staticPreviewUrl, apps]
+      properties:
+        staticAvailable: { type: boolean }
+        staticEntryPath: { type: ["string", "null"] }
+        staticPreviewUrl: { type: ["string", "null"] }
+        apps:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkspacePreviewApp"
+    WorkspacePreviewStopInput:
+      type: object
+      required: [appId]
+      properties:
+        appId: { type: string, format: uuid }
     AssistantSettings:
       type: object
       required: [provider, modelId, localSetupAllowed, providerSettingsAllowed, hasOpenaiKey, hasGeminiKey, hasOpenrouterKey, codeRunnerEnabled]

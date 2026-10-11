@@ -67,6 +67,49 @@
   --radius-xl: calc(var(--radius) + 4px);
 }
 
+/* Workspace live preview: an instrument-panel frame within Morrow's paper-toned library. */
+.preview-workspace{padding:0 16px 16px}
+.preview-toolbar{min-height:59px;display:flex;align-items:center;justify-content:space-between;gap:12px;border-bottom:1px solid #e9e6dc}
+.preview-view-label{display:flex;align-items:center;gap:10px}.preview-view-label>div{display:grid;gap:3px}.preview-view-label strong{font:500 16px var(--app-font-serif);color:#3d4944}.preview-view-label span:not(.preview-status-dot){font-size:9px;color:#94968c}
+.preview-status-dot{display:inline-block;width:7px;height:7px;flex:none;border-radius:50%;background:#739478;box-shadow:0 0 0 3px #e7eee4}
+.preview-controls{display:flex;align-items:center;justify-content:space-between;gap:14px;min-height:75px;padding:12px 0}
+.preview-choices{display:flex;align-items:center;gap:7px;min-width:0;overflow-x:auto;padding:3px 1px}
+.preview-choice-wrap{display:flex;align-items:center;padding-right:4px;border:1px solid #e7e4da;border-radius:7px;background:#fbfaf5;flex:none}
+.preview-choice-wrap.selected{border-color:#a8b9a7;background:#eff2e9}
+.preview-choice{display:flex;align-items:center;gap:8px;min-width:145px;padding:7px 9px;text-align:left;border:1px solid #e7e4da;border-radius:7px;background:#fbfaf5;color:#68726a;cursor:pointer}
+.preview-choice.selected{border-color:#a8b9a7;background:#eff2e9;color:#416357}
+.preview-choice-wrap .preview-choice{min-width:126px;border:0;background:transparent}
+.choice-symbol{width:26px;height:26px;display:grid;place-items:center;flex:none;border-radius:6px;background:#e7ebe1;color:#668071;font:10px var(--app-font-mono)}
+.app-symbol{background:#f0e9dc;color:#a17a43}
+.preview-choice strong,.preview-choice small{display:block;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.preview-choice strong{font-size:9px;text-transform:capitalize}.preview-choice small{margin-top:3px;color:#97988f;font-size:8px}
+.preview-stop{width:26px;height:28px;display:grid;place-items:center;border:0;border-radius:5px;background:transparent;color:#a18479;cursor:pointer}
+.preview-stop:hover:not(:disabled){background:#f5e7df;color:#a04f43}.preview-stop:disabled{opacity:.45;cursor:wait}
+.preview-app-meta{display:flex;align-items:center;gap:8px;flex:none;color:#858b80;font:8px var(--app-font-mono);white-space:nowrap}.preview-app-meta .preview-status-dot{width:6px;height:6px}.preview-meta-divider{height:13px;border-left:1px solid #dddacf}
+.preview-address-row{display:flex;align-items:center;gap:9px;margin:0 0 10px}
+.preview-address{height:36px;display:flex;align-items:center;gap:9px;flex:1;min-width:0;padding:0 11px;border:1px solid #e4e1d6;border-radius:6px;background:#f8f7f0;color:#8d9389;font:9px var(--app-font-mono)}
+.address-lock{display:grid;place-items:center;color:#6b8977}.address-host{color:#637268}.address-path{overflow:hidden;color:#98988f;text-overflow:ellipsis;white-space:nowrap}
+.preview-open{height:34px;white-space:nowrap}
+.preview-frame-shell{position:relative;min-height:320px;height:min(65vh,660px);overflow:hidden;border:1px solid #dcded4;border-radius:7px;background:#eeeee7;box-shadow:0 5px 18px #39483b0b}
+.preview-frame{display:block;width:100%;height:100%;border:0;background:#f7f6ef}
+.preview-state{min-height:240px;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:28px;text-align:center}
+.preview-state strong{margin-top:12px;color:#46534b;font:500 19px var(--app-font-serif)}
+.preview-state p{max-width:350px;margin:7px 0 15px;color:#888e83;font-size:10px;line-height:1.65}
+.preview-state-icon{width:40px;height:40px;display:grid;place-items:center;border-radius:11px;background:#f2e9de;color:#a87d46}
+.preview-error .preview-state-icon,.preview-unavailable .preview-state-icon{background:#f5eae4;color:#a35b4e}
+.preview-empty{min-height:355px}.preview-empty-art{position:relative;width:115px;height:88px;margin-bottom:2px}
+.preview-empty-art:before{content:"";position:absolute;left:14px;right:14px;top:10px;height:65px;border:1px solid #ccd5c8;border-radius:8px;background:#f9f8f1;transform:rotate(-5deg)}
+.preview-empty-art:after{content:"";position:absolute;left:28px;right:1px;top:18px;height:57px;border:1px solid #d9d2bf;border-radius:8px;background:#f1eee4;transform:rotate(5deg)}
+.preview-empty-art span{position:absolute;z-index:1;top:33px;width:9px;height:9px;border-radius:50%;background:#92aa98}.preview-empty-art span:nth-child(1){left:39px}.preview-empty-art span:nth-child(2){left:54px;top:48px;background:#c5a56a}.preview-empty-art span:nth-child(3){left:70px;top:31px;background:#7d9990}
+.preview-loading{padding:12px 0}.preview-loading-bar,.preview-loading-stage{position:relative;overflow:hidden;border-radius:6px;background:#efeee7}
+.preview-loading-bar{height:36px;margin-bottom:10px}.preview-loading-stage{height:min(65vh,660px);min-height:320px}
+.preview-loading-bar:after,.preview-loading-stage:after{content:"";position:absolute;inset:0;background:linear-gradient(100deg,transparent 25%,#fff9 48%,transparent 70%);animation:preview-shimmer 1.5s ease-in-out infinite}
+.preview-stop-error{margin-top:9px;padding:9px 11px;border:1px solid #ead9d0;border-radius:6px;background:#f8eee8;color:#965b4f;font-size:10px}
+.preview-spinning{animation:preview-spin 1s linear infinite}
+@keyframes preview-shimmer{to{transform:translateX(100%)}}@keyframes preview-spin{to{transform:rotate(360deg)}}
+@media(max-width:720px){.preview-workspace{padding:0 10px 10px}.preview-controls{align-items:flex-start;flex-direction:column;padding:11px 0;gap:9px}.preview-choices{width:100%}.preview-app-meta{padding:0 2px}.preview-frame-shell{height:62vh;min-height:300px}.preview-loading-stage{height:62vh;min-height:300px}.preview-address-row{align-items:stretch;flex-direction:column}.preview-open{align-self:flex-end}.preview-address{width:100%}}
+@media(prefers-reduced-motion:reduce){.preview-loading-bar:after,.preview-loading-stage:after,.preview-spinning{animation:none}}
+
 /* LIGHT MODE */
 :root {
   --button-outline: rgba(0, 0, 0, 0.1);

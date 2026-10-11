@@ -28,3 +28,8 @@ export * from './taskLogKind';
 export * from './timerInput';
 export * from './timerInputKind';
 export * from './timerInputRecurrence';
+export * from './workspacePreviewApp';
+export * from './workspacePreviewAppFramework';
+export * from './workspacePreviewAppStatus';
+export * from './workspacePreviewStatus';
+export * from './workspacePreviewStopInput';

@@ -31,7 +31,9 @@ import type {
   HealthStatus,
   NoteInput,
   TaskInput,
-  TimerInput
+  TimerInput,
+  WorkspacePreviewStatus,
+  WorkspacePreviewStopInput
 } from './api.schemas';
 
 import { customFetch } from '../custom-fetch';
@@ -1478,4 +1480,632 @@ export function useDownloadAssistantWorkspace<TData = Awaited<ReturnType<typeof 
 
 
 
+
+export const getGetWorkspacePreviewUrl = () => {
+
+
+
+
+  return `/api/assistant/workspace/preview`
+}
+
+/**
+ * @summary Get the available workspace previews and running apps
+ */
+export const getWorkspacePreview = async ( options?: Parameters<typeof customFetch>[1]): Promise<WorkspacePreviewStatus> => {
+
+  return customFetch<WorkspacePreviewStatus>(getGetWorkspacePreviewUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetWorkspacePreviewQueryKey = () => {
+    return [
+    `/api/assistant/workspace/preview`
+    ] as const;
+    }
+
+
+export const getGetWorkspacePreviewQueryOptions = <TData = Awaited<ReturnType<typeof getWorkspacePreview>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getWorkspacePreview>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetWorkspacePreviewQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getWorkspacePreview>>> = ({ signal }) => getWorkspacePreview({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getWorkspacePreview>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetWorkspacePreviewQueryResult = NonNullable<Awaited<ReturnType<typeof getWorkspacePreview>>>
+export type GetWorkspacePreviewQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Get the available workspace previews and running apps
+ */
+
+export function useGetWorkspacePreview<TData = Awaited<ReturnType<typeof getWorkspacePreview>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getWorkspacePreview>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetWorkspacePreviewQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getStopWorkspacePreviewAppUrl = () => {
+
+
+
+
+  return `/api/assistant/workspace/preview/stop`
+}
+
+/**
+ * @summary Stop a workspace app started by the assistant
+ */
+export const stopWorkspacePreviewApp = async (workspacePreviewStopInput: WorkspacePreviewStopInput, options?: Parameters<typeof customFetch>[1]): Promise<WorkspacePreviewStatus> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<WorkspacePreviewStatus>(getStopWorkspacePreviewAppUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(workspacePreviewStopInput)
+  }
+);}
+
+
+
+
+
+export const getStopWorkspacePreviewAppMutationKey = () => ['stopWorkspacePreviewApp'] as const;
+
+export const getStopWorkspacePreviewAppMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof stopWorkspacePreviewApp>>, TError,StopWorkspacePreviewAppMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof stopWorkspacePreviewApp>>, TError,StopWorkspacePreviewAppMutationVariables, TContext> => {
+
+const mutationKey = getStopWorkspacePreviewAppMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof stopWorkspacePreviewApp>>, StopWorkspacePreviewAppMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  stopWorkspacePreviewApp(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type StopWorkspacePreviewAppMutationResult = NonNullable<Awaited<ReturnType<typeof stopWorkspacePreviewApp>>>
+    export type StopWorkspacePreviewAppMutationBody = BodyType<WorkspacePreviewStopInput>
+    export type StopWorkspacePreviewAppMutationError = ErrorType<void>
+    export type StopWorkspacePreviewAppMutationVariables = {data: BodyType<WorkspacePreviewStopInput>}
+
+    /**
+ * @summary Stop a workspace app started by the assistant
+ */
+export const useStopWorkspacePreviewApp = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof stopWorkspacePreviewApp>>, TError,StopWorkspacePreviewAppMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof stopWorkspacePreviewApp>>,
+        TError,
+        StopWorkspacePreviewAppMutationVariables,
+        TContext
+      > => {
+      return useMutation(getStopWorkspacePreviewAppMutationOptions(options));
+    }
+
+export const getGetWorkspacePreviewAssetUrl = (path: string,) => {
+
+
+
+
+  return `/api/assistant/workspace/preview/static/${path}`
+}
+
+/**
+ * @summary Serve a safe HTML app asset from the workspace root
+ */
+export const getWorkspacePreviewAsset = async (path: string, options?: Parameters<typeof customFetch>[1]): Promise<Blob> => {
+
+  return customFetch<Blob>(getGetWorkspacePreviewAssetUrl(path),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetWorkspacePreviewAssetQueryKey = (path: string,) => {
+    return [
+    `/api/assistant/workspace/preview/static/${path}`
+    ] as const;
+    }
+
+
+export const getGetWorkspacePreviewAssetQueryOptions = <TData = Awaited<ReturnType<typeof getWorkspacePreviewAsset>>, TError = ErrorType<void>>(path: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getWorkspacePreviewAsset>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetWorkspacePreviewAssetQueryKey(path);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getWorkspacePreviewAsset>>> = ({ signal }) => getWorkspacePreviewAsset(path, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: path !== null && path !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getWorkspacePreviewAsset>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetWorkspacePreviewAssetQueryResult = NonNullable<Awaited<ReturnType<typeof getWorkspacePreviewAsset>>>
+export type GetWorkspacePreviewAssetQueryError = ErrorType<void>
+
+
+/**
+ * @summary Serve a safe HTML app asset from the workspace root
+ */
+
+export function useGetWorkspacePreviewAsset<TData = Awaited<ReturnType<typeof getWorkspacePreviewAsset>>, TError = ErrorType<void>>(
+ path: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getWorkspacePreviewAsset>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetWorkspacePreviewAssetQueryOptions(path,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetWorkspacePreviewServerAssetUrl = (appId: string,
+    path: string,) => {
+
+
+
+
+  return `/api/assistant/workspace/preview/server/${appId}/${path}`
+}
+
+/**
+ * @summary Proxy a GET request to a running workspace app
+ */
+export const getWorkspacePreviewServerAsset = async (appId: string,
+    path: string, options?: Parameters<typeof customFetch>[1]): Promise<Blob> => {
+
+  return customFetch<Blob>(getGetWorkspacePreviewServerAssetUrl(appId,path),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetWorkspacePreviewServerAssetQueryKey = (appId: string,
+    path: string,) => {
+    return [
+    `/api/assistant/workspace/preview/server/${appId}/${path}`
+    ] as const;
+    }
+
+
+export const getGetWorkspacePreviewServerAssetQueryOptions = <TData = Awaited<ReturnType<typeof getWorkspacePreviewServerAsset>>, TError = ErrorType<void>>(appId: string,
+    path: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getWorkspacePreviewServerAsset>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetWorkspacePreviewServerAssetQueryKey(appId,path);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getWorkspacePreviewServerAsset>>> = ({ signal }) => getWorkspacePreviewServerAsset(appId,path, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: appId !== null && appId !== undefined && path !== null && path !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getWorkspacePreviewServerAsset>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetWorkspacePreviewServerAssetQueryResult = NonNullable<Awaited<ReturnType<typeof getWorkspacePreviewServerAsset>>>
+export type GetWorkspacePreviewServerAssetQueryError = ErrorType<void>
+
+
+/**
+ * @summary Proxy a GET request to a running workspace app
+ */
+
+export function useGetWorkspacePreviewServerAsset<TData = Awaited<ReturnType<typeof getWorkspacePreviewServerAsset>>, TError = ErrorType<void>>(
+ appId: string,
+    path: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getWorkspacePreviewServerAsset>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetWorkspacePreviewServerAssetQueryOptions(appId,path,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getPostWorkspacePreviewServerAssetUrl = (appId: string,
+    path: string,) => {
+
+
+
+
+  return `/api/assistant/workspace/preview/server/${appId}/${path}`
+}
+
+/**
+ * @summary Proxy a POST request to a running workspace app
+ */
+export const postWorkspacePreviewServerAsset = async (appId: string,
+    path: string, options?: Parameters<typeof customFetch>[1]): Promise<Blob> => {
+
+  return customFetch<Blob>(getPostWorkspacePreviewServerAssetUrl(appId,path),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getPostWorkspacePreviewServerAssetMutationKey = () => ['postWorkspacePreviewServerAsset'] as const;
+
+export const getPostWorkspacePreviewServerAssetMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof postWorkspacePreviewServerAsset>>, TError,PostWorkspacePreviewServerAssetMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof postWorkspacePreviewServerAsset>>, TError,PostWorkspacePreviewServerAssetMutationVariables, TContext> => {
+
+const mutationKey = getPostWorkspacePreviewServerAssetMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof postWorkspacePreviewServerAsset>>, PostWorkspacePreviewServerAssetMutationVariables> = (props) => {
+          const {appId,path} = props ?? {};
+
+          return  postWorkspacePreviewServerAsset(appId,path,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type PostWorkspacePreviewServerAssetMutationResult = NonNullable<Awaited<ReturnType<typeof postWorkspacePreviewServerAsset>>>
+
+    export type PostWorkspacePreviewServerAssetMutationError = ErrorType<void>
+    export type PostWorkspacePreviewServerAssetMutationVariables = {appId: string;path: string}
+
+    /**
+ * @summary Proxy a POST request to a running workspace app
+ */
+export const usePostWorkspacePreviewServerAsset = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof postWorkspacePreviewServerAsset>>, TError,PostWorkspacePreviewServerAssetMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof postWorkspacePreviewServerAsset>>,
+        TError,
+        PostWorkspacePreviewServerAssetMutationVariables,
+        TContext
+      > => {
+      return useMutation(getPostWorkspacePreviewServerAssetMutationOptions(options));
+    }
+
+export const getPutWorkspacePreviewServerAssetUrl = (appId: string,
+    path: string,) => {
+
+
+
+
+  return `/api/assistant/workspace/preview/server/${appId}/${path}`
+}
+
+/**
+ * @summary Proxy a PUT request to a running workspace app
+ */
+export const putWorkspacePreviewServerAsset = async (appId: string,
+    path: string, options?: Parameters<typeof customFetch>[1]): Promise<Blob> => {
+
+  return customFetch<Blob>(getPutWorkspacePreviewServerAssetUrl(appId,path),
+  {
+    ...options,
+    method: 'PUT'
+
+
+  }
+);}
+
+
+
+
+
+export const getPutWorkspacePreviewServerAssetMutationKey = () => ['putWorkspacePreviewServerAsset'] as const;
+
+export const getPutWorkspacePreviewServerAssetMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof putWorkspacePreviewServerAsset>>, TError,PutWorkspacePreviewServerAssetMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof putWorkspacePreviewServerAsset>>, TError,PutWorkspacePreviewServerAssetMutationVariables, TContext> => {
+
+const mutationKey = getPutWorkspacePreviewServerAssetMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof putWorkspacePreviewServerAsset>>, PutWorkspacePreviewServerAssetMutationVariables> = (props) => {
+          const {appId,path} = props ?? {};
+
+          return  putWorkspacePreviewServerAsset(appId,path,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type PutWorkspacePreviewServerAssetMutationResult = NonNullable<Awaited<ReturnType<typeof putWorkspacePreviewServerAsset>>>
+
+    export type PutWorkspacePreviewServerAssetMutationError = ErrorType<unknown>
+    export type PutWorkspacePreviewServerAssetMutationVariables = {appId: string;path: string}
+
+    /**
+ * @summary Proxy a PUT request to a running workspace app
+ */
+export const usePutWorkspacePreviewServerAsset = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof putWorkspacePreviewServerAsset>>, TError,PutWorkspacePreviewServerAssetMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof putWorkspacePreviewServerAsset>>,
+        TError,
+        PutWorkspacePreviewServerAssetMutationVariables,
+        TContext
+      > => {
+      return useMutation(getPutWorkspacePreviewServerAssetMutationOptions(options));
+    }
+
+export const getPatchWorkspacePreviewServerAssetUrl = (appId: string,
+    path: string,) => {
+
+
+
+
+  return `/api/assistant/workspace/preview/server/${appId}/${path}`
+}
+
+/**
+ * @summary Proxy a PATCH request to a running workspace app
+ */
+export const patchWorkspacePreviewServerAsset = async (appId: string,
+    path: string, options?: Parameters<typeof customFetch>[1]): Promise<Blob> => {
+
+  return customFetch<Blob>(getPatchWorkspacePreviewServerAssetUrl(appId,path),
+  {
+    ...options,
+    method: 'PATCH'
+
+
+  }
+);}
+
+
+
+
+
+export const getPatchWorkspacePreviewServerAssetMutationKey = () => ['patchWorkspacePreviewServerAsset'] as const;
+
+export const getPatchWorkspacePreviewServerAssetMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof patchWorkspacePreviewServerAsset>>, TError,PatchWorkspacePreviewServerAssetMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof patchWorkspacePreviewServerAsset>>, TError,PatchWorkspacePreviewServerAssetMutationVariables, TContext> => {
+
+const mutationKey = getPatchWorkspacePreviewServerAssetMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof patchWorkspacePreviewServerAsset>>, PatchWorkspacePreviewServerAssetMutationVariables> = (props) => {
+          const {appId,path} = props ?? {};
+
+          return  patchWorkspacePreviewServerAsset(appId,path,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type PatchWorkspacePreviewServerAssetMutationResult = NonNullable<Awaited<ReturnType<typeof patchWorkspacePreviewServerAsset>>>
+
+    export type PatchWorkspacePreviewServerAssetMutationError = ErrorType<unknown>
+    export type PatchWorkspacePreviewServerAssetMutationVariables = {appId: string;path: string}
+
+    /**
+ * @summary Proxy a PATCH request to a running workspace app
+ */
+export const usePatchWorkspacePreviewServerAsset = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof patchWorkspacePreviewServerAsset>>, TError,PatchWorkspacePreviewServerAssetMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof patchWorkspacePreviewServerAsset>>,
+        TError,
+        PatchWorkspacePreviewServerAssetMutationVariables,
+        TContext
+      > => {
+      return useMutation(getPatchWorkspacePreviewServerAssetMutationOptions(options));
+    }
+
+export const getDeleteWorkspacePreviewServerAssetUrl = (appId: string,
+    path: string,) => {
+
+
+
+
+  return `/api/assistant/workspace/preview/server/${appId}/${path}`
+}
+
+/**
+ * @summary Proxy a DELETE request to a running workspace app
+ */
+export const deleteWorkspacePreviewServerAsset = async (appId: string,
+    path: string, options?: Parameters<typeof customFetch>[1]): Promise<Blob> => {
+
+  return customFetch<Blob>(getDeleteWorkspacePreviewServerAssetUrl(appId,path),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getDeleteWorkspacePreviewServerAssetMutationKey = () => ['deleteWorkspacePreviewServerAsset'] as const;
+
+export const getDeleteWorkspacePreviewServerAssetMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteWorkspacePreviewServerAsset>>, TError,DeleteWorkspacePreviewServerAssetMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteWorkspacePreviewServerAsset>>, TError,DeleteWorkspacePreviewServerAssetMutationVariables, TContext> => {
+
+const mutationKey = getDeleteWorkspacePreviewServerAssetMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteWorkspacePreviewServerAsset>>, DeleteWorkspacePreviewServerAssetMutationVariables> = (props) => {
+          const {appId,path} = props ?? {};
+
+          return  deleteWorkspacePreviewServerAsset(appId,path,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteWorkspacePreviewServerAssetMutationResult = NonNullable<Awaited<ReturnType<typeof deleteWorkspacePreviewServerAsset>>>
+
+    export type DeleteWorkspacePreviewServerAssetMutationError = ErrorType<unknown>
+    export type DeleteWorkspacePreviewServerAssetMutationVariables = {appId: string;path: string}
+
+    /**
+ * @summary Proxy a DELETE request to a running workspace app
+ */
+export const useDeleteWorkspacePreviewServerAsset = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteWorkspacePreviewServerAsset>>, TError,DeleteWorkspacePreviewServerAssetMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteWorkspacePreviewServerAsset>>,
+        TError,
+        DeleteWorkspacePreviewServerAssetMutationVariables,
+        TContext
+      > => {
+      return useMutation(getDeleteWorkspacePreviewServerAssetMutationOptions(options));
+    }
 

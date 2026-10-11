@@ -12,21 +12,24 @@ import {
   useDeleteAssistantTimer,
   useGetAssistantDashboard,
   useGetAssistantTask,
+  useGetWorkspacePreview,
   useListAssistantFiles,
   useListAssistantNotes,
   useListAssistantTasks,
   useListAssistantTimers,
+  useStopWorkspacePreviewApp,
   getGetAssistantDashboardQueryKey,
   getGetAssistantTaskQueryKey,
+  getGetWorkspacePreviewQueryKey,
   getListAssistantFilesQueryKey,
   getListAssistantNotesQueryKey,
   getListAssistantTasksQueryKey,
   getListAssistantTimersQueryKey,
 } from '@workspace/api-client-react';
-import type { AssistantFile, AssistantNote, AssistantTask, AssistantTimer } from '@workspace/api-client-react';
+import type { AssistantFile, AssistantNote, AssistantTask, AssistantTimer, WorkspacePreviewApp } from '@workspace/api-client-react';
 import {
   Activity, AlertCircle, ArrowDownToLine, ArrowRight, Bell, BookOpen, Check, CheckCircle2,
-  CircleHelp, Clock3, FileText, FolderOpen, Gauge, HardDrive, Layers3,
+  CircleHelp, Clock3, ExternalLink, FileText, FolderOpen, Gauge, HardDrive, Layers3,
   KeyRound, LoaderCircle, LockKeyhole, Menu, MoreHorizontal, Plus, RefreshCw, Search,
   Send, Settings2, ShieldCheck, Sparkles, StopCircle, Trash2, Upload, X, Zap,
 } from 'lucide-react';
@@ -280,6 +283,76 @@ function TasksPage() {
   </div></AppShell>;
 }
 
+function safePreviewUrl(value?: string | null) {
+  if (!value) return '';
+  try {
+    const parsed = new URL(value, window.location.origin);
+    return parsed.origin === window.location.origin && (parsed.protocol === 'http:' || parsed.protocol === 'https:') ? parsed.href : '';
+  } catch {
+    return '';
+  }
+}
+
+function WorkspacePreview() {
+  const qc = useQueryClient();
+  const previewQuery = useGetWorkspacePreview({
+    query: { queryKey: getGetWorkspacePreviewQueryKey(), staleTime: 0, refetchOnMount: 'always', refetchInterval: 15000 },
+  });
+  const stopApp = useStopWorkspacePreviewApp();
+  const [selectedId, setSelectedId] = useState('static');
+  const [refreshKey, setRefreshKey] = useState(0);
+  const preview = previewQuery.data;
+  const apps = preview?.apps ?? [];
+  const selectionExists = selectedId === 'static' ? !!preview?.staticAvailable : apps.some((app) => app.id === selectedId);
+  const activeId = selectionExists ? selectedId : preview?.staticAvailable ? 'static' : apps[0]?.id ?? '';
+  const activeApp = apps.find((app) => app.id === activeId);
+  const rawUrl = activeId === 'static' ? preview?.staticPreviewUrl : activeApp?.previewUrl;
+  const iframeUrl = safePreviewUrl(rawUrl);
+  const label = activeId === 'static' ? 'Workspace preview' : activeApp?.entryPath ?? 'Running app';
+  const onStop = (app: WorkspacePreviewApp) => {
+    if (!window.confirm(`Stop the ${app.framework} preview at ${app.entryPath}?`)) return;
+    stopApp.mutate({ data: { appId: app.id } }, {
+      onSuccess: async (status) => {
+        qc.setQueryData(getGetWorkspacePreviewQueryKey(), status);
+        setSelectedId(status.staticAvailable ? 'static' : status.apps[0]?.id ?? '');
+        await qc.invalidateQueries({ queryKey: getGetWorkspacePreviewQueryKey() });
+      },
+      onError: () => undefined,
+    });
+  };
+
+  return <section className="preview-workspace" aria-label="Live app previews" data-testid="workspace-live-preview">
+    <div className="preview-toolbar">
+      <div className="preview-view-label"><span className="preview-status-dot" /><div><strong>Live preview</strong><span>Private workspace · updates every 15 seconds</span></div></div>
+      <button className="button button-quiet button-small" onClick={() => { setRefreshKey((n) => n + 1); void previewQuery.refetch(); }} disabled={previewQuery.isFetching} data-testid="button-refresh-preview"><RefreshCw size={14} className={previewQuery.isFetching ? 'preview-spinning' : ''} />{previewQuery.isFetching ? 'Refreshing' : 'Refresh'}</button>
+    </div>
+    {previewQuery.isLoading ? <div className="preview-loading" aria-label="Loading previews"><div className="preview-loading-bar" /><div className="preview-loading-stage" /></div>
+      : previewQuery.isError ? <div className="preview-state preview-error"><div className="preview-state-icon"><AlertCircle size={20} /></div><strong>Preview status is unavailable</strong><p>We couldn’t reach the workspace preview service.</p><button className="button button-primary button-small" onClick={() => void previewQuery.refetch()} data-testid="button-retry-preview"><RefreshCw size={14} /> Try again</button></div>
+      : !preview?.staticAvailable && apps.length === 0 ? <div className="preview-state preview-empty"><div className="preview-empty-art"><span /><span /><span /></div><strong>No app previews yet</strong><p>When your agent builds a small app or a static workspace, it will appear here.</p></div>
+      : <>
+        <div className="preview-controls">
+          <div className="preview-choices" role="group" aria-label="Choose a preview">
+            {preview?.staticAvailable && <button className={`preview-choice ${activeId === 'static' ? 'selected' : ''}`} onClick={() => setSelectedId('static')} aria-pressed={activeId === 'static'} data-testid="preview-choice-static"><span className="choice-symbol">S</span><span><strong>Workspace</strong><small>{preview.staticEntryPath || 'Static site'}</small></span></button>}
+            {apps.map((app) => <div className={`preview-choice-wrap ${activeId === app.id ? 'selected' : ''}`} key={app.id}>
+              <button className={`preview-choice ${activeId === app.id ? 'selected' : ''}`} onClick={() => setSelectedId(app.id)} aria-pressed={activeId === app.id} data-testid={`preview-choice-app-${app.id}`}><span className="choice-symbol app-symbol">{app.framework.slice(0, 1).toUpperCase()}</span><span><strong>{app.framework}</strong><small>{app.entryPath}</small></span></button>
+              <button className="preview-stop" aria-label={`Stop ${app.framework} preview`} title="Stop app" disabled={stopApp.isPending} onClick={() => onStop(app)} data-testid={`button-stop-preview-${app.id}`}><StopCircle size={15} /></button>
+            </div>)}
+          </div>
+          {activeApp && <div className="preview-app-meta"><span className="preview-status-dot" /> Running on port {activeApp.port} <span className="preview-meta-divider" /> Started {timeAgo(activeApp.startedAt)}</div>}
+        </div>
+        <div className="preview-address-row">
+          <div className="preview-address" aria-label="Preview URL" data-testid="text-preview-address"><span className="address-lock"><ShieldCheck size={14} /></span><span className="address-host">{iframeUrl ? new URL(iframeUrl).host : 'Preview URL unavailable'}</span><span className="address-path">{iframeUrl ? new URL(iframeUrl).pathname : 'The supplied address is not a safe same-origin URL'}</span></div>
+          {iframeUrl && <a className="button button-quiet button-small preview-open" href={iframeUrl} target="_blank" rel="noopener noreferrer" data-testid="link-open-preview"><ExternalLink size={14} /> Open in New Tab</a>}
+        </div>
+        <div className="preview-frame-shell" data-testid="preview-frame-shell">
+          {iframeUrl ? <iframe key={`${activeId}-${refreshKey}-${iframeUrl}`} title={`${label} live preview`} className="preview-frame" src={iframeUrl} sandbox="allow-scripts allow-forms" referrerPolicy="same-origin" data-testid="iframe-live-preview" />
+            : <div className="preview-state preview-unavailable"><div className="preview-state-icon"><LockKeyhole size={19} /></div><strong>This preview address can’t be opened safely</strong><p>Only workspace addresses on this site can be loaded here.</p></div>}
+        </div>
+      </>}
+    {stopApp.isError && <div className="preview-stop-error" role="alert" data-testid="status-stop-preview-error">The app could not be stopped. Refresh the preview list and try again.</div>}
+  </section>;
+}
+
 function WorkspacePage() {
   const qc = useQueryClient();
   const notesQuery = useListAssistantNotes();
@@ -287,7 +360,7 @@ function WorkspacePage() {
   const createNote = useCreateAssistantNote();
   const deleteNote = useDeleteAssistantNote();
   const deleteFile = useDeleteAssistantFile();
-  const [tab, setTab] = useState<'files' | 'notes'>('files');
+  const [tab, setTab] = useState<'files' | 'notes' | 'preview'>('files');
   const [noteOpen, setNoteOpen] = useState(false);
   const [noteTitle, setNoteTitle] = useState('');
   const [noteContent, setNoteContent] = useState('');
@@ -327,9 +400,11 @@ function WorkspacePage() {
     <PageHeading eyebrow="REFERENCE LIBRARY" title="Workspace" description="Files and notes your agent can draw on when the context matters." right={<><a className="button button-quiet" href="/api/assistant/workspace.zip" download data-testid="button-download-workspace"><ArrowDownToLine size={15} /> Download ZIP</a><label className={`button button-quiet ${uploading ? 'disabled' : ''}`} htmlFor="workspace-upload" data-testid="button-upload-file"><Upload size={15} />{uploading ? 'Uploading…' : 'Upload file'}<input id="workspace-upload" type="file" hidden disabled={uploading} onChange={(e) => { void onUpload(e.currentTarget.files?.[0]); e.currentTarget.value = ''; }} /></label><button className="button button-primary" onClick={() => setNoteOpen(true)} data-testid="button-new-note"><Plus size={16} /> New note</button></>} />
     <div className="library-intro"><div className="library-graphic"><div className="graphic-file"><FileText size={22} /></div><div className="graphic-note"><BookOpen size={19} /></div><div className="graphic-orbit" /></div><div><strong>A little context goes a long way.</strong><p>Keep source material and useful details close. Your agent can reference uploaded files and saved notes in future work.</p></div></div>
     {uploadError && <div className="inline-error"><AlertCircle size={15} />{uploadError}<button onClick={() => setUploadError('')} aria-label="Dismiss upload error"><X size={14} /></button></div>}
-    <section className="panel library-panel"><div className="library-toolbar"><div className="library-tabs"><button onClick={() => setTab('files')} className={tab === 'files' ? 'active' : ''} data-testid="tab-files"><FileText size={15} /> Files <span>{filesQuery.data?.length ?? 0}</span></button><button onClick={() => setTab('notes')} className={tab === 'notes' ? 'active' : ''} data-testid="tab-notes"><BookOpen size={15} /> Notes <span>{notesQuery.data?.length ?? 0}</span></button></div><label className="search-box"><Search size={15} /><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={`Search ${tab}`} aria-label={`Search ${tab}`} data-testid="input-search-library" /></label></div>
+    <section className="panel library-panel"><div className="library-toolbar"><div className="library-tabs"><button onClick={() => setTab('files')} className={tab === 'files' ? 'active' : ''} data-testid="tab-files"><FileText size={15} /> Files <span>{filesQuery.data?.length ?? 0}</span></button><button onClick={() => setTab('notes')} className={tab === 'notes' ? 'active' : ''} data-testid="tab-notes"><BookOpen size={15} /> Notes <span>{notesQuery.data?.length ?? 0}</span></button><button onClick={() => setTab('preview')} className={tab === 'preview' ? 'active' : ''} data-testid="tab-live-preview"><Layers3 size={15} /> Live Preview</button></div>{tab !== 'preview' && <label className="search-box"><Search size={15} /><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={`Search ${tab}`} aria-label={`Search ${tab}`} data-testid="input-search-library" /></label>}</div>
+      {tab === 'preview' ? <WorkspacePreview /> : <>
       {tab === 'files' ? filesQuery.isLoading ? <div className="library-loading"><Skeleton rows={4} /></div> : filesQuery.isError ? <QueryProblem retry={() => filesQuery.refetch()} /> : filteredFiles.length ? <div className="file-list">{filteredFiles.map((file) => <div className="file-row" key={file.id}><span className="file-type-icon"><FileText size={18} /></span><div className="file-main"><strong>{file.name}</strong><span>{file.mimeType || 'Document'} <i /> {formatSize(file.sizeBytes)}</span></div><span className="file-added">{timeAgo(file.createdAt)}</span><div className="row-actions"><button onClick={() => setSelectedFile(file)} className="icon-button" aria-label={`Preview ${file.name}`} data-testid={`button-preview-file-${file.id}`}><ArrowDownToLine size={16} /></button><button onClick={() => removeFile(file)} className="icon-button danger-hover" aria-label={`Delete ${file.name}`} data-testid={`button-delete-file-${file.id}`}><Trash2 size={16} /></button></div></div>)}</div> : <div className="empty-state"><div className="empty-mark"><Upload size={19} /></div><strong>{search ? 'No files found' : 'Start with a source file'}</strong><p>{search ? 'Try a different name.' : 'Upload a document, PDF, or text file to give your agent context.'}</p>{!search && <label htmlFor="workspace-upload" className="button button-primary button-small"><Upload size={14} /> Upload your first file</label>}</div>
       : notesQuery.isLoading ? <div className="library-loading"><Skeleton rows={4} /></div> : notesQuery.isError ? <QueryProblem retry={() => notesQuery.refetch()} /> : filteredNotes.length ? <div className="note-grid">{filteredNotes.map((note) => <article className="note-card" key={note.id}><div className="note-card-top"><span className="note-glyph"><BookOpen size={15} /></span><button className="icon-button danger-hover" aria-label={`Delete ${note.title}`} onClick={() => removeNote(note)} data-testid={`button-delete-note-${note.id}`}><Trash2 size={15} /></button></div><h3>{note.title}</h3><p>{note.content || 'An empty note, ready for useful context.'}</p><div className="note-tags">{note.tags.map((tag) => <span key={tag}>{tag}</span>)}</div><div className="note-card-foot">UPDATED {timeAgo(note.updatedAt).toUpperCase()}</div></article>)}</div> : <div className="empty-state"><div className="empty-mark"><BookOpen size={19} /></div><strong>{search ? 'No notes found' : 'Nothing noted yet'}</strong><p>{search ? 'Try another search.' : 'Save a detail you want your agent to remember.'}</p>{!search && <button className="button button-primary button-small" onClick={() => setNoteOpen(true)} data-testid="button-first-note"><Plus size={14} /> Write a note</button>}</div>}
+      </>}
     </section>
     {noteOpen && <Modal title="Save a note" onClose={() => setNoteOpen(false)}><form className="form-stack" onSubmit={saveNote}><label className="form-label">Title<input value={noteTitle} onChange={(e) => setNoteTitle(e.target.value)} maxLength={300} placeholder="A detail worth remembering" autoFocus data-testid="input-note-title" /></label><label className="form-label">Note<textarea value={noteContent} onChange={(e) => setNoteContent(e.target.value)} maxLength={200000} rows={5} placeholder="Add context, a useful fact, or a thought to keep nearby…" data-testid="input-note-content" /></label><label className="form-label">Tags <span className="optional-label">optional, comma separated</span><input value={noteTags} onChange={(e) => setNoteTags(e.target.value)} placeholder="research, project, follow-up" data-testid="input-note-tags" /></label>{noteError && <p className="field-error">{noteError}</p>}<div className="modal-actions"><button type="button" className="button button-quiet" onClick={() => setNoteOpen(false)}>Cancel</button><button className="button button-primary" disabled={createNote.isPending} data-testid="button-save-note">{createNote.isPending ? 'Saving…' : <><Check size={15} /> Save note</>}</button></div></form></Modal>}
     {selectedFile && <Modal title={selectedFile.name} onClose={() => setSelectedFile(undefined)}><div className="file-preview-meta"><span>{selectedFile.mimeType || 'File'}</span><span>{formatSize(selectedFile.sizeBytes)}</span><span>Added {formatDate(selectedFile.createdAt)}</span></div><div className="extracted-text">{selectedFile.extractedText || 'There is no extracted text available for this file.'}</div><div className="modal-actions"><button className="button button-quiet" onClick={() => setSelectedFile(undefined)}>Close</button></div></Modal>}
