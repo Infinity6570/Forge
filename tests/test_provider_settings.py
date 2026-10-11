@@ -160,6 +160,56 @@ class ProviderSettingsTests(unittest.IsolatedAsyncioTestCase):
             "provider error: [redacted]",
         )
 
+    async def test_saved_provider_keys_survive_provider_and_model_updates(self) -> None:
+        test_keys = {
+            "openaiApiKey": "saved-openai-secret",
+            "deepseekApiKey": "saved-deepseek-secret",
+            "geminiApiKey": "saved-gemini-secret",
+            "openrouterApiKey": "saved-openrouter-secret",
+        }
+        first_save = await self.put_settings(
+            base_url="http://127.0.0.1",
+            provider="openai",
+            model_id="gpt-4.1-mini",
+            **test_keys,
+        )
+        provider_change = await self.put_settings(
+            base_url="http://127.0.0.1",
+            provider="gemini",
+            model_id="gemini-2.5-pro",
+        )
+        model_change = await self.put_settings(
+            base_url="http://127.0.0.1",
+            provider="gemini",
+            model_id="gemini-2.5-flash",
+        )
+        read_response = await self.get_settings()
+
+        for response in (first_save, provider_change, model_change, read_response):
+            self.assertEqual(response.status_code, 200, response.text)
+            for secret in test_keys.values():
+                self.assertNotIn(secret, response.text)
+
+        saved_env = dotenv_values(self.env_file)
+        self.assertEqual(saved_env["AGENT_PROVIDER"], "gemini")
+        self.assertEqual(saved_env["AGENT_MODEL"], "gemini-2.5-flash")
+        for field, secret in test_keys.items():
+            env_key = {
+                "openaiApiKey": "OPENAI_API_KEY",
+                "deepseekApiKey": "DEEPSEEK_API_KEY",
+                "geminiApiKey": "GEMINI_API_KEY",
+                "openrouterApiKey": "OPENROUTER_API_KEY",
+            }[field]
+            with self.subTest(env_key=env_key):
+                self.assertEqual(saved_env[env_key], secret)
+                self.assertEqual(os.environ[env_key], secret)
+
+        settings = read_response.json()
+        self.assertTrue(settings["hasOpenaiKey"])
+        self.assertTrue(settings["hasDeepseekKey"])
+        self.assertTrue(settings["hasGeminiKey"])
+        self.assertTrue(settings["hasOpenrouterKey"])
+
     async def test_every_listed_gemini_model_and_custom_id_can_be_saved(self) -> None:
         source = APP_SOURCE.read_text()
         ui_gemini_models = re.search(
