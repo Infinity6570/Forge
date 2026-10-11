@@ -431,7 +431,7 @@ components:
             $ref: "#/components/schemas/AssistantTask"
     AssistantTask:
       type: object
-      required: [id, objective, status, currentStep, result, error, logs, createdAt, updatedAt]
+      required: [id, objective, status, currentStep, result, error, logs, provider, modelId, createdAt, updatedAt]
       properties:
         id: { type: string, format: uuid }
         objective: { type: string }
@@ -445,6 +445,8 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/TaskLog"
+        provider: { type: string, enum: [openai, gemini, openrouter] }
+        modelId: { type: string }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
     TaskLog:
@@ -454,7 +456,7 @@ components:
         id: { type: string }
         kind:
           type: string
-          enum: [plan, agent, tool, result, error, info]
+          enum: [plan, agent, tool, result, error, info, warning]
         message: { type: string }
         createdAt: { type: string, format: date-time }
     TaskInput:
@@ -569,10 +571,11 @@ components:
         appId: { type: string, format: uuid }
     AssistantSettings:
       type: object
-      required: [provider, modelId, localSetupAllowed, providerSettingsAllowed, hasOpenaiKey, hasGeminiKey, hasOpenrouterKey, codeRunnerEnabled]
+      required: [provider, modelId, fallbackModelId, localSetupAllowed, providerSettingsAllowed, hasOpenaiKey, hasGeminiKey, hasOpenrouterKey, codeRunnerEnabled]
       properties:
         provider: { type: string, enum: [openai, gemini, openrouter] }
         modelId: { type: string }
+        fallbackModelId: { type: string }
         localSetupAllowed: { type: boolean }
         providerSettingsAllowed: { type: boolean }
         hasOpenaiKey: { type: boolean }
@@ -585,6 +588,7 @@ components:
       properties:
         provider: { type: string, enum: [openai, gemini, openrouter] }
         modelId: { type: string, minLength: 1, maxLength: 120, pattern: '^[A-Za-z0-9][A-Za-z0-9._:/-]{0,119}$' }
+        fallbackModelId: { type: string, maxLength: 120, pattern: '^$|^[A-Za-z0-9][A-Za-z0-9._:/-]{0,119}$' }
         openaiApiKey: { type: ["string", "null"], maxLength: 1000 }
         geminiApiKey: { type: ["string", "null"], maxLength: 1000 }
         openrouterApiKey: { type: ["string", "null"], maxLength: 1000 }

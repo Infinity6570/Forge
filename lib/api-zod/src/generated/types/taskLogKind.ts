@@ -16,4 +16,5 @@ export const TaskLogKind = {
   result: 'result',
   error: 'error',
   info: 'info',
+  warning: 'warning',
 } as const;

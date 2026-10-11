@@ -10,6 +10,7 @@ import type { AssistantSettingsProvider } from './assistantSettingsProvider';
 export interface AssistantSettings {
   provider: AssistantSettingsProvider;
   modelId: string;
+  fallbackModelId: string;
   localSetupAllowed: boolean;
   providerSettingsAllowed: boolean;
   hasOpenaiKey: boolean;

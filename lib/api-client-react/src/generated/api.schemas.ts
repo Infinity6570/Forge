@@ -30,6 +30,7 @@ export const TaskLogKind = {
   result: 'result',
   error: 'error',
   info: 'info',
+  warning: 'warning',
 } as const;
 
 export interface TaskLog {
@@ -38,6 +39,15 @@ export interface TaskLog {
   message: string;
   createdAt: string;
 }
+
+export type AssistantTaskProvider = typeof AssistantTaskProvider[keyof typeof AssistantTaskProvider];
+
+
+export const AssistantTaskProvider = {
+  openai: 'openai',
+  gemini: 'gemini',
+  openrouter: 'openrouter',
+} as const;
 
 export interface AssistantTask {
   id: string;
@@ -50,6 +60,8 @@ export interface AssistantTask {
   /** @nullable */
   error: string | null;
   logs: TaskLog[];
+  provider: AssistantTaskProvider;
+  modelId: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -226,6 +238,7 @@ export const AssistantSettingsProvider = {
 export interface AssistantSettings {
   provider: AssistantSettingsProvider;
   modelId: string;
+  fallbackModelId: string;
   localSetupAllowed: boolean;
   providerSettingsAllowed: boolean;
   hasOpenaiKey: boolean;
@@ -251,6 +264,11 @@ export interface AssistantSettingsInput {
      * @pattern ^[A-Za-z0-9][A-Za-z0-9._:/-]{0,119}$
      */
   modelId: string;
+  /**
+     * @maxLength 120
+     * @pattern ^$|^[A-Za-z0-9][A-Za-z0-9._:/-]{0,119}$
+     */
+  fallbackModelId?: string;
   /**
      * @maxLength 1000
      * @nullable

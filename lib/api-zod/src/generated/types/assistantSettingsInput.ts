@@ -16,6 +16,11 @@ export interface AssistantSettingsInput {
      */
   modelId: string;
   /**
+     * @maxLength 120
+     * @pattern ^$|^[A-Za-z0-9][A-Za-z0-9._:/-]{0,119}$
+     */
+  fallbackModelId?: string;
+  /**
      * @maxLength 1000
      * @nullable
      */

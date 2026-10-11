@@ -29,7 +29,7 @@ from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from openai import AsyncOpenAI
+from openai import APIStatusError, AsyncOpenAI
 from pydantic import BaseModel, Field
 
 ROOT = Path(__file__).resolve().parent
@@ -291,6 +291,11 @@ def get_settings(local_allowed: bool, provider_settings_allowed: bool) -> dict[s
     return {
         "provider": provider,
         "modelId": model,
+        "fallbackModelId": (
+            os.getenv("GEMINI_FALLBACK_MODEL", "").strip()
+            if MODEL_ID_PATTERN.fullmatch(os.getenv("GEMINI_FALLBACK_MODEL", "").strip())
+            else ""
+        ),
         "localSetupAllowed": local_allowed,
         "providerSettingsAllowed": provider_settings_allowed,
         "hasOpenaiKey": bool(os.getenv("OPENAI_API_KEY")),
@@ -323,6 +328,7 @@ class NoteInput(BaseModel):
 class SettingsInput(BaseModel):
     provider: str = Field(pattern="^(openai|gemini|openrouter)$")
     modelId: str = Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,119}$")
+    fallbackModelId: str | None = Field(default=None, max_length=120)
     openaiApiKey: str | None = Field(default=None, max_length=1000)
     geminiApiKey: str | None = Field(default=None, max_length=1000)
     openrouterApiKey: str | None = Field(default=None, max_length=1000)
@@ -331,6 +337,14 @@ class SettingsInput(BaseModel):
 
 def credential_for(provider: str) -> str | None:
     return os.getenv(KEY_NAMES[provider])
+
+
+def redact_provider_keys(message: str) -> str:
+    for key_name in KEY_NAMES.values():
+        key = os.getenv(key_name)
+        if key:
+            message = message.replace(key, "[redacted]")
+    return message
 
 
 def create_llm_client(provider: str) -> AsyncOpenAI:
@@ -353,6 +367,37 @@ def create_llm_client(provider: str) -> AsyncOpenAI:
             default_headers={"HTTP-Referer": "http://localhost", "X-Title": "Local Meta-Agent Assistant"},
         )
     return AsyncOpenAI(api_key=key, timeout=90, max_retries=2)
+
+
+async def create_completion_with_fallback(
+    client: AsyncOpenAI,
+    kwargs: dict[str, Any],
+    provider: str,
+    model_state: dict[str, str],
+    fallback_model: str,
+    task_id: str,
+) -> Any:
+    try:
+        return await client.chat.completions.create(**kwargs)
+    except APIStatusError as error:
+        if (
+            provider != "gemini"
+            or error.status_code not in {429, 503}
+            or not fallback_model
+            or fallback_model == model_state["model"]
+        ):
+            raise
+
+        previous_model = model_state["model"]
+        model_state["model"] = fallback_model
+        kwargs["model"] = fallback_model
+        db_run("UPDATE tasks SET model_id=?,updated_at=? WHERE id=?", (fallback_model, utc_now(), task_id))
+        log_task(
+            task_id,
+            f"{previous_model} returned HTTP {error.status_code}; retrying with fallback model {fallback_model}.",
+            "warning",
+        )
+        return await client.chat.completions.create(**kwargs)
 
 
 def save_note(title: str, content: str, tags: list[str]) -> dict[str, Any]:
@@ -467,7 +512,14 @@ async def fetch_public_page(url: str) -> str:
     return soup.get_text(" ", strip=True)[:25_000]
 
 
-async def execute_tool(name: str, arguments: dict[str, Any], provider: str, model: str) -> str:
+async def execute_tool(
+    name: str,
+    arguments: dict[str, Any],
+    provider: str,
+    model_state: dict[str, str],
+    fallback_model: str,
+    task_id: str,
+) -> str:
     if name == "web_search":
         return await web_search(str(arguments.get("query", "")))
     if name == "fetch_webpage":
@@ -521,13 +573,20 @@ async def execute_tool(name: str, arguments: dict[str, Any], provider: str, mode
     if name == "delegate_to_specialist":
         request_text = str(arguments.get("task", ""))[:6000]
         client = create_llm_client(provider)
-        completion = await client.chat.completions.create(
-            model=model,
-            messages=[
-                {"role": "system", "content": "You are a focused specialist assisting a supervising personal agent. Solve only the assigned subtask; return a concise result with sources or assumptions."},
-                {"role": "user", "content": request_text},
-            ],
-            max_tokens=3000,
+        completion = await create_completion_with_fallback(
+            client,
+            {
+                "model": model_state["model"],
+                "messages": [
+                    {"role": "system", "content": "You are a focused specialist assisting a supervising personal agent. Solve only the assigned subtask; return a concise result with sources or assumptions."},
+                    {"role": "user", "content": request_text},
+                ],
+                "max_tokens": 3000,
+            },
+            provider,
+            model_state,
+            fallback_model,
+            task_id,
         )
         return completion.choices[0].message.content or "No result returned."
     if name == "run_python":
@@ -571,10 +630,11 @@ async def run_agent_task(task_id: str, selected_file_ids: list[str]) -> None:
     if not row:
         return
     provider = row["provider"]
-    model = row["model_id"]
+    model_state = {"model": row["model_id"]}
+    fallback_model = os.getenv("GEMINI_FALLBACK_MODEL", "").strip()
     try:
         db_run("UPDATE tasks SET status='running',updated_at=? WHERE id=?", (utc_now(), task_id))
-        log_task(task_id, f"Starting with {provider} · {model}", "info")
+        log_task(task_id, f"Starting with {provider} · {model_state['model']}", "info")
         snippets = []
         for file_id in selected_file_ids[:12]:
             file_row = db_one("SELECT name, extracted_text FROM files WHERE id=?", (file_id,))
@@ -600,13 +660,15 @@ async def run_agent_task(task_id: str, selected_file_ids: list[str]) -> None:
         for iteration in range(10):
             log_task(task_id, f"Reasoning step {iteration + 1} of 10", "info")
             kwargs: dict[str, Any] = {
-                "model": model,
+                "model": model_state["model"],
                 "messages": messages,
                 "tools": TOOLS,
                 "tool_choice": "auto",
                 "max_completion_tokens" if provider == "openai" else "max_tokens": 6000,
             }
-            completion = await client.chat.completions.create(**kwargs)
+            completion = await create_completion_with_fallback(
+                client, kwargs, provider, model_state, fallback_model, task_id
+            )
             message = completion.choices[0].message
             tool_calls = message.tool_calls or []
             if not tool_calls:
@@ -626,9 +688,11 @@ async def run_agent_task(task_id: str, selected_file_ids: list[str]) -> None:
                 try:
                     args = json.loads(call.function.arguments or "{}")
                     log_task(task_id, f"Using tool: {call.function.name}", "tool")
-                    output = await execute_tool(call.function.name, args, provider, model)
+                    output = await execute_tool(
+                        call.function.name, args, provider, model_state, fallback_model, task_id
+                    )
                 except Exception as tool_error:
-                    output = json.dumps({"error": str(tool_error)[:1000]})
+                    output = json.dumps({"error": redact_provider_keys(str(tool_error))[:1000]})
                     log_task(task_id, f"Tool error: {call.function.name}", "error")
                 messages.append({"role": "tool", "tool_call_id": call.id, "content": output[:16_000]})
         if not final_result:
@@ -643,7 +707,7 @@ async def run_agent_task(task_id: str, selected_file_ids: list[str]) -> None:
         log_task(task_id, "Task stopped by the user.", "warning")
         raise
     except Exception as error:
-        safe_message = str(error)[:1500]
+        safe_message = redact_provider_keys(str(error))[:1500]
         db_run(
             "UPDATE tasks SET status='failed',error=?,current_step='Task failed',updated_at=? WHERE id=?",
             (safe_message, utc_now(), task_id),
@@ -725,7 +789,10 @@ async def create_task(body: TaskInput) -> dict[str, Any]:
     if provider not in MODEL_OPTIONS:
         raise HTTPException(status_code=422, detail="Choose OpenAI, Gemini, or OpenRouter.")
     model = body.modelId or os.getenv("AGENT_MODEL", DEFAULT_MODELS[provider])
-    if model not in MODEL_OPTIONS[provider]:
+    if provider == "gemini":
+        if not MODEL_ID_PATTERN.fullmatch(model):
+            raise HTTPException(status_code=422, detail="That Gemini model ID is not valid.")
+    elif model not in MODEL_OPTIONS[provider]:
         raise HTTPException(status_code=422, detail="That model is not available for the selected provider.")
     task_id = str(uuid.uuid4())
     now = utc_now()
@@ -865,6 +932,9 @@ async def update_settings(body: SettingsInput, request: Request) -> dict[str, An
     local_allowed = is_local_setup_allowed(request)
     if body.codeRunnerEnabled and not local_allowed:
         raise HTTPException(status_code=403, detail="The local code runner is available only in a local copy.")
+    fallback_model = (body.fallbackModelId or "").strip()
+    if body.provider == "gemini" and fallback_model and not MODEL_ID_PATTERN.fullmatch(fallback_model):
+        raise HTTPException(status_code=422, detail="That Gemini fallback model ID is not valid.")
     values = {
         "OPENAI_API_KEY": body.openaiApiKey,
         "GEMINI_API_KEY": body.geminiApiKey,
@@ -878,6 +948,8 @@ async def update_settings(body: SettingsInput, request: Request) -> dict[str, An
             set_key(str(ENV_FILE), key, value.strip(), quote_mode="always")
     set_key(str(ENV_FILE), "AGENT_PROVIDER", body.provider, quote_mode="never")
     set_key(str(ENV_FILE), "AGENT_MODEL", body.modelId, quote_mode="always")
+    if body.provider == "gemini" and body.fallbackModelId is not None:
+        set_key(str(ENV_FILE), "GEMINI_FALLBACK_MODEL", fallback_model, quote_mode="always")
     set_key(str(ENV_FILE), "RUN_LOCAL_CODE", str(body.codeRunnerEnabled).lower(), quote_mode="never")
     os.chmod(ENV_FILE, 0o600)
     load_dotenv(ENV_FILE, override=True)

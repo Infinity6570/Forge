@@ -13,6 +13,7 @@ export * from './assistantSettingsInput';
 export * from './assistantSettingsInputProvider';
 export * from './assistantSettingsProvider';
 export * from './assistantTask';
+export * from './assistantTaskProvider';
 export * from './assistantTaskStatus';
 export * from './assistantTimer';
 export * from './assistantTimerKind';

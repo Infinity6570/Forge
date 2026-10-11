@@ -35,10 +35,12 @@ export const GetAssistantDashboardResponse = zod.object({
   "error": zod.string().nullable(),
   "logs": zod.array(zod.object({
   "id": zod.string(),
-  "kind": zod.enum(['plan', 'agent', 'tool', 'result', 'error', 'info']),
+  "kind": zod.enum(['plan', 'agent', 'tool', 'result', 'error', 'info', 'warning']),
   "message": zod.string(),
   "createdAt": zod.coerce.date()
 })),
+  "provider": zod.enum(['openai', 'gemini', 'openrouter']),
+  "modelId": zod.string(),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
 }))
@@ -57,10 +59,12 @@ export const ListAssistantTasksResponseItem = zod.object({
   "error": zod.string().nullable(),
   "logs": zod.array(zod.object({
   "id": zod.string(),
-  "kind": zod.enum(['plan', 'agent', 'tool', 'result', 'error', 'info']),
+  "kind": zod.enum(['plan', 'agent', 'tool', 'result', 'error', 'info', 'warning']),
   "message": zod.string(),
   "createdAt": zod.coerce.date()
 })),
+  "provider": zod.enum(['openai', 'gemini', 'openrouter']),
+  "modelId": zod.string(),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
 })
@@ -92,10 +96,12 @@ export const CreateAssistantTaskResponse = zod.object({
   "error": zod.string().nullable(),
   "logs": zod.array(zod.object({
   "id": zod.string(),
-  "kind": zod.enum(['plan', 'agent', 'tool', 'result', 'error', 'info']),
+  "kind": zod.enum(['plan', 'agent', 'tool', 'result', 'error', 'info', 'warning']),
   "message": zod.string(),
   "createdAt": zod.coerce.date()
 })),
+  "provider": zod.enum(['openai', 'gemini', 'openrouter']),
+  "modelId": zod.string(),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
 })
@@ -117,10 +123,12 @@ export const GetAssistantTaskResponse = zod.object({
   "error": zod.string().nullable(),
   "logs": zod.array(zod.object({
   "id": zod.string(),
-  "kind": zod.enum(['plan', 'agent', 'tool', 'result', 'error', 'info']),
+  "kind": zod.enum(['plan', 'agent', 'tool', 'result', 'error', 'info', 'warning']),
   "message": zod.string(),
   "createdAt": zod.coerce.date()
 })),
+  "provider": zod.enum(['openai', 'gemini', 'openrouter']),
+  "modelId": zod.string(),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
 })
@@ -142,10 +150,12 @@ export const AbortAssistantTaskResponse = zod.object({
   "error": zod.string().nullable(),
   "logs": zod.array(zod.object({
   "id": zod.string(),
-  "kind": zod.enum(['plan', 'agent', 'tool', 'result', 'error', 'info']),
+  "kind": zod.enum(['plan', 'agent', 'tool', 'result', 'error', 'info', 'warning']),
   "message": zod.string(),
   "createdAt": zod.coerce.date()
 })),
+  "provider": zod.enum(['openai', 'gemini', 'openrouter']),
+  "modelId": zod.string(),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
 })
@@ -295,6 +305,7 @@ export const DeleteAssistantFileResponse = zod.void()
 export const GetAssistantSettingsResponse = zod.object({
   "provider": zod.enum(['openai', 'gemini', 'openrouter']),
   "modelId": zod.string(),
+  "fallbackModelId": zod.string(),
   "localSetupAllowed": zod.boolean(),
   "providerSettingsAllowed": zod.boolean(),
   "hasOpenaiKey": zod.boolean(),
@@ -311,6 +322,10 @@ export const updateAssistantSettingsBodyModelIdMax = 120;
 
 
 export const updateAssistantSettingsBodyModelIdRegExp = new RegExp('^[A-Za-z0-9][A-Za-z0-9._:/-]{0,119}$');
+export const updateAssistantSettingsBodyFallbackModelIdMax = 120;
+
+
+export const updateAssistantSettingsBodyFallbackModelIdRegExp = new RegExp('^$|^[A-Za-z0-9][A-Za-z0-9._:/-]{0,119}$');
 export const updateAssistantSettingsBodyOpenaiApiKeyMax = 1000;
 
 export const updateAssistantSettingsBodyGeminiApiKeyMax = 1000;
@@ -322,6 +337,7 @@ export const updateAssistantSettingsBodyOpenrouterApiKeyMax = 1000;
 export const UpdateAssistantSettingsBody = zod.object({
   "provider": zod.enum(['openai', 'gemini', 'openrouter']),
   "modelId": zod.string().min(1).max(updateAssistantSettingsBodyModelIdMax).regex(updateAssistantSettingsBodyModelIdRegExp),
+  "fallbackModelId": zod.string().max(updateAssistantSettingsBodyFallbackModelIdMax).regex(updateAssistantSettingsBodyFallbackModelIdRegExp).optional(),
   "openaiApiKey": zod.string().max(updateAssistantSettingsBodyOpenaiApiKeyMax).nullish(),
   "geminiApiKey": zod.string().max(updateAssistantSettingsBodyGeminiApiKeyMax).nullish(),
   "openrouterApiKey": zod.string().max(updateAssistantSettingsBodyOpenrouterApiKeyMax).nullish(),
@@ -331,6 +347,7 @@ export const UpdateAssistantSettingsBody = zod.object({
 export const UpdateAssistantSettingsResponse = zod.object({
   "provider": zod.enum(['openai', 'gemini', 'openrouter']),
   "modelId": zod.string(),
+  "fallbackModelId": zod.string(),
   "localSetupAllowed": zod.boolean(),
   "providerSettingsAllowed": zod.boolean(),
   "hasOpenaiKey": zod.boolean(),

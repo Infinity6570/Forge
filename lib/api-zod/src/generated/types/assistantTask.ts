@@ -5,6 +5,7 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { AssistantTaskProvider } from './assistantTaskProvider';
 import type { AssistantTaskStatus } from './assistantTaskStatus';
 import type { TaskLog } from './taskLog';
 
@@ -19,6 +20,8 @@ export interface AssistantTask {
   /** @nullable */
   error: string | null;
   logs: TaskLog[];
+  provider: AssistantTaskProvider;
+  modelId: string;
   createdAt: Date;
   updatedAt: Date;
 }

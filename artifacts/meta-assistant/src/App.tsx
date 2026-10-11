@@ -251,6 +251,7 @@ function Dashboard() {
 
 function TaskDetailDialog({ task, loading, error, retry, close, abort, aborting }: { task?: AssistantTask; loading: boolean; error: boolean; retry: () => void; close: () => void; abort: (id: string) => void; aborting: boolean }) {
   return <Modal title="Task details" onClose={close}>{loading ? <Skeleton rows={5} /> : error || !task ? <QueryProblem retry={retry} /> : <div className="detail-content"><div className="detail-objective"><StatusPill status={task.status} /><h3>{task.objective}</h3><p>Started {formatDate(task.createdAt)} <span>·</span> Updated {timeAgo(task.updatedAt)}</p></div>
+    <p className="settings-footnote">Model used: <strong>{task.modelId}</strong></p>
     {task.currentStep && <div className="current-step"><span className="tiny-spinner" /><div><small>CURRENT STEP</small><strong>{task.currentStep}</strong></div></div>}
     {task.result && <div className="outcome-box"><strong><CheckCircle2 size={16} /> Outcome</strong><p>{task.result}</p></div>}
     {task.error && <div className="error-box"><strong><AlertCircle size={16} /> What happened</strong><p>{task.error}</p></div>}
@@ -423,6 +424,7 @@ function SettingsPage() {
   const [provider, setProvider] = useState<'openai' | 'gemini' | 'openrouter'>('openai');
   const [modelId, setModelId] = useState('gpt-4.1-mini');
   const [customModelId, setCustomModelId] = useState('');
+  const [fallbackModelId, setFallbackModelId] = useState('');
   const [credentialStatus, setCredentialStatus] = useState<{
     provider: 'openai' | 'gemini' | 'openrouter';
     modelId: string;
@@ -475,6 +477,7 @@ function SettingsPage() {
         setCredentialStatus(data);
         setProvider(data.provider);
         setModelId(data.modelId);
+        setFallbackModelId(data.fallbackModelId ?? '');
         setCustomModelId(data.provider === 'gemini' && !GEMINI_MODEL_IDS.has(data.modelId) ? data.modelId : '');
         setCodeRunnerEnabled(data.codeRunnerEnabled);
       })
@@ -495,6 +498,7 @@ function SettingsPage() {
     setProviderSaved(false);
     const selectedModelId = provider === 'gemini' && customModelId.trim() ? customModelId.trim() : modelId;
     const payload: Record<string, unknown> = { provider, modelId: selectedModelId, codeRunnerEnabled };
+    if (provider === 'gemini') payload.fallbackModelId = fallbackModelId.trim();
     for (const [field, value] of Object.entries(apiKeys)) {
       if (value.trim()) payload[field] = value.trim();
     }
@@ -543,6 +547,7 @@ function SettingsPage() {
       <label className="form-label">Default provider<select value={provider} onChange={(event) => { const next = event.target.value as typeof provider; setProvider(next); setModelId(models[next][0].id); setCustomModelId(''); }} data-testid="select-settings-provider"><option value="openai">OpenAI</option><option value="gemini">Google Gemini</option><option value="openrouter">OpenRouter</option></select></label>
       <label className="form-label">Default model<select value={customModelId.trim() || modelId} onChange={(event) => { setModelId(event.target.value); setCustomModelId(''); }} data-testid="select-settings-model">{customModelId.trim() && !models[provider].some((item) => item.id === customModelId.trim()) && <option value={customModelId.trim()}>{customModelId.trim()} (custom)</option>}{models[provider].map((item) => <option key={item.id} value={item.id}>{item.id} — {item.detail}</option>)}</select></label>
       {provider === 'gemini' && <label className="form-label">Custom Model ID <span className="optional-label">Optional; overrides the selected model. Use an available fallback if a request returns 429 or 503.</span><input type="text" autoComplete="off" spellCheck={false} value={customModelId} onChange={(event) => { setCustomModelId(event.target.value); setProviderSaved(false); }} placeholder="e.g. gemini-3.1-pro-preview" data-testid="input-custom-model-id" /></label>}
+      {provider === 'gemini' && <label className="form-label">Automatic fallback model <span className="optional-label">Optional; retry once after a Gemini 429 or 503. Leave blank to disable.</span><input type="text" autoComplete="off" spellCheck={false} value={fallbackModelId} onChange={(event) => { setFallbackModelId(event.target.value); setProviderSaved(false); }} placeholder="e.g. gemini-2.5-flash-lite" data-testid="input-gemini-fallback-model-id" /></label>}
       <label className="form-label">OpenAI API key <span className="optional-label">{credentialStatus?.hasOpenaiKey ? 'configured — leave blank to keep' : 'optional'}</span><input type="password" autoComplete="new-password" value={apiKeys.openaiApiKey} onChange={(event) => setApiKeys({ ...apiKeys, openaiApiKey: event.target.value })} placeholder="sk-…" disabled={!credentialStatus?.providerSettingsAllowed} data-testid="input-openai-api-key" /></label>
       <label className="form-label">Gemini API key <span className="optional-label">{credentialStatus?.hasGeminiKey ? 'configured — leave blank to keep' : 'optional'}</span><input type="password" autoComplete="new-password" value={apiKeys.geminiApiKey} onChange={(event) => setApiKeys({ ...apiKeys, geminiApiKey: event.target.value })} placeholder="Enter your Gemini key" disabled={!credentialStatus?.providerSettingsAllowed} data-testid="input-gemini-api-key" /></label>
       <label className="form-label">OpenRouter API key <span className="optional-label">{credentialStatus?.hasOpenrouterKey ? 'configured — leave blank to keep' : 'optional'}</span><input type="password" autoComplete="new-password" value={apiKeys.openrouterApiKey} onChange={(event) => setApiKeys({ ...apiKeys, openrouterApiKey: event.target.value })} placeholder="sk-or-…" disabled={!credentialStatus?.providerSettingsAllowed} data-testid="input-openrouter-api-key" /></label>
