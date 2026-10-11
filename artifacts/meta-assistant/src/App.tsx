@@ -32,7 +32,7 @@ import {
 import type { AssistantFile, AssistantNote, AssistantTask, AssistantTimer, WorkspacePreviewApp } from '@workspace/api-client-react';
 import {
   Activity, AlertCircle, ArrowDownToLine, ArrowRight, Bell, BookOpen, Check, CheckCircle2,
-  ChevronDown, ChevronRight, CircleHelp, Clock3, Copy, ExternalLink, FileText, FolderOpen, Gauge, HardDrive, Layers3,
+  ChevronDown, ChevronRight, CircleHelp, Clock3, Copy, ExternalLink, FileText, FolderOpen, Gauge, HardDrive, Layers3, Moon, Sun,
   KeyRound, LoaderCircle, LockKeyhole, Menu, MoreHorizontal, Plus, RefreshCw, Search,
   Send, Settings2, ShieldCheck, Sparkles, StopCircle, Trash2, Upload, X, Zap, PanelRight, GripVertical,
 } from 'lucide-react';
@@ -53,14 +53,15 @@ const navItems: { href: string; label: string; icon: typeof Activity }[] = [
 ];
 
 const THEMES = [
-  { id: 'cyberdeck', label: '⚡ Sci-Fi', fullLabel: 'Sci-Fi' },
-  { id: 'dark', label: '🌑 Dark', fullLabel: 'Dark' },
-  { id: 'light', label: '☀️ Light', fullLabel: 'Light' },
+  { id: 'cyberdeck', label: 'Sci-Fi', fullLabel: 'Sci-Fi' },
+  { id: 'dark', label: 'Dark', fullLabel: 'Dark' },
+  { id: 'light', label: 'Light', fullLabel: 'Light' },
 ] as const;
 
 function ThemeChooser() {
   const [theme, setTheme] = useState(() => {
-    const saved = localStorage.getItem('morrow-theme');
+    let saved: string | null = null;
+    try { saved = localStorage.getItem('morrow-theme'); } catch { /* Storage can be disabled. */ }
     return saved === 'dark' || saved === 'light' ? saved : 'cyberdeck';
   });
   const chooseTheme = (value: string) => {
@@ -79,8 +80,35 @@ function ThemeChooser() {
     return () => window.removeEventListener('morrow:theme', sync);
   }, []);
   return <div className="theme-chooser" role="radiogroup" aria-label="Choose appearance theme" data-testid="select-theme">
-    {THEMES.map((item) => <button type="button" role="radio" aria-checked={theme === item.id} aria-label={`${item.fullLabel} theme`} title={`${item.fullLabel} theme`} className={`theme-option ${theme === item.id ? 'selected' : ''}`} key={item.id} onClick={() => chooseTheme(item.id)} data-testid={`theme-${item.id}`}>{item.label}</button>)}
+    {THEMES.map((item) => <button type="button" role="radio" aria-checked={theme === item.id} aria-label={`${item.fullLabel} theme`} title={`${item.fullLabel} theme`} className={`theme-option ${theme === item.id ? 'selected' : ''}`} key={item.id} onClick={() => chooseTheme(item.id)} data-testid={`theme-${item.id}`}>{item.id === 'dark' ? <Moon size={12} /> : item.id === 'light' ? <Sun size={12} /> : <Sparkles size={12} />}<span>{item.label}</span></button>)}
   </div>;
+}
+
+function CyberFxToggle() {
+  const [enabled, setEnabled] = useState(() => document.documentElement.dataset.cyberFx !== 'off');
+  const [theme, setTheme] = useState(() => document.documentElement.dataset.theme);
+  useEffect(() => {
+    const root = document.documentElement;
+    const sync = () => {
+      setEnabled(root.dataset.cyberFx !== 'off');
+      setTheme(root.dataset.theme);
+    };
+    window.addEventListener('morrow:cyber-fx', sync);
+    window.addEventListener('morrow:theme', sync);
+    return () => {
+      window.removeEventListener('morrow:cyber-fx', sync);
+      window.removeEventListener('morrow:theme', sync);
+    };
+  }, []);
+  const toggle = () => {
+    const next = !enabled;
+    setEnabled(next);
+    document.documentElement.dataset.cyberFx = next ? 'on' : 'off';
+    try { localStorage.setItem('forge-cyber-fx', next ? 'on' : 'off'); } catch { /* The current session still honors the choice. */ }
+    window.dispatchEvent(new Event('morrow:cyber-fx'));
+  };
+  if (theme !== 'scifi') return null;
+  return <button type="button" className={`cyber-fx-toggle ${enabled ? 'is-on' : ''}`} role="switch" aria-checked={enabled} aria-label={`Cyber FX: ${enabled ? 'ON' : 'OFF'}`} aria-pressed={enabled} onClick={toggle} data-testid="toggle-cyber-fx"><Sparkles size={13} /><span>Cyber FX: {enabled ? 'ON' : 'OFF'}</span><i aria-hidden="true" /></button>;
 }
 
 function timeAgo(value?: string) {
@@ -105,7 +133,7 @@ function formatSize(bytes: number) {
 }
 
 function statusTone(status: string) {
-  if (status === 'running' || status === 'queued' || status === 'awaiting_confirmation' || status === 'awaiting_approval' || status === 'active') return 'live';
+  if (status === 'running' || status === 'processing' || status === 'queued' || status === 'awaiting_confirmation' || status === 'awaiting_approval' || status === 'active') return 'live';
   if (status === 'completed' || status === 'fired') return 'done';
   if (status === 'failed' || status === 'cancelled') return 'issue';
   return 'neutral';
@@ -186,7 +214,7 @@ function AppShell({ children, page }: { children: ReactNode; page: Page }) {
     </aside>
     {mobileOpen && <button className="mobile-scrim" onClick={() => setMobileOpen(false)} aria-label="Close menu" />}
     <main className="main-area">
-      <header className="topbar"><button className="mobile-menu icon-button" aria-label="Open navigation" onClick={() => setMobileOpen(true)} data-testid="button-open-navigation"><Menu size={20} /></button><div className="breadcrumbs"><span>Workspace</span><span className="crumb-slash">/</span><strong>{navItems.find((n) => (n.href === '/' ? 'home' : n.href.slice(1)) === current)?.label ?? 'Overview'}</strong></div><div className="topbar-right"><span className="ops-tagline">LOCAL OPS // 6570</span><div className="system-online"><span className="online-pip" />All systems operational</div><ThemeChooser /><button className="inspector-toggle icon-button" aria-label={inspectorOpen ? 'Close workspace inspector' : 'Open workspace inspector'} aria-expanded={inspectorOpen} onClick={() => setInspectorOpen((open) => !open)} data-testid="button-toggle-inspector"><PanelRight size={17} /></button><button className="topbar-icon" aria-label="Help" onClick={() => window.alert('Your agent can help with documents, reminders, research, and code-related work.')} data-testid="button-help"><CircleHelp size={18} /></button><div className="topbar-avatar">F</div></div></header>
+      <header className="topbar"><button className="mobile-menu icon-button" aria-label="Open navigation" onClick={() => setMobileOpen(true)} data-testid="button-open-navigation"><Menu size={20} /></button><div className="breadcrumbs"><span>Workspace</span><span className="crumb-slash">/</span><strong>{navItems.find((n) => (n.href === '/' ? 'home' : n.href.slice(1)) === current)?.label ?? 'Overview'}</strong></div><div className="topbar-right"><span className="ops-tagline">LOCAL OPS // 6570</span><div className="system-online"><span className="online-pip" />All systems operational</div><ThemeChooser /><CyberFxToggle /><button className="inspector-toggle icon-button" aria-label={inspectorOpen ? 'Close workspace inspector' : 'Open workspace inspector'} aria-expanded={inspectorOpen} onClick={() => setInspectorOpen((open) => !open)} data-testid="button-toggle-inspector"><PanelRight size={17} /></button><button className="topbar-icon" aria-label="Help" onClick={() => window.alert('Your agent can help with documents, reminders, research, and code-related work.')} data-testid="button-help"><CircleHelp size={18} /></button><div className="topbar-avatar">F</div></div></header>
       <div className="center-pane"><div className="page-wrap">{children}</div><footer className="app-footer"><span>Made for thoughtful delegation.</span><span className="footer-build">FORGE <span>·</span> LOCAL COMMAND CENTER</span></footer></div>
     </main>
     {inspectorOpen && <div className="inspector-resize" role="separator" aria-orientation="vertical" aria-label="Resize workspace inspector" aria-valuemin={380} aria-valuemax={450} aria-valuenow={inspectorWidth} tabIndex={0} onPointerDown={(event) => { event.preventDefault(); setResizingInspector(true); }} onKeyDown={(event) => { if (event.key === 'ArrowLeft') setInspectorWidth((width) => Math.min(450, width + 10)); if (event.key === 'ArrowRight') setInspectorWidth((width) => Math.max(380, width - 10)); }} data-testid="separator-inspector"><GripVertical size={14} /></div>}
@@ -279,7 +307,7 @@ function ReminderNotifications() {
 }
 
 function TaskStatusLine({ task, compact = false, onClick }: { task: AssistantTask; compact?: boolean; onClick?: () => void }) {
-  return <button className={`task-row ${compact ? 'compact' : ''}`} onClick={onClick} data-testid={`button-task-${task.id}`}>
+  return <button className={`task-row ${compact ? 'compact' : ''}`} onClick={onClick} data-task-status={task.status} data-task-running={task.status === 'running' || String(task.status) === 'processing' ? 'true' : 'false'} data-testid={`button-task-${task.id}`}>
     <span className={`task-symbol ${statusTone(task.status)}`}>{task.status === 'completed' ? <Check size={14} /> : task.status === 'failed' ? <AlertCircle size={14} /> : task.status === 'cancelled' ? <StopCircle size={14} /> : task.status === 'awaiting_confirmation' || task.status === 'awaiting_approval' ? <CircleHelp size={14} /> : <span className="tiny-spinner" />}</span>
     <span className="task-row-main"><strong>{task.objective}</strong><span>{task.currentStep || task.result || task.error || (task.status === 'queued' ? 'Queued for the agent' : 'Task updated')} </span></span>
     <span className="task-row-side"><StatusPill status={task.status} /><time>{timeAgo(task.updatedAt)}</time></span>
@@ -328,9 +356,9 @@ function ActivityStream({ tasks, loading, onOpen }: { tasks: AssistantTask[]; lo
     const element = event.currentTarget;
     following.current = element.scrollHeight - element.scrollTop - element.clientHeight < 72;
   }} data-testid="activity-stream">
-    {tasks.map((task) => <article className="stream-task" key={task.id} data-testid={`stream-task-${task.id}`}>
+    {tasks.map((task) => <article className="stream-task" key={task.id} data-task-status={task.status} data-task-running={task.status === 'running' || String(task.status) === 'processing' ? 'true' : 'false'} data-testid={`stream-task-${task.id}`}>
       <button className="stream-task-heading" onClick={() => onOpen(task)} data-testid={`button-stream-task-${task.id}`}><span className="stream-task-marker"><span className={statusTone(task.status)} /></span><span><strong>{task.objective}</strong><small>{task.currentStep || task.result || task.error || 'Task activity'} · {timeAgo(task.updatedAt)}</small></span><StatusPill status={task.status} /><ArrowRight size={14} /></button>
-      {task.currentStep && <div className="stream-current"><span className="stream-live-mark" /><div><small>CURRENT STEP</small><strong>{task.currentStep}{task.status === 'running' && <span className="terminal-cursor" aria-hidden="true">▋</span>}</strong></div></div>}
+      {task.currentStep && <div className="stream-current"><span className="stream-live-mark" /><div><small>CURRENT STEP</small><strong>{task.currentStep}{(task.status === 'running' || String(task.status) === 'processing') && <span className="terminal-cursor" aria-hidden="true">▋</span>}</strong></div></div>}
       <div className="stream-steps">{(task.logs ?? []).map((log) => <details className="stream-step" key={log.id} open={log.kind === 'error' || log.kind === 'warning'} data-testid={`step-log-${log.id}`}>
         <summary><span className={`log-dot ${log.kind}`} /><span className="step-category">{sectionFor(log.kind, log.message)}</span><span className="step-title">{log.kind}</span><time>{formatDate(log.createdAt)}</time><ChevronDown size={13} /></summary>
          <div className="step-body"><LogMessage message={log.message} kind={log.kind} /></div>
@@ -400,16 +428,17 @@ function Dashboard() {
   const attachmentInput = useRef<HTMLInputElement>(null);
   const details = useGetAssistantTask(selectedTaskId ?? '', { query: { enabled: !!selectedTaskId, queryKey: getGetAssistantTaskQueryKey(selectedTaskId ?? ''), refetchInterval: (query) => {
     const task = query.state.data;
-    return task && ['queued', 'running', 'awaiting_approval', 'awaiting_confirmation'].includes(task.status) ? 2500 : false;
+    return task && ['queued', 'running', 'processing', 'awaiting_approval', 'awaiting_confirmation'].includes(task.status) ? 2500 : false;
   } } });
   const abort = useAbortAssistantTask();
   const tasks = summary.data?.recentTasks ?? listTasks.data ?? [];
   const actionTaskId = tasks.find((task) => task.requiresApproval || task.requiresModelConfirmation || task.recommendationKind === 'fallback')?.id
-    ?? tasks.find((task) => ['running', 'queued', 'awaiting_confirmation', 'awaiting_approval'].includes(task.status))?.id ?? '';
+    ?? tasks.find((task) => ['running', 'processing', 'queued', 'awaiting_confirmation', 'awaiting_approval'].includes(task.status))?.id ?? '';
   const actionTask = useGetAssistantTask(actionTaskId, { query: { enabled: !!actionTaskId, queryKey: getGetAssistantTaskQueryKey(actionTaskId), refetchInterval: (query) => {
     const task = query.state.data;
-    return task && ['queued', 'running', 'awaiting_approval', 'awaiting_confirmation'].includes(task.status) ? 2500 : false;
+    return task && ['queued', 'running', 'processing', 'awaiting_approval', 'awaiting_confirmation'].includes(task.status) ? 2500 : false;
   } } });
+  const activeExecution = [details.data, actionTask.data].some((task) => task?.status === 'running' || String(task?.status) === 'processing');
   const referenceModel = tasks.find((task) => task.modelId);
   const isPending = createTask.isPending;
   const submit = (event: FormEvent) => {
@@ -454,11 +483,11 @@ function Dashboard() {
     { label: 'Reminders', value: summary.data?.activeTimers, icon: Bell, tint: 'amber', note: 'upcoming or active' },
     { label: 'Knowledge', value: (summary.data?.notesCount ?? 0) + (summary.data?.filesCount ?? 0), icon: BookOpen, tint: 'plum', note: `${summary.data?.notesCount ?? 0} notes · ${summary.data?.filesCount ?? 0} files` },
   ];
-  return <AppShell page="home"><div className="dashboard-page command-center enter">
-    <div className="command-heading"><div><p className="eyebrow">FORGE / COMMAND CENTER</p><h1>Work in motion</h1></div><div className="command-status" data-testid="status-agent-state"><span className={`online-pip ${summary.data?.activeTasks ? 'working' : ''}`} />{summary.isLoading ? 'Connecting' : summary.data?.activeTasks ? 'Running' : 'Idle'}<span className="status-divider" />{referenceModel ? modelDisplayName(referenceModel.provider, referenceModel.modelId) : 'Configured model'}</div></div>
+  return <AppShell page="home"><div className="dashboard-page command-center enter" data-task-active={activeExecution ? 'true' : 'false'} data-testid="dashboard-command-center">
+    <div className="command-heading"><div><p className="eyebrow">FORGE / COMMAND CENTER</p><h1>Work in motion</h1></div><div className="command-status" data-testid="status-agent-state"><span className={`online-pip ${activeExecution ? 'working' : ''}`} />{summary.isLoading ? 'Connecting' : activeExecution ? 'Running' : 'Idle'}<span className="status-divider" />{referenceModel ? modelDisplayName(referenceModel.provider, referenceModel.modelId) : 'Configured model'}</div></div>
     {summary.isError && <QueryProblem retry={() => summary.refetch()} message="Your overview is temporarily unavailable." />}
     <div className="command-metrics" aria-label="Workspace status">{counts.map(({ label, value }) => <span key={label} data-testid={`metric-${label.toLowerCase().replaceAll(' ', '-')}`}><i />{label}<strong>{summary.isLoading ? '—' : value ?? 0}</strong></span>)}</div>
-    <section className="activity-panel"><div className="activity-panel-heading"><div><span className="live-label"><span className="online-pip" />LIVE TASK STREAM</span><h2>Recent execution</h2></div><Link href="/tasks" className="text-link" data-testid="link-all-tasks">Task activity <ArrowRight size={14} /></Link></div>
+    <section className="activity-panel execution-panel" data-task-active={activeExecution ? 'true' : 'false'}><div className="activity-panel-heading"><div><span className="live-label"><span className="online-pip" />LIVE TASK STREAM</span><h2>Recent execution</h2></div><Link href="/tasks" className="text-link" data-testid="link-all-tasks">Task activity <ArrowRight size={14} /></Link></div>
       {listTasks.isError && !summary.data ? <QueryProblem retry={() => listTasks.refetch()} /> : <ActivityStream tasks={tasks.slice(0, 8)} loading={summary.isLoading && listTasks.isLoading} onOpen={(task) => setSelectedTaskId(task.id)} />}
     </section>
     <TaskActionDock task={actionTask.data} />
@@ -534,7 +563,7 @@ function TaskDetailDialog({ task, loading, error, retry, close, abort, aborting 
     {task.requiresModelConfirmation && <section className="model-recommendation" aria-live="polite" data-testid="task-model-recommendation"><strong>Recommendation:</strong><p>This task involves {task.recommendationReason}. Running on a high-capability model like {recommendedName} may produce better results. Would you like to switch for this task?</p><div className="model-recommendation-actions"><button className="button button-primary" onClick={() => choose(true)} disabled={chooseModel.isPending} data-testid="button-switch-recommended-model">{chooseModel.isPending ? 'Saving choice…' : 'Switch to Recommended Model'}</button><button className="button button-quiet" onClick={() => choose(false)} disabled={chooseModel.isPending} data-testid="button-stay-current-model">Stay on Current Model</button></div></section>}
     {task.recommendationKind === 'fallback' && task.retryAvailable && task.status !== 'running' && <section className="model-recommendation fallback-recommendation" aria-live="polite" data-testid="task-fallback-recommendation"><strong>Task encountered persistent errors on the current model.</strong><p>Would you like to retry this step with {recommendedName}?</p><div className="model-recommendation-actions"><button className="button button-primary" onClick={() => retryFailedStep(true)} disabled={retryStep.isPending} data-testid="button-retry-step-recommended">{retryStep.isPending ? 'Starting retry…' : 'Retry this step with Recommended Pro Model'}</button><button className="button button-quiet" onClick={() => retryFailedStep(false)} disabled={retryStep.isPending} data-testid="button-dismiss-retry-suggestion">Not now</button></div></section>}
     {actionError && <p className="field-error" role="alert">{actionError}</p>}
-    {task.currentStep && <div className="current-step"><span>{task.status === 'awaiting_confirmation' || task.status === 'awaiting_approval' ? <CircleHelp size={16} /> : <span className="tiny-spinner" />}</span><div><small>{task.status === 'awaiting_confirmation' || task.status === 'awaiting_approval' ? 'WAITING FOR YOU' : 'CURRENT STEP'}</small><strong>{task.currentStep}{task.status === 'running' && <span className="terminal-cursor" aria-hidden="true">▋</span>}</strong></div></div>}
+    {task.currentStep && <div className="current-step"><span>{task.status === 'awaiting_confirmation' || task.status === 'awaiting_approval' ? <CircleHelp size={16} /> : <span className="tiny-spinner" />}</span><div><small>{task.status === 'awaiting_confirmation' || task.status === 'awaiting_approval' ? 'WAITING FOR YOU' : 'CURRENT STEP'}</small><strong>{task.currentStep}{(task.status === 'running' || String(task.status) === 'processing') && <span className="terminal-cursor" aria-hidden="true">▋</span>}</strong></div></div>}
     {task.result && <div className="outcome-box"><strong><CheckCircle2 size={16} /> Outcome</strong><p>{task.result}</p></div>}
     {task.error && <div className="error-box"><strong><AlertCircle size={16} /> What happened</strong><p>{task.error}</p></div>}
     <div className="log-heading"><strong>Execution log</strong><span>{task.logs?.length ?? 0} entries</span></div>
@@ -652,7 +681,7 @@ function WorkspacePreview() {
     </div>
     {previewQuery.isLoading ? <div className="preview-loading" aria-label="Loading previews"><div className="preview-loading-bar" /><div className="preview-loading-stage" /></div>
       : previewQuery.isError ? <div className="preview-state preview-error"><div className="preview-state-icon"><AlertCircle size={20} /></div><strong>Preview status is unavailable</strong><p>We couldn’t reach the workspace preview service.</p><button className="button button-primary button-small" onClick={() => void previewQuery.refetch()} data-testid="button-retry-preview"><RefreshCw size={14} /> Try again</button></div>
-       : !preview?.staticAvailable && apps.length === 0 ? <div className="preview-state preview-empty"><div className="preview-empty-art"><span /><span /><span /></div><strong>No preview yet</strong><p>{preview?.pythonPreviewsEnabled ? 'Create a Python web app in the workspace and launch it with the assistant to preview it here.' : 'Create workspace/index.html for a static preview. Local Python app previews can be enabled in Preferences; they are always disabled in Replit.'}</p></div>
+        : !preview?.staticAvailable && apps.length === 0 ? <div className="preview-state preview-empty"><div className="preview-empty-art"><span /><span /><span /><div className="preview-holo-terminal" aria-hidden="true"><i /><i /><i /><i /></div></div><strong>No preview yet</strong><p>{preview?.pythonPreviewsEnabled ? 'Create a Python web app in the workspace and launch it with the assistant to preview it here.' : 'Create workspace/index.html for a static preview. Local Python app previews can be enabled in Preferences; they are always disabled in Replit.'}</p></div>
       : <>
         <div className="preview-controls">
           <div className="preview-choices" role="group" aria-label="Choose a preview">

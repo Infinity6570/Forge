@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=JetBrains+Mono:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&family=Newsreader:opsz,wght@6..72,500;6..72,600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=JetBrains+Mono:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&family=Newsreader:opsz,wght@6..72,500;6..72,600&family=Orbitron:wght@600;700&family=Share+Tech+Mono&display=swap');
 @import 'tailwindcss';
 @import 'tw-animate-css';
 @plugin "@tailwindcss/typography";
@@ -1313,4 +1313,198 @@ html:is([data-theme="scifi"],[data-theme="cyberdeck"]) .terminal-cursor {
 }
 @media(prefers-reduced-motion:reduce) {
   html:is([data-theme="scifi"],[data-theme="cyberdeck"]) .terminal-cursor { animation:none; }
+}
+
+/* Sci-Fi cyberdeck: telemetry typography and deliberately restrained FX. */
+html[data-theme="scifi"] {
+  --font-sans:'Share Tech Mono',ui-monospace,monospace;
+  --font-mono:'Share Tech Mono',ui-monospace,monospace;
+  --app-font-sans:'Share Tech Mono',ui-monospace,monospace;
+  --app-font-mono:'Share Tech Mono',ui-monospace,monospace;
+}
+html[data-theme="scifi"] body,
+html[data-theme="scifi"] button,
+html[data-theme="scifi"] input,
+html[data-theme="scifi"] textarea,
+html[data-theme="scifi"] select {
+  font-family:'Share Tech Mono',ui-monospace,monospace;
+}
+html[data-theme="scifi"] .brand-name,
+html[data-theme="scifi"] .command-heading h1,
+html[data-theme="scifi"] .page-heading h1,
+html[data-theme="scifi"] .welcome-row h1,
+html[data-theme="scifi"] .panel-heading h2,
+html[data-theme="scifi"] .activity-panel-heading h2,
+html[data-theme="scifi"] .settings-section-heading h2,
+html[data-theme="scifi"] .modal-heading h2,
+html[data-theme="scifi"] .status-pill,
+html[data-theme="scifi"] .library-tabs button,
+html[data-theme="scifi"] .right-inspector [role="tab"],
+html[data-theme="scifi"] .theme-option {
+  font-family:'Orbitron',sans-serif!important;
+  font-weight:600;
+  text-transform:uppercase;
+  letter-spacing:.12em;
+}
+html[data-theme="scifi"] .brand-name { font-weight:700; }
+html[data-theme="scifi"] .footer-build { font-family:'Orbitron',sans-serif;letter-spacing:.12em; }
+html[data-theme="scifi"] .command-heading h1,
+html[data-theme="scifi"] .page-heading h1,
+html[data-theme="scifi"] .welcome-row h1,
+html[data-theme="scifi"] .activity-panel-heading h2 {
+  text-transform:uppercase;
+  letter-spacing:.12em;
+}
+html[data-theme="scifi"] .status-pill { font-size:8px; }
+html[data-theme="scifi"] .command-status,
+html[data-theme="scifi"] .command-metrics,
+html[data-theme="scifi"] time,
+html[data-theme="scifi"] .terminal-cursor,
+html[data-theme="scifi"] .terminal-prompt,
+html[data-theme="scifi"] .composer-panel textarea,
+html[data-theme="scifi"] .log-message,
+html[data-theme="scifi"] .task-row-main>span {
+  font-family:'Share Tech Mono',ui-monospace,monospace!important;
+}
+html[data-theme="scifi"] .terminal-prompt,
+html[data-theme="scifi"] .composer-panel textarea,
+html[data-theme="scifi"] .terminal-prefix {
+  font-family:'Share Tech Mono',ui-monospace,monospace!important;
+}
+html[data-theme="scifi"] .theme-chooser { gap:4px; }
+html[data-theme="scifi"] .theme-option { display:inline-flex;align-items:center;gap:5px; }
+html[data-theme="scifi"] .cyber-fx-toggle {
+  min-height:28px;display:inline-flex;align-items:center;gap:6px;padding:0 8px;
+  border:1px solid var(--border);border-radius:3px;background:var(--bg-card);
+  color:var(--text-muted);font:600 8px/1 'Orbitron',sans-serif;letter-spacing:.08em;
+  text-transform:uppercase;white-space:nowrap;cursor:pointer;
+}
+html[data-theme="scifi"] .cyber-fx-toggle svg { color:var(--accent); }
+html[data-theme="scifi"] .cyber-fx-toggle.is-on { border-color:#1c6570;color:var(--text-primary); }
+html[data-theme="scifi"] .cyber-fx-toggle i {
+  width:16px;height:9px;position:relative;border:1px solid currentColor;border-radius:99px;opacity:.72;
+}
+html[data-theme="scifi"] .cyber-fx-toggle i::after {
+  content:"";position:absolute;top:1px;left:1px;width:5px;height:5px;border-radius:50%;
+  background:currentColor;transition:transform .16s ease;
+}
+html[data-theme="scifi"] .cyber-fx-toggle.is-on i::after { transform:translateX(7px); }
+html[data-theme="scifi"] .cyber-fx-toggle:focus-visible { outline:2px solid var(--accent);outline-offset:3px; }
+
+html[data-theme="scifi"] .dashboard-page {
+  position:relative;isolation:isolate;
+}
+html[data-theme="scifi"] .dashboard-page::after {
+  content:"";position:absolute;z-index:-1;pointer-events:none;inset:0;
+  opacity:.16;background-image:
+    linear-gradient(rgba(33,118,139,.18) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(33,118,139,.18) 1px,transparent 1px);
+  background-size:28px 28px;
+  mask-image:linear-gradient(to bottom,transparent 0%,#000 13%,#000 91%,transparent 100%);
+}
+html[data-theme="scifi"][data-cyber-fx="on"] body::after {
+  content:"";position:fixed;z-index:90;inset:0;pointer-events:none;opacity:.035;
+  background:repeating-linear-gradient(to bottom,transparent 0 3px,rgba(114,226,238,.65) 4px);
+}
+html[data-theme="scifi"][data-cyber-fx="on"] .dashboard-page[data-task-active="true"]::before {
+  content:"";position:absolute;z-index:-1;pointer-events:none;inset:-8%;
+  opacity:.56;background:
+    radial-gradient(ellipse at 25% 18%,rgba(18,7,38,.88),transparent 48%),
+    radial-gradient(ellipse at 75% 46%,rgba(3,27,36,.78),transparent 50%),
+    radial-gradient(ellipse at 45% 80%,rgba(5,11,26,.94),transparent 55%),
+    linear-gradient(125deg,#050b1a,#120726 48%,#031b24);
+  filter:blur(22px);transform:translate3d(-2%,0,0) scale(1.02);
+  animation:cyber-mesh-drift 10s ease-in-out infinite alternate;
+}
+@keyframes cyber-mesh-drift {
+  from { transform:translate3d(-2%,0,0) scale(1.02);opacity:.42; }
+  to { transform:translate3d(2%,1%,0) scale(1.06);opacity:.62; }
+}
+html[data-theme="scifi"][data-cyber-fx="on"] .execution-panel[data-task-active="true"] {
+  position:relative;isolation:isolate;overflow:hidden;
+}
+html[data-theme="scifi"][data-cyber-fx="on"] .execution-panel[data-task-active="true"]::after {
+  content:"";position:absolute;z-index:0;pointer-events:none;inset:0;padding:1px;
+  background:conic-gradient(from 0deg,transparent 0 76%,rgba(0,240,255,.8) 82%,rgba(139,83,255,.38) 85%,transparent 90% 100%);
+  mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);
+  mask-composite:exclude;
+  animation:cyber-border-sweep 9s linear infinite;
+}
+@keyframes cyber-border-sweep { to { transform:rotate(360deg); } }
+html[data-theme="scifi"][data-cyber-fx="on"] .execution-panel[data-task-active="true"] > * {
+  position:relative;z-index:1;
+}
+html[data-theme="scifi"][data-cyber-fx="on"] .command-status .online-pip.working {
+  position:relative;box-shadow:0 0 0 3px rgba(0,240,255,.12);
+}
+html[data-theme="scifi"][data-cyber-fx="on"] .command-status .online-pip.working::after {
+  content:"";position:absolute;inset:-4px;border:1px solid rgba(0,240,255,.55);border-radius:50%;
+  animation:cyber-status-pulse 2s ease-out infinite;
+}
+@keyframes cyber-status-pulse {
+  0% { transform:scale(.72);opacity:.75; }
+  100% { transform:scale(1.8);opacity:0; }
+}
+html[data-theme="scifi"] .preview-empty-art { width:150px;height:108px; }
+html[data-theme="scifi"] .preview-empty-art::before,
+html[data-theme="scifi"] .preview-empty-art::after,
+html[data-theme="scifi"] .preview-empty-art > span { display:none; }
+html[data-theme="scifi"] .preview-holo-terminal {
+  position:absolute;inset:7px 14px;display:flex;flex-direction:column;justify-content:center;gap:9px;
+  padding:14px;border:1px solid rgba(0,240,255,.62);background:
+    linear-gradient(rgba(0,240,255,.045),rgba(0,240,255,.015)),
+    repeating-linear-gradient(0deg,transparent 0 11px,rgba(0,240,255,.12) 12px);
+  clip-path:polygon(8% 0,92% 0,100% 12%,100% 88%,92% 100%,8% 100%,0 88%,0 12%);
+  box-shadow:inset 0 0 22px rgba(0,240,255,.1),0 0 23px rgba(0,240,255,.12);
+}
+html[data-theme="scifi"] .preview-holo-terminal::before,
+html[data-theme="scifi"] .preview-holo-terminal::after {
+  content:"";position:absolute;left:50%;width:1px;height:14px;background:rgba(0,240,255,.48);
+}
+html[data-theme="scifi"] .preview-holo-terminal::before { top:-14px; }
+html[data-theme="scifi"] .preview-holo-terminal::after { bottom:-14px; }
+html[data-theme="scifi"] .preview-holo-terminal i {
+  display:block;width:var(--line-width,80%);height:2px;background:rgba(83,228,239,.6);
+}
+html[data-theme="scifi"] .preview-holo-terminal i:nth-child(2) { --line-width:56%; }
+html[data-theme="scifi"] .preview-holo-terminal i:nth-child(3) { --line-width:72%; }
+html[data-theme="scifi"] .preview-holo-terminal i:nth-child(4) { --line-width:39%; }
+
+html[data-theme="scifi"][data-cyber-fx="off"] body::after { content:none; }
+html[data-theme="scifi"][data-cyber-fx="off"] .terminal-cursor { animation:none!important; }
+html[data-theme="scifi"][data-cyber-fx="off"] .command-status .online-pip.working::after { content:none; }
+html[data-theme="scifi"][data-cyber-fx="off"] .dashboard-page[data-task-active="true"]::before,
+html[data-theme="scifi"][data-cyber-fx="off"] .execution-panel[data-task-active="true"]::after { content:none; }
+html[data-theme="scifi"][data-cyber-fx="off"] .brand-name,
+html[data-theme="scifi"][data-cyber-fx="off"] .command-heading h1,
+html[data-theme="scifi"][data-cyber-fx="off"] .page-heading h1,
+html[data-theme="scifi"][data-cyber-fx="off"] .welcome-row h1,
+html[data-theme="scifi"][data-cyber-fx="off"] .command-status,
+html[data-theme="scifi"][data-cyber-fx="off"] .status-pill,
+html[data-theme="scifi"][data-cyber-fx="off"] .nav-link.active {
+  text-shadow:none!important;box-shadow:none!important;
+}
+html[data-theme="scifi"][data-cyber-fx="off"] .brand-mark,
+html[data-theme="scifi"][data-cyber-fx="off"] .panel,
+html[data-theme="scifi"][data-cyber-fx="off"] .activity-panel,
+html[data-theme="scifi"][data-cyber-fx="off"] .composer-panel,
+html[data-theme="scifi"][data-cyber-fx="off"] .stat-card,
+html[data-theme="scifi"][data-cyber-fx="off"] .agent-card,
+html[data-theme="scifi"][data-cyber-fx="off"] .right-inspector {
+  box-shadow:none!important;
+}
+@media(prefers-reduced-motion:reduce) {
+  html[data-theme="scifi"][data-cyber-fx="on"] body::after { content:none; }
+  html[data-theme="scifi"] .dashboard-page[data-task-active="true"]::before { animation:none; }
+  html[data-theme="scifi"] .execution-panel[data-task-active="true"]::after { animation:none; }
+  html[data-theme="scifi"] .command-status .online-pip.working::after { animation:none;opacity:.3;transform:none; }
+}
+@media(max-width:700px) {
+  html[data-theme="scifi"] .cyber-fx-toggle { padding-inline:6px;font-size:7px; }
+  html[data-theme="scifi"] .cyber-fx-toggle i { display:none; }
+}
+@media(max-width:560px) {
+  html[data-theme="scifi"] .topbar-right { gap:3px; }
+  html[data-theme="scifi"] .cyber-fx-toggle { min-height:25px;padding-inline:4px;font-size:6px;letter-spacing:.02em; }
+  html[data-theme="scifi"] .cyber-fx-toggle svg { width:11px;height:11px; }
 }

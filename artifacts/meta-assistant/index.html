@@ -19,7 +19,12 @@
       try {
         var t = localStorage.getItem('morrow-theme');
         document.documentElement.dataset.theme = t === 'dark' || t === 'light' ? t : 'scifi';
-      } catch (_) { document.documentElement.dataset.theme = 'scifi'; }
+      } catch (_) {
+        document.documentElement.dataset.theme = 'scifi';
+      }
+      try {
+        document.documentElement.dataset.cyberFx = localStorage.getItem('forge-cyber-fx') === 'off' ? 'off' : 'on';
+      } catch (_) { document.documentElement.dataset.cyberFx = 'on'; }
     </script>
   </head>
   <body>
