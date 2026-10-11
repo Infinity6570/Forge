@@ -47,7 +47,7 @@ type Page = 'home' | 'tasks' | 'workspace' | 'alarms' | 'settings';
 const navItems: { href: string; label: string; icon: typeof Activity }[] = [
   { href: '/', label: 'Command center', icon: Gauge },
   { href: '/tasks', label: 'Task activity', icon: Activity },
-  { href: '/workspace', label: 'Workspace', icon: FolderOpen },
+  { href: '/workspace', label: 'Workspace files', icon: FolderOpen },
   { href: '/alarms', label: 'Scheduled alarms', icon: Bell },
   { href: '/settings', label: 'Preferences', icon: Settings2 },
 ];
@@ -139,12 +139,20 @@ function Modal({ title, onClose, children }: { title: string; onClose: () => voi
 
 function AppShell({ children, page }: { children: ReactNode; page: Page }) {
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [inspectorOpen, setInspectorOpen] = useState(true);
+  const [inspectorOpen, setInspectorOpen] = useState(() => typeof window !== 'undefined' && window.innerWidth > 900);
   const [inspectorWidth, setInspectorWidth] = useState(410);
   const [resizingInspector, setResizingInspector] = useState(false);
   const [location] = useLocation();
   const routePage = (location === '/' ? 'home' : location.slice(1)) as Page;
   const current = page || routePage;
+  useEffect(() => {
+    const viewport = window.matchMedia('(max-width: 900px)');
+    const closeInspectorOnNarrowViewport = (event: MediaQueryListEvent) => {
+      if (event.matches) setInspectorOpen(false);
+    };
+    viewport.addEventListener('change', closeInspectorOnNarrowViewport);
+    return () => viewport.removeEventListener('change', closeInspectorOnNarrowViewport);
+  }, []);
   useEffect(() => {
     if (!resizingInspector) return;
     const move = (event: PointerEvent) => setInspectorWidth(Math.max(380, Math.min(450, window.innerWidth - event.clientX)));
@@ -184,12 +192,31 @@ function AppShell({ children, page }: { children: ReactNode; page: Page }) {
 }
 
 function QuickSidebarStatus() {
-  const { data, isLoading } = useGetAssistantDashboard();
+  const { data, isLoading, isError } = useGetAssistantDashboard();
   const files = useListAssistantFiles();
   const timers = useListAssistantTimers();
+  const [activeModel, setActiveModel] = useState('Loading model…');
   const storage = (files.data ?? []).reduce((total, file) => total + file.sizeBytes, 0);
+  useEffect(() => {
+    let active = true;
+    fetch('/api/assistant/settings')
+      .then(async (response) => {
+        if (!response.ok) throw new Error('Could not load the active model.');
+        return response.json() as Promise<{ provider?: string; modelId?: string }>;
+      })
+      .then((settings) => {
+        if (active) setActiveModel(modelDisplayName(settings.provider, settings.modelId));
+      })
+      .catch(() => {
+        if (active) setActiveModel('Unavailable');
+      });
+    return () => { active = false; };
+  }, []);
+  const runningCount = data?.activeTasks ?? 0;
+  const systemState = isLoading ? 'Online' : isError ? 'Offline' : runningCount ? `Running · ${runningCount}` : 'Idle';
   return <div className="quick-status">
-    <div><span className="quick-status-icon"><Activity size={14} /></span><span>In progress</span><strong>{isLoading ? '—' : data?.activeTasks ?? 0}</strong></div>
+    <div data-testid="system-status"><span className="quick-status-icon"><Activity size={14} /></span><span>System status</span><strong>{systemState}</strong></div>
+    <div data-testid="active-model"><span className="quick-status-icon"><Zap size={14} /></span><span>Active model</span><strong className="model-name" title={activeModel}>{activeModel}</strong></div>
     <div><span className="quick-status-icon amber"><Bell size={14} /></span><span>Active alarms</span><strong>{timers.isLoading ? '—' : (timers.data ?? []).filter((timer) => timer.status === 'active').length}</strong></div>
     <div className="sidebar-storage"><span className="quick-status-icon"><HardDrive size={14} /></span><span>Workspace storage</span><strong>{files.isLoading ? '—' : formatSize(storage)}</strong></div>
   </div>;
@@ -343,15 +370,14 @@ function TaskActionDock({ task }: { task?: AssistantTask }) {
     retry.mutate({ id: task.id, data: { retry: shouldRetry } }, { onSuccess: update, onError: () => setError('The specialist retry could not be started. Please try again.') });
   };
   const recommended = modelDisplayName(task.recommendedProvider, task.recommendedModelId);
-  const elevationLabel = typeof navigator !== 'undefined' && navigator.platform.toLowerCase().startsWith('win') ? 'Approve & Run with UAC' : 'Approve & Run with OS elevation';
   return <section className="action-dock" aria-label="Task decisions" data-testid="task-action-dock">
     <div className="dock-heading"><span className="dock-alert" /><strong>Waiting for your decision</strong><span>{task.objective}</span></div>
     {needsApproval && <div className={`dock-card ${isElevated ? 'security-warning' : ''}`} data-testid={isElevated ? 'dock-elevated-approval' : 'dock-workspace-approval'}>
-      {isElevated ? <><strong>Administrative Privilege Requested</strong><p>The agent is requesting permission to execute this command with elevated system permissions:</p><code>{task.approvalSummary}</code><p>Nothing runs until you approve. The invocation will be recorded in <code>logs/elevated_audit.log</code>.</p><p>If pkexec is unavailable, the sudo fallback requires an already-authorized non-interactive sudo session and fails closed otherwise.</p></> : <><strong>Workspace action needs your approval</strong><p>{task.approvalSummary} The agent is paused; no change has been made yet.</p></>}
-      <div className="model-recommendation-actions"><button className="button button-primary" onClick={() => decide(true)} disabled={approval.isPending} data-testid="button-dock-approve">{approval.isPending ? 'Applying…' : isElevated ? elevationLabel : 'Approve and continue'}</button><button className="button button-quiet" onClick={() => decide(false)} disabled={approval.isPending} data-testid="button-dock-reject">{isElevated ? 'Reject Action' : 'Reject and continue'}</button></div>
+      {isElevated ? <><strong>⚠️ Administrative Privilege Requested:</strong><p>The agent is requesting permission to execute:</p><code>{task.approvalSummary}</code><span> with elevated system permissions.</span><p>Nothing runs until you approve. The invocation will be recorded in <code>logs/elevated_audit.log</code>.</p><p>If pkexec is unavailable, the sudo fallback requires an already-authorized non-interactive sudo session and fails closed otherwise.</p></> : <><strong>Workspace action needs your approval</strong><p>{task.approvalSummary} The agent is paused; no change has been made yet.</p></>}
+      <div className="model-recommendation-actions"><button className="button button-primary" onClick={() => decide(true)} disabled={approval.isPending} data-testid="button-dock-approve">{approval.isPending ? 'Applying…' : isElevated ? 'Approve & Run with UAC' : 'Approve and continue'}</button><button className="button button-quiet" onClick={() => decide(false)} disabled={approval.isPending} data-testid="button-dock-reject">{isElevated ? 'Reject Action' : 'Reject and continue'}</button></div>
     </div>}
-    {needsModel && <div className="dock-card" data-testid="dock-model-recommendation"><strong>Recommendation:</strong><p>This task involves {task.recommendationReason}. Running on a high-capability model like {recommended} may produce better results. Would you like to switch for this task?</p><div className="model-recommendation-actions"><button className="button button-primary" onClick={() => choose(true)} disabled={model.isPending} data-testid="button-dock-switch-model">{model.isPending ? 'Saving choice…' : 'Switch to Recommended Model'}</button><button className="button button-quiet" onClick={() => choose(false)} disabled={model.isPending} data-testid="button-dock-stay-model">Stay on Current Model</button></div></div>}
-    {needsFallback && <div className="dock-card security-warning" data-testid="dock-fallback-recommendation"><strong>Task encountered persistent errors on the current model.</strong><p>Would you like to retry this step with {recommended}?</p><div className="model-recommendation-actions"><button className="button button-primary" onClick={() => retryStep(true)} disabled={retry.isPending} data-testid="button-dock-retry-model">{retry.isPending ? 'Starting retry…' : 'Retry this step with Recommended Pro Model'}</button><button className="button button-quiet" onClick={() => retryStep(false)} disabled={retry.isPending} data-testid="button-dock-dismiss-retry">Not now</button></div></div>}
+    {needsModel && <div className="dock-card" data-testid="dock-model-recommendation"><strong>💡 Recommendation:</strong><p>This task involves {task.recommendationReason}. Running on a high-capability model like {recommended} may produce better results. Would you like to switch for this task?</p><div className="model-recommendation-actions"><button className="button button-primary" onClick={() => choose(true)} disabled={model.isPending} data-testid="button-dock-switch-model">{model.isPending ? 'Saving choice…' : 'Switch to Recommended Model'}</button><button className="button button-quiet" onClick={() => choose(false)} disabled={model.isPending} data-testid="button-dock-stay-model">Stay on Current Model</button></div></div>}
+    {needsFallback && <div className="dock-card security-warning" data-testid="dock-fallback-recommendation"><strong>⚠️ Task encountered persistent errors on the current model.</strong><p>Would you like to retry this step with {recommended}?</p><div className="model-recommendation-actions"><button className="button button-primary" onClick={() => retryStep(true)} disabled={retry.isPending} data-testid="button-dock-retry-model">{retry.isPending ? 'Starting retry…' : 'Retry this step with Recommended Pro Model'}</button><button className="button button-quiet" onClick={() => retryStep(false)} disabled={retry.isPending} data-testid="button-dock-dismiss-retry">Not now</button></div></div>}
     {error && <p className="field-error" role="alert">{error}</p>}
   </section>;
 }

@@ -1,0 +1,23 @@
+Please execute a complete frontend rebranding and multi-theme overhaul while keeping all existing backend APIs and test suites completely intact:
+
+1. Application Rebranding to "Forge":
+   - Change the application name across all UI components, navigation headers, window document titles, and metadata to: "Forge".
+   - Subtext badge/tagline in the top bar: "LOCAL OPS // 6570".
+   - Replace any lingering references to "Morrow Personal Agent" or "Universal Meta-Agent Assistant".
+   - Top-Left Header Sci-Fi Icon:
+     * Add an inline, high-tech vector/SVG sci-fi anvil or geometric nexus icon directly next to "Forge".
+     * SVG specs: A glowing geometric dual-chevron or faceted anvil glyph with glowing border strokes (stroke-width 1.5, neon cyan glow in sci-fi mode).
+     * Add a subtle status pulse dot (Emerald green) indicating local runtime readiness.
+
+2. Multi-Theme Engine Implementation:
+   - Implement dynamic theme support using CSS custom properties via `data-theme` on the root element, persisted in localStorage:
+     * "Sci-Fi Cyberdeck" (Default): Deep space/void background (#050811), neon cyan accents (#00f0ff, with subtle 0 0 10px glow effects), magenta alerts (#ff007f) for security prompts, and monospace typography accents.
+     * "Minimalist Dark": Monochromatic slate/zinc palette (#09090b panels, #27272a borders, clean blue #3b82f6 accents, flat shadows).
+     * "Minimalist Light": Crisp daylight palette (#ffffff and #f8fafc with #e2e8f0 borders).
+   - Theme Switcher Control:
+     * Place a compact segmented toggle (⚡ Sci-Fi | 🌑 Dark | ☀️ Light) in both the top header and inside the Preferences tab.
+
+3. Preserve Existing Logic & Tests:
+   - Do NOT modify existing backend routes, SQLite schemas, or the 38 passing verification tests.
+   - Retain the local app preview iframe lifecycle and the "Run Local App Previews" toggle in Preferences.
+   - Ensure the Just-In-Time UAC approval banner and Model Router dialogs automatically inherit the active theme colors.

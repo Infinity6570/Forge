@@ -909,6 +909,7 @@ html[data-theme] .sidebar .nav-link.active { color:var(--text-primary)!important
 html[data-theme] .sidebar .brand-name,html[data-theme] .sidebar .agent-card-copy strong,
 html[data-theme] .breadcrumbs strong,html[data-theme] .page-heading h1,html[data-theme] .welcome-row h1,
 html[data-theme] .task-row-main strong,html[data-theme] .panel-heading h2 { color:var(--text-primary)!important; }
+html[data-theme] .quick-status .model-name { max-width:105px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:8px; }
 html[data-theme] .theme-chooser select { color:var(--text-primary);background:var(--bg-card);border-color:var(--border); }
 @media(max-width:900px) {
   html[data-theme] .sidebar { transform:translateX(-100%);transition:transform .22s ease; }
@@ -1078,4 +1079,9 @@ html[data-theme] .inspector-toggle { display:inline-grid; }
  html[data-theme] .composer-actions { flex-wrap:wrap;justify-content:flex-end; }
  html[data-theme] .composer-model select { max-width:125px; }
  html[data-theme] .action-dock { max-height:32vh; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior:auto!important;transition:none!important; }
+  *,*::before,*::after { animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important; }
 }
