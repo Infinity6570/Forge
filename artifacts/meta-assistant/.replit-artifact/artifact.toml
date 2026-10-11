@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "Universal Meta-Agent Assistant"
+description = "A personal command dashboard for coordinating AI-assisted tasks, document workflows, research, workspace files, and reminders."
+version = "1.0.0"
+id = "artifacts/meta-assistant"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 22536
+
+[services.development]
+run = "pnpm --filter @workspace/meta-assistant run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/meta-assistant", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/meta-assistant/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "22536"
+BASE_PATH = "/"

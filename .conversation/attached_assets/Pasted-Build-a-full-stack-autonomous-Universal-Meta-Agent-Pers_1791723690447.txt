@@ -1,0 +1,48 @@
+Build a full-stack, autonomous "Universal Meta-Agent & Personal Assistant System" in Python with a clean, responsive Web UI (FastAPI backend + modern dark-mode Tailwind CSS and Vanilla JS frontend).
+
+DO NOT use CrewAI, LangChain, or LangGraph. Build the orchestrator from scratch using pure Python, standard HTTP requests, and the official OpenAI-compatible client (supporting OpenAI, Google Gemini via API Studio, Anthropic via OpenRouter) using standard function/tool calling.
+
+### 1. CORE SYSTEM ARCHITECTURE & DYNAMIC AGENT ORCHESTRATION
+- Master Supervisor Agent: Receives any broad objective (e.g., "Analyze the uploaded 40-page clinical guideline PDF, make high-yield revision notes, and set a 45-minute revision timer", or "Build and debug a Python clinical billing script").
+- Dynamic Worker Spawning: The Master Agent breaks down requests, creates a DAG of sub-tasks, and dynamically instantiates specialized Sub-Agents (e.g., PDF Extractor, Study Notes Synthesizer, Research Deep-Diver, Terminal Coder, Scheduler/Alarm Manager).
+- Sub-Agent ReAct Loop: Each worker runs an autonomous Reason + Act loop with strict tool calling, terminating only when the goal is verified or max_iterations (default: 10) is hit.
+
+### 2. BUILT-IN TOOLSET (MUST BE FULLY IMPLEMENTED)
+Implement clean, modular Python functions exposed as tools to the agents:
+
+A. Document & Study Notes Tools:
+   - PDF Reader & Extractor: Parse text and tables from PDFs in the uploads directory using `pypdf` or `pdfplumber`. Handles chunking for large files.
+   - Note Generator & Exporter: Saves structured, high-yield markdown or `.docx` notes into `/workspace/notes/` with automatic tagging and table formatting.
+
+B. Timers, Alarms & Scheduling Tools:
+   - Background Alarm/Timer Engine: Uses `APScheduler` running in the FastAPI event loop. 
+   - Supports: countdown timers, exact-time alarms (e.g., "remind me at 8:00 PM"), and recurring reminders.
+   - Triggers: Emits a WebSocket/SSE event to the frontend that rings an audible browser alarm sound AND plays a system beep (`winsound.Beep` or terminal bell), accompanied by a visual desktop/browser notification banner.
+
+C. Research & Web Intelligence Tools:
+   - Web Search & Scraper: Searches the web via DuckDuckGo / Tavily API and scrapes target web pages using `beautifulsoup4` to compile comprehensive multi-source briefs.
+
+D. Code & File Automation Tools:
+   - Code & Terminal Runner: Runs Python/shell commands inside `/workspace`, capturing STDOUT and STDERR so the coder agent can self-correct syntax errors.
+   - File System Operations: Read, write, list, and edit files inside `/workspace`.
+
+E. Sub-Agent Spawner Tool:
+   - Allows the Master Agent to register and execute child agents with specialized personas, scoped system prompts, and filtered toolsets.
+
+### 3. FRONTEND UI REQUIREMENTS (Single-Page App)
+- Modern Dark-Mode Executive Dashboard:
+   - Central Chat & Command Deck: Text input + drag-and-drop file upload zone for PDFs, documents, or data files.
+   - Live Execution Visualizer: Shows the Master Agent's live reasoning step, active spawned sub-agents, running tools, and real-time logs.
+   - Active Alarms & Timers Widget: A persistent top/side bar showing running countdowns, scheduled alarms, and a mute/dismiss button for active alerts.
+   - Workspace File & Notes Explorer: Built-in tree viewer with live Markdown note preview, PDF reader viewer, and a "Download Workspace as ZIP" button.
+   - Settings Modal: Configure API keys (Gemini, OpenAI, OpenRouter) and select model IDs (e.g., gemini-2.5-flash, gemini-2.5-pro, gpt-4o-mini). Save persistently in local `.env`.
+
+### 4. RELIABILITY & LOCAL RUNTIME SPECIFICATION
+- Persistence: Store all agent task histories, logs, active alarms, and note metadata in a local SQLite database (`assistant.db`).
+- Emergency Stop: A persistent red "Abort Task" button that halts all running asynchronous agent loops immediately.
+- 100% Local Portability:
+   - Must run with zero external cloud dependencies.
+   - Provide a clean `requirements.txt` (including `fastapi`, `uvicorn`, `apscheduler`, `pypdf`, `pdfplumber`, `beautifulsoup4`, `openai`, `duckduckgo_search`) and a `main.py` entry point.
+   - Downloading this project as a ZIP to a local PC and running `python main.py` must launch the complete operational dashboard at `http://localhost:8000`.
+
+Build the application incrementally: set up the backend structure, install dependencies, implement the core tool engine and APScheduler, build the agent loop, and finish with the interactive web frontend.

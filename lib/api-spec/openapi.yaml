@@ -10,6 +10,8 @@ servers:
 tags:
   - name: health
     description: Health operations
+  - name: assistant
+    description: Universal assistant operations
 paths:
   /healthz:
     get:
@@ -24,6 +26,227 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /assistant/dashboard:
+    get:
+      operationId: getAssistantDashboard
+      tags: [assistant]
+      summary: Get assistant dashboard summary
+      responses:
+        "200":
+          description: Dashboard summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardSummary"
+  /assistant/tasks:
+    get:
+      operationId: listAssistantTasks
+      tags: [assistant]
+      summary: List recent assistant tasks
+      responses:
+        "200":
+          description: Recent tasks
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AssistantTask"
+    post:
+      operationId: createAssistantTask
+      tags: [assistant]
+      summary: Submit an objective to the assistant
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TaskInput"
+      responses:
+        "202":
+          description: Task accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantTask"
+  /assistant/tasks/{id}:
+    get:
+      operationId: getAssistantTask
+      tags: [assistant]
+      summary: Get task detail and execution log
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Task detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantTask"
+        "404":
+          description: Task not found
+  /assistant/tasks/{id}/abort:
+    post:
+      operationId: abortAssistantTask
+      tags: [assistant]
+      summary: Request an immediate stop for a running task
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Task stopped
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantTask"
+  /assistant/timers:
+    get:
+      operationId: listAssistantTimers
+      tags: [assistant]
+      summary: List active and recent timers
+      responses:
+        "200":
+          description: Timers
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AssistantTimer"
+    post:
+      operationId: createAssistantTimer
+      tags: [assistant]
+      summary: Create a countdown or scheduled reminder
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TimerInput"
+      responses:
+        "201":
+          description: Timer created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantTimer"
+  /assistant/timers/{id}:
+    delete:
+      operationId: deleteAssistantTimer
+      tags: [assistant]
+      summary: Dismiss or remove a timer
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: Timer removed
+  /assistant/notes:
+    get:
+      operationId: listAssistantNotes
+      tags: [assistant]
+      summary: List saved notes
+      responses:
+        "200":
+          description: Saved notes
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AssistantNote"
+    post:
+      operationId: createAssistantNote
+      tags: [assistant]
+      summary: Save a note
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NoteInput"
+      responses:
+        "201":
+          description: Note created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantNote"
+  /assistant/notes/{id}:
+    delete:
+      operationId: deleteAssistantNote
+      tags: [assistant]
+      summary: Delete a saved note
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: Note deleted
+  /assistant/files:
+    get:
+      operationId: listAssistantFiles
+      tags: [assistant]
+      summary: List uploaded workspace documents
+      responses:
+        "200":
+          description: Uploaded files
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AssistantFile"
+    post:
+      operationId: uploadAssistantFile
+      tags: [assistant]
+      summary: Upload a document to the private workspace
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/FileUploadInput"
+      responses:
+        "201":
+          description: Uploaded and indexed document
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantFile"
+  /assistant/files/{id}:
+    delete:
+      operationId: deleteAssistantFile
+      tags: [assistant]
+      summary: Delete an uploaded workspace document
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: File deleted
 components:
   schemas:
     HealthStatus:
@@ -33,4 +256,123 @@ components:
           type: string
       required:
         - status
+    DashboardSummary:
+      type: object
+      required: [activeTasks, completedTasks, activeTimers, notesCount, filesCount, recentTasks]
+      properties:
+        activeTasks: { type: integer }
+        completedTasks: { type: integer }
+        activeTimers: { type: integer }
+        notesCount: { type: integer }
+        filesCount: { type: integer }
+        recentTasks:
+          type: array
+          items:
+            $ref: "#/components/schemas/AssistantTask"
+    AssistantTask:
+      type: object
+      required: [id, objective, status, currentStep, result, error, logs, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        objective: { type: string }
+        status:
+          type: string
+          enum: [queued, running, completed, failed, cancelled]
+        currentStep: { type: ["string", "null"] }
+        result: { type: ["string", "null"] }
+        error: { type: ["string", "null"] }
+        logs:
+          type: array
+          items:
+            $ref: "#/components/schemas/TaskLog"
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    TaskLog:
+      type: object
+      required: [id, kind, message, createdAt]
+      properties:
+        id: { type: string }
+        kind:
+          type: string
+          enum: [plan, agent, tool, result, error, info]
+        message: { type: string }
+        createdAt: { type: string, format: date-time }
+    TaskInput:
+      type: object
+      required: [objective]
+      properties:
+        objective: { type: string, minLength: 1, maxLength: 12000 }
+        provider:
+          type: string
+          enum: [openai, gemini, openrouter]
+        modelId:
+          type: string
+          maxLength: 120
+        fileIds:
+          type: array
+          items: { type: string, format: uuid }
+    AssistantTimer:
+      type: object
+      required: [id, label, kind, scheduledFor, status, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        label: { type: string }
+        kind:
+          type: string
+          enum: [countdown, alarm]
+        scheduledFor: { type: string, format: date-time }
+        status:
+          type: string
+          enum: [active, fired, dismissed]
+        createdAt: { type: string, format: date-time }
+    TimerInput:
+      type: object
+      required: [label, kind, scheduledFor]
+      properties:
+        label: { type: string, minLength: 1, maxLength: 200 }
+        kind:
+          type: string
+          enum: [countdown, alarm]
+        scheduledFor: { type: string, format: date-time }
+        recurrence:
+          type: string
+          enum: [none, daily, weekly]
+    AssistantNote:
+      type: object
+      required: [id, title, content, tags, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string }
+        content: { type: string }
+        tags:
+          type: array
+          items: { type: string }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    NoteInput:
+      type: object
+      required: [title, content]
+      properties:
+        title: { type: string, minLength: 1, maxLength: 300 }
+        content: { type: string, maxLength: 200000 }
+        tags:
+          type: array
+          items: { type: string }
+    AssistantFile:
+      type: object
+      required: [id, name, mimeType, sizeBytes, extractedText, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        mimeType: { type: string }
+        sizeBytes: { type: integer }
+        extractedText: { type: string }
+        createdAt: { type: string, format: date-time }
+    FileUploadInput:
+      type: object
+      required: [file]
+      properties:
+        file:
+          type: string
+          format: binary
 
