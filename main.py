@@ -7,6 +7,7 @@ import mimetypes
 import os
 import re
 import shutil
+import shlex
 import socket
 import sqlite3
 import subprocess
@@ -39,12 +40,14 @@ from workspace_preview import (
     WorkspacePreviewError,
     WorkspacePreviewManager,
     resolve_workspace_asset,
+    resolve_workspace_path,
     write_workspace_asset,
 )
 
 ROOT = Path(__file__).resolve().parent
 ENV_FILE = ROOT / ".env"
-WORKSPACE = ROOT / "workspace"
+BASE_DIR = (ROOT / "workspace").resolve()
+WORKSPACE = BASE_DIR
 UPLOADS = WORKSPACE / "uploads"
 NOTES = WORKSPACE / "notes"
 DATABASE = WORKSPACE / "assistant.db"
@@ -89,10 +92,212 @@ DEFAULT_MODELS = {
     "openrouter": "deepseek/deepseek-chat",
 }
 ALLOWED_SUFFIXES = {".pdf", ".txt", ".md", ".csv", ".json", ".docx"}
+PRIVATE_WORKSPACE_ENTRIES = {"assistant.db", "uploads", "notes", "preview-runtime", "workspace-export.zip"}
+SAFE_COMMANDS = {"pwd", "ls", "cat", "head", "tail"}
+BLOCKED_COMMAND_PATTERNS = (
+    r"\brmdir\b",
+    r"\bdel(?:ete)?\b",
+    r"\berase\b",
+    r"\bformat(?:\.com|\.exe)?\b",
+    r"\bdiskpart(?:\.exe)?\b",
+    r"\breg(?:\.exe)?\s+delete\b",
+    r"\b(?:powershell|pwsh)(?:\.exe)?\b.*\bremove-item\b.*(?:-recurse|-r\b)",
+    r"\bremove-item\b.*(?:-recurse|-r\b)",
+    r"\bshutdown(?:\.exe)?\b",
+    r"\brm\b.*(?:-r|-f)",
+    r"\bshred\b",
+)
+MAX_WORKSPACE_TEXT_BYTES = 1_000_000
+MAX_COMMAND_OUTPUT_CHARS = 12_000
 
 
 class WorkspacePreviewStopInput(BaseModel):
     appId: str = Field(min_length=1, max_length=64)
+
+
+class TaskApprovalInput(BaseModel):
+    approvalId: str = Field(min_length=1, max_length=64)
+    approve: bool
+
+
+def safe_workspace_path(relative_path: str | Path, *, allow_missing: bool = False) -> Path:
+    path = resolve_workspace_path(BASE_DIR, relative_path, allow_missing=allow_missing)
+    relative = path.relative_to(BASE_DIR)
+    if not relative.parts or relative.parts[0].lower() in PRIVATE_WORKSPACE_ENTRIES:
+        raise PermissionError("That path is reserved for private assistant data.")
+    if any(part.startswith(".") for part in relative.parts):
+        raise PermissionError("Hidden workspace files are not available to agent tools.")
+    return path
+
+
+WORKSPACE_COMMAND_HARNESS = r"""
+import os, sys
+from pathlib import Path
+
+root = Path.cwd().resolve()
+operation, relative, limit_text = sys.argv[1:4]
+limit = int(limit_text)
+private = {"assistant.db", "uploads", "notes", "preview-runtime", "workspace-export.zip"}
+if operation == "pwd":
+    print(root)
+    raise SystemExit(0)
+target = root if relative == "." else (root / relative).resolve(strict=True)
+if not target.is_relative_to(root):
+    raise PermissionError("Workspace operations cannot access paths outside the workspace.")
+parts = target.relative_to(root).parts
+if parts and (parts[0].lower() in private or any(part.startswith(".") for part in parts)):
+    raise PermissionError("That workspace path is private.")
+if operation == "ls":
+    if target.is_dir():
+        for item in sorted(target.iterdir(), key=lambda entry: entry.name.casefold()):
+            if item.name.startswith(".") or (not target.relative_to(root).parts and item.name.lower() in private):
+                continue
+            resolved = item.resolve()
+            if resolved.is_relative_to(root):
+                print(item.name + ("/" if item.is_dir() else ""))
+    elif target.is_file():
+        print(target.name)
+    else:
+        raise FileNotFoundError("Workspace path not found.")
+else:
+    if not target.is_file() or target.stat().st_size > 1000000:
+        raise PermissionError("Only regular workspace text files up to 1 MB can be read.")
+    text = target.read_text(encoding="utf-8")
+    lines = text.splitlines()
+    if operation == "head":
+        text = "\n".join(lines[:limit])
+    elif operation == "tail":
+        text = "\n".join(lines[-limit:])
+    elif operation != "cat":
+        raise PermissionError("Unsupported workspace operation.")
+    print(text[:12000])
+"""
+
+
+def parse_workspace_command(command: str) -> tuple[str, str, int]:
+    if not isinstance(command, str) or not command.strip() or len(command) > 4000:
+        raise PermissionError("Provide one safe workspace command, up to 4,000 characters.")
+    normalized = command.casefold()
+    if any(re.search(pattern, normalized) for pattern in BLOCKED_COMMAND_PATTERNS):
+        raise PermissionError("Destructive system commands are blocked.")
+    if any(char in command for char in ";&|><`$\n\r"):
+        raise PermissionError("Shell operators, substitutions, and command chaining are blocked.")
+    try:
+        parts = shlex.split(command, posix=True)
+    except ValueError as error:
+        raise PermissionError("The command quoting is invalid.") from error
+    if not parts:
+        raise PermissionError("Provide a command.")
+    command_name = Path(parts[0]).name.casefold()
+    if command_name not in SAFE_COMMANDS:
+        raise PermissionError("Only pwd, ls, cat, head, and tail are permitted.")
+    args = parts[1:]
+    if command_name == "pwd":
+        if args:
+            raise PermissionError("pwd does not accept arguments.")
+        return "pwd", ".", 200
+    line_count = 20
+    if command_name in {"head", "tail"} and args[:1] == ["-n"]:
+        if len(args) < 3 or not args[1].isdigit():
+            raise PermissionError("Use head/tail -n <count> <workspace-relative-file>.")
+        line_count = int(args[1])
+        args = args[2:]
+    if not args:
+        relative = "."
+    elif len(args) == 1:
+        relative = args[0]
+    else:
+        raise PermissionError("Use one workspace-relative path; options and extra operands are not allowed.")
+    if command_name == "ls":
+        target = BASE_DIR if relative == "." else safe_workspace_path(relative)
+        if not target.exists():
+            raise PermissionError("Workspace path not found.")
+        relative = "." if target == BASE_DIR else target.relative_to(BASE_DIR).as_posix()
+    else:
+        if relative == ".":
+            raise PermissionError(f"{command_name} requires a workspace-relative file path.")
+        target = safe_workspace_path(relative)
+        if not target.is_file() or target.stat().st_size > MAX_WORKSPACE_TEXT_BYTES:
+            raise PermissionError("Only regular workspace text files up to 1 MB can be read.")
+        relative = target.relative_to(BASE_DIR).as_posix()
+    if not 1 <= line_count <= 200:
+        raise PermissionError("Line count must be between 1 and 200.")
+    return command_name, relative, line_count
+
+
+def run_workspace_command(command: str) -> dict[str, Any]:
+    operation, relative, line_count = parse_workspace_command(command)
+    try:
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-I",
+                "-c",
+                WORKSPACE_COMMAND_HARNESS,
+                operation,
+                relative,
+                str(line_count),
+            ],
+            cwd=BASE_DIR,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            env={"PATH": os.getenv("PATH", ""), "PYTHONIOENCODING": "utf-8"},
+        )
+    except subprocess.TimeoutExpired as error:
+        raise TimeoutError("Workspace command exceeded the 30-second limit.") from error
+    if result.returncode:
+        message = result.stderr.strip().splitlines()[-1] if result.stderr.strip() else "Workspace command failed."
+        raise PermissionError(message[:500])
+    return {
+        "returnCode": result.returncode,
+        "stdout": result.stdout[:MAX_COMMAND_OUTPUT_CHARS],
+        "stderr": result.stderr[:1000],
+    }
+
+
+def list_workspace_paths() -> list[str]:
+    listed: list[str] = []
+    for current, dirs, files in os.walk(BASE_DIR, followlinks=False):
+        folder = Path(current)
+        try:
+            relative_folder = folder.relative_to(BASE_DIR)
+        except ValueError as error:
+            raise PermissionError("Workspace listing escaped the workspace.") from error
+        if relative_folder.parts and (
+            relative_folder.parts[0].lower() in PRIVATE_WORKSPACE_ENTRIES
+            or any(part.startswith(".") for part in relative_folder.parts)
+        ):
+            dirs[:] = []
+            continue
+        dirs[:] = [
+            name for name in dirs
+            if not name.startswith(".")
+            and name.lower() not in PRIVATE_WORKSPACE_ENTRIES
+            and not (folder / name).is_symlink()
+        ]
+        for name in files:
+            item = folder / name
+            if name.startswith(".") or item.is_symlink():
+                continue
+            relative = item.relative_to(BASE_DIR).as_posix()
+            try:
+                safe_workspace_path(relative)
+            except (PermissionError, OSError):
+                continue
+            listed.append(relative)
+    return sorted(listed, key=str.casefold)[:1000]
+
+
+def read_workspace_text(relative_path: str) -> dict[str, Any]:
+    path = safe_workspace_path(relative_path)
+    if not path.is_file() or path.stat().st_size > MAX_WORKSPACE_TEXT_BYTES:
+        raise PermissionError("Only regular workspace text files up to 1 MB can be read.")
+    try:
+        content = path.read_text(encoding="utf-8")
+    except UnicodeDecodeError as error:
+        raise PermissionError("The selected workspace file is not UTF-8 text.") from error
+    return {"path": path.relative_to(BASE_DIR).as_posix(), "content": content}
 
 
 def utc_now() -> str:
@@ -122,7 +327,8 @@ def init_db() -> None:
                   provider TEXT NOT NULL DEFAULT 'deepseek', model_id TEXT NOT NULL DEFAULT 'deepseek-chat',
                   recommendation_kind TEXT, recommendation_reason TEXT,
                   recommended_provider TEXT, recommended_model_id TEXT, retry_prompt TEXT,
-                  file_ids_json TEXT NOT NULL DEFAULT '[]',
+                  file_ids_json TEXT NOT NULL DEFAULT '[]', messages_json TEXT NOT NULL DEFAULT '[]',
+                  pending_approval_id TEXT, approval_summary TEXT,
                   created_at TEXT NOT NULL, updated_at TEXT NOT NULL
                 );
                 CREATE TABLE IF NOT EXISTS timers (
@@ -140,8 +346,14 @@ def init_db() -> None:
                   size_bytes INTEGER NOT NULL, extracted_text TEXT NOT NULL,
                   disk_path TEXT NOT NULL, created_at TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS pending_approvals (
+                  id TEXT PRIMARY KEY, task_id TEXT NOT NULL, tool_call_id TEXT NOT NULL,
+                  action TEXT NOT NULL, payload_json TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending',
+                  created_at TEXT NOT NULL, resolved_at TEXT
+                );
                 CREATE INDEX IF NOT EXISTS tasks_created_idx ON tasks(created_at DESC);
                 CREATE INDEX IF NOT EXISTS timers_due_idx ON timers(status, scheduled_for);
+                CREATE INDEX IF NOT EXISTS approvals_task_idx ON pending_approvals(task_id, status);
                 """
             )
             columns = {row["name"] for row in connection.execute("PRAGMA table_info(tasks)")}
@@ -154,6 +366,9 @@ def init_db() -> None:
                 ("recommended_model_id", "TEXT"),
                 ("retry_prompt", "TEXT"),
                 ("file_ids_json", "TEXT NOT NULL DEFAULT '[]'"),
+                ("messages_json", "TEXT NOT NULL DEFAULT '[]'"),
+                ("pending_approval_id", "TEXT"),
+                ("approval_summary", "TEXT"),
             ):
                 if name not in columns:
                     connection.execute(f"ALTER TABLE tasks ADD COLUMN {name} {definition}")
@@ -211,6 +426,9 @@ def task_dict(row: sqlite3.Row) -> dict[str, Any]:
         "recommendedModelId": row["recommended_model_id"],
         "retryAvailable": bool(row["retry_prompt"]),
         "requiresModelConfirmation": row["status"] == "awaiting_confirmation" and row["recommendation_kind"] == "complexity",
+        "pendingApprovalId": row["pending_approval_id"],
+        "approvalSummary": row["approval_summary"],
+        "requiresApproval": row["status"] == "awaiting_approval" and bool(row["pending_approval_id"]),
         "createdAt": row["created_at"],
         "updatedAt": row["updated_at"],
     }

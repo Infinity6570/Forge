@@ -13,7 +13,7 @@ import uuid
 from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from pathlib import Path, PurePosixPath
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any
 from urllib.parse import quote, unquote
 
@@ -33,9 +33,43 @@ class WorkspacePreviewError(ValueError):
     pass
 
 
+def resolve_workspace_path(
+    workspace: Path,
+    relative_path: str | Path,
+    *,
+    allow_missing: bool = False,
+) -> Path:
+    raw = str(relative_path)
+    root = workspace.resolve()
+    windows_path = PureWindowsPath(raw)
+    candidate = Path(raw)
+    if (
+        not raw
+        or "\0" in raw
+        or "\\" in raw
+        or candidate.is_absolute()
+        or windows_path.is_absolute()
+        or windows_path.drive
+        or any(part == ".." for part in PurePosixPath(raw).parts)
+    ):
+        raise PermissionError("Workspace operations require a safe workspace-relative path.")
+    path = (root / candidate).resolve(strict=not allow_missing)
+    if not path.is_relative_to(root):
+        raise PermissionError("Workspace operations cannot access paths outside the workspace.")
+    return path
+
+
 def _safe_relative_parts(value: str) -> tuple[str, ...]:
     raw = unquote(value or "")
-    if not raw or len(raw) > 1000 or raw.startswith(("/", "\\")) or "\\" in raw or "\0" in raw:
+    if (
+        not raw
+        or len(raw) > 1000
+        or raw.startswith(("/", "\\"))
+        or "\\" in raw
+        or "\0" in raw
+        or PureWindowsPath(raw).is_absolute()
+        or PureWindowsPath(raw).drive
+    ):
         raise WorkspacePreviewError("Use a workspace-relative path.")
     parts = tuple(part for part in PurePosixPath(raw).parts if part not in {"", "."})
     if not parts or any(part == ".." or part.startswith(".") for part in parts):
@@ -47,10 +81,8 @@ def _safe_relative_parts(value: str) -> tuple[str, ...]:
 
 def resolve_workspace_asset(workspace: Path, relative_path: str, *, allow_missing: bool = False) -> Path:
     parts = _safe_relative_parts(relative_path)
-    path = (workspace.resolve() / Path(*parts)).resolve(strict=not allow_missing)
+    path = resolve_workspace_path(workspace, Path(*parts), allow_missing=allow_missing)
     root = workspace.resolve()
-    if not path.is_relative_to(root):
-        raise WorkspacePreviewError("Only supported web assets inside the workspace can be previewed.")
     resolved_parts = path.relative_to(root).parts
     if (
         not resolved_parts
@@ -66,9 +98,9 @@ def resolve_workspace_asset(workspace: Path, relative_path: str, *, allow_missin
 
 def resolve_workspace_script(workspace: Path, relative_path: str) -> Path:
     parts = _safe_relative_parts(relative_path)
-    path = (workspace.resolve() / Path(*parts)).resolve(strict=True)
+    path = resolve_workspace_path(workspace, Path(*parts))
     root = workspace.resolve()
-    resolved_parts = path.relative_to(root).parts if path.is_relative_to(root) else ()
+    resolved_parts = path.relative_to(root).parts
     if (
         not resolved_parts
         or resolved_parts[0].lower() in {"uploads", "notes", "preview-runtime"}
@@ -97,8 +129,8 @@ def write_workspace_asset(
         raise WorkspacePreviewError("Generated app files must be 2 MB or smaller.")
     parts = _safe_relative_parts(relative_path)
     root = workspace.resolve()
-    path = (root / Path(*parts)).resolve(strict=False)
-    resolved_parts = path.relative_to(root).parts if path.is_relative_to(root) else ()
+    path = resolve_workspace_path(workspace, Path(*parts), allow_missing=True)
+    resolved_parts = path.relative_to(root).parts
     if (
         not resolved_parts
         or resolved_parts[0].lower() in {"uploads", "notes", "preview-runtime"}
@@ -208,7 +240,13 @@ class WorkspacePreviewManager:
             ]
             return command, None
         if framework == "flask":
-            wrapper_path = Path(tempfile.gettempdir()) / f"workspace-preview-{app_id}.py"
+            runtime_dir = resolve_workspace_path(self.workspace, "preview-runtime", allow_missing=True)
+            runtime_dir.mkdir(parents=True, exist_ok=True)
+            wrapper_path = resolve_workspace_path(
+                self.workspace,
+                Path("preview-runtime") / f"workspace-preview-{app_id}.py",
+                allow_missing=True,
+            )
             wrapper_path.write_text(
                 "import importlib.util, sys\n"
                 "from pathlib import Path\n"
