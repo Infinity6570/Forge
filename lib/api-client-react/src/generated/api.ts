@@ -36,6 +36,7 @@ import type {
   TaskModelChoiceInput,
   TimerInput,
   WorkspacePreviewStatus,
+  WorkspacePreviewStopAllResult,
   WorkspacePreviewStopInput
 } from './api.schemas';
 
@@ -1914,6 +1915,80 @@ export const useStopWorkspacePreviewApp = <TError = ErrorType<void>,
         TContext
       > => {
       return useMutation(getStopWorkspacePreviewAppMutationOptions(options));
+    }
+
+export const getStopAllWorkspacePreviewAppsUrl = () => {
+
+
+
+
+  return `/api/workspace/preview/stop-all`
+}
+
+/**
+ * @summary Stop all active workspace app previews when the preview panel closes
+ */
+export const stopAllWorkspacePreviewApps = async ( options?: Parameters<typeof customFetch>[1]): Promise<WorkspacePreviewStopAllResult> => {
+
+  return customFetch<WorkspacePreviewStopAllResult>(getStopAllWorkspacePreviewAppsUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getStopAllWorkspacePreviewAppsMutationKey = () => ['stopAllWorkspacePreviewApps'] as const;
+
+export const getStopAllWorkspacePreviewAppsMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof stopAllWorkspacePreviewApps>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof stopAllWorkspacePreviewApps>>, TError,void, TContext> => {
+
+const mutationKey = getStopAllWorkspacePreviewAppsMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof stopAllWorkspacePreviewApps>>, void> = () => {
+
+
+          return  stopAllWorkspacePreviewApps(requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type StopAllWorkspacePreviewAppsMutationResult = NonNullable<Awaited<ReturnType<typeof stopAllWorkspacePreviewApps>>>
+
+    export type StopAllWorkspacePreviewAppsMutationError = ErrorType<unknown>
+
+
+    /**
+ * @summary Stop all active workspace app previews when the preview panel closes
+ */
+export const useStopAllWorkspacePreviewApps = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof stopAllWorkspacePreviewApps>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof stopAllWorkspacePreviewApps>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getStopAllWorkspacePreviewAppsMutationOptions(options));
     }
 
 export const getGetWorkspacePreviewAssetUrl = (path: string,) => {

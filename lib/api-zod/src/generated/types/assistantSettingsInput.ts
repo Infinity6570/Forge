@@ -41,4 +41,5 @@ export interface AssistantSettingsInput {
      */
   openrouterApiKey?: string | null;
   codeRunnerEnabled?: boolean;
+  appPreviewsEnabled?: boolean;
 }

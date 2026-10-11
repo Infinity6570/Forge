@@ -397,6 +397,18 @@ function WorkspacePreview() {
     setAddressValue(nextUrl);
     setAddressError(false);
   }, [activeId, rawUrl]);
+  useEffect(() => {
+    const stopRunningPreviews = () => {
+      if (!navigator.sendBeacon) return;
+      const body = new Blob([], { type: 'text/plain' });
+      navigator.sendBeacon('/api/workspace/preview/stop-all', body);
+    };
+    window.addEventListener('pagehide', stopRunningPreviews);
+    return () => {
+      window.removeEventListener('pagehide', stopRunningPreviews);
+      stopRunningPreviews();
+    };
+  }, []);
   const navigateToAddress = (event: FormEvent) => {
     event.preventDefault();
     const nextUrl = safePreviewUrl(addressValue);
@@ -428,7 +440,7 @@ function WorkspacePreview() {
     </div>
     {previewQuery.isLoading ? <div className="preview-loading" aria-label="Loading previews"><div className="preview-loading-bar" /><div className="preview-loading-stage" /></div>
       : previewQuery.isError ? <div className="preview-state preview-error"><div className="preview-state-icon"><AlertCircle size={20} /></div><strong>Preview status is unavailable</strong><p>We couldn’t reach the workspace preview service.</p><button className="button button-primary button-small" onClick={() => void previewQuery.refetch()} data-testid="button-retry-preview"><RefreshCw size={14} /> Try again</button></div>
-       : !preview?.staticAvailable && apps.length === 0 ? <div className="preview-state preview-empty"><div className="preview-empty-art"><span /><span /><span /></div><strong>No static preview yet</strong><p>Create workspace/index.html to preview a static site. Python app processes are disabled in strict workspace-only safety mode.</p></div>
+       : !preview?.staticAvailable && apps.length === 0 ? <div className="preview-state preview-empty"><div className="preview-empty-art"><span /><span /><span /></div><strong>No preview yet</strong><p>{preview?.pythonPreviewsEnabled ? 'Create a Python web app in the workspace and launch it with the assistant to preview it here.' : 'Create workspace/index.html for a static preview. Local Python app previews can be enabled in Preferences; they are always disabled in Replit.'}</p></div>
       : <>
         <div className="preview-controls">
           <div className="preview-choices" role="group" aria-label="Choose a preview">
@@ -540,10 +552,12 @@ function SettingsPage() {
     hasGeminiKey: boolean;
     hasOpenrouterKey: boolean;
     codeRunnerEnabled: boolean;
+    appPreviewsEnabled: boolean;
   }>();
   const [providerModalOpen, setProviderModalOpen] = useState(false);
   const [apiKeys, setApiKeys] = useState({ openaiApiKey: '', deepseekApiKey: '', geminiApiKey: '', openrouterApiKey: '' });
   const [codeRunnerEnabled, setCodeRunnerEnabled] = useState(false);
+  const [appPreviewsEnabled, setAppPreviewsEnabled] = useState(false);
   const [providerSaving, setProviderSaving] = useState(false);
   const [providerError, setProviderError] = useState('');
   const [providerSaved, setProviderSaved] = useState(false);
@@ -598,6 +612,7 @@ function SettingsPage() {
               : '',
         );
         setCodeRunnerEnabled(data.codeRunnerEnabled);
+        setAppPreviewsEnabled(data.appPreviewsEnabled);
       })
       .catch(() => {
         if (active) setProviderError('Provider settings could not be loaded.');
@@ -617,7 +632,7 @@ function SettingsPage() {
     setProviderError('');
     setProviderSaved(false);
     const selectedModelId = (provider === 'gemini' || provider === 'deepseek') && customModelId.trim() ? customModelId.trim() : modelId;
-    const payload: Record<string, unknown> = { provider, modelId: selectedModelId, codeRunnerEnabled };
+    const payload: Record<string, unknown> = { provider, modelId: selectedModelId, codeRunnerEnabled, appPreviewsEnabled };
     if (provider === 'gemini') payload.fallbackModelId = fallbackModelId.trim();
     for (const [field, value] of Object.entries(apiKeys)) {
       if (value.trim()) payload[field] = value.trim();
@@ -651,8 +666,9 @@ function SettingsPage() {
     </section>
     <section className="settings-section safety-section"><div className="settings-section-heading"><div className="section-symbol amber"><ShieldCheck size={18} /></div><div><h2>Local code runner</h2><p>Optional Python execution in the local workspace, disabled by default.</p></div></div>
       <div className="setting-row"><div className="setting-row-icon"><KeyRound size={16} /></div><div className="setting-copy"><strong>Allow safe workspace commands</strong><span>Local-only and off by default. Only read-only commands are supported, restricted to workspace files, and limited to 30 seconds.</span></div><button className={`switch ${codeRunnerEnabled ? 'on' : ''}`} role="switch" aria-checked={codeRunnerEnabled} disabled={!credentialStatus?.localSetupAllowed} onClick={() => { setCodeRunnerEnabled(!codeRunnerEnabled); setProviderSaved(false); }} aria-label="Allow safe workspace commands" data-testid="switch-local-code-runner"><span /></button></div>
+      <div className="setting-row"><div className="setting-row-icon"><ShieldCheck size={16} /></div><div className="setting-copy"><strong>Enable Local App Previews (Unrestricted Workspace Execution)</strong><span>When enabled on localhost, Flask, Streamlit, and FastAPI apps can run from workspace/ with a cleaned environment and a one-hour runtime limit. Closing the Live Preview tab stops the child processes.</span><p className="settings-footnote" role="note">Running generated Python apps executes code with standard local user permissions.</p></div><button className={`switch ${appPreviewsEnabled ? 'on' : ''}`} role="switch" aria-checked={appPreviewsEnabled} disabled={!credentialStatus?.localSetupAllowed} onClick={() => { setAppPreviewsEnabled(!appPreviewsEnabled); setProviderSaved(false); }} aria-label="Enable Local App Previews (Unrestricted Workspace Execution)" data-testid="switch-local-app-previews"><span /></button></div>
       <div className="setting-row"><div className="setting-row-icon"><Bell size={16} /></div><div className="setting-copy"><strong>Desktop notifications</strong><span>Show browser notifications when a scheduled reminder fires.</span></div><button className="button button-quiet button-small" onClick={() => { if ('Notification' in window) void Notification.requestPermission(); }} data-testid="button-enable-notifications">Enable alerts</button></div>
-      {!credentialStatus?.localSetupAllowed && <p className="settings-footnote"><LockKeyhole size={13} /> The local code runner can only be enabled from a localhost copy of the app.</p>}
+      {!credentialStatus?.localSetupAllowed && <p className="settings-footnote"><LockKeyhole size={13} /> Python app previews and workspace commands can only be enabled from a localhost copy of the app. Replit Cloud keeps Python previews disabled.</p>}
     </section>
     <section className="settings-section safety-section"><div className="settings-section-heading"><div className="section-symbol amber"><ShieldCheck size={18} /></div><div><h2>Safety &amp; permissions</h2><p>Make your boundaries explicit. Change these any time.</p></div></div>
       <div className="setting-row"><div className="setting-row-icon"><CheckCircle2 size={16} /></div><div className="setting-copy"><strong>Confirm before consequential actions</strong><span>Pause and ask before an action that changes or sends something.</span></div><button className={`switch ${confirmBeforeActions ? 'on' : ''}`} role="switch" aria-checked={confirmBeforeActions} onClick={() => onSetting(setConfirmBeforeActions, !confirmBeforeActions)} aria-label="Confirm before consequential actions" data-testid="switch-confirm-actions"><span /></button></div>

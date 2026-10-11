@@ -396,6 +396,18 @@ paths:
                 $ref: "#/components/schemas/WorkspacePreviewStatus"
         "404":
           description: App process not found
+  /workspace/preview/stop-all:
+    post:
+      operationId: stopAllWorkspacePreviewApps
+      tags: [assistant]
+      summary: Stop all active workspace app previews when the preview panel closes
+      responses:
+        "200":
+          description: Number of stopped app processes and updated preview state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspacePreviewStopAllResult"
   /workspace/preview/static/{path}:
     get:
       operationId: getWorkspacePreviewAsset
@@ -645,7 +657,7 @@ components:
         id: { type: string, format: uuid }
         framework:
           type: string
-          enum: [streamlit, flask]
+          enum: [streamlit, flask, fastapi]
         entryPath: { type: string }
         port: { type: integer, minimum: 1, maximum: 65535 }
         localUrl: { type: string, format: uri }
@@ -656,15 +668,24 @@ components:
         startedAt: { type: string, format: date-time }
     WorkspacePreviewStatus:
       type: object
-      required: [staticAvailable, staticEntryPath, staticPreviewUrl, apps]
+      required: [staticAvailable, staticEntryPath, staticPreviewUrl, pythonPreviewsEnabled, pythonPreviewRuntimeLimitSeconds, apps]
       properties:
         staticAvailable: { type: boolean }
         staticEntryPath: { type: ["string", "null"] }
         staticPreviewUrl: { type: ["string", "null"] }
+        pythonPreviewsEnabled: { type: boolean }
+        pythonPreviewRuntimeLimitSeconds: { type: integer, minimum: 1 }
         apps:
           type: array
           items:
             $ref: "#/components/schemas/WorkspacePreviewApp"
+    WorkspacePreviewStopAllResult:
+      type: object
+      required: [stopped, preview]
+      properties:
+        stopped: { type: integer, minimum: 0 }
+        preview:
+          $ref: "#/components/schemas/WorkspacePreviewStatus"
     WorkspacePreviewStopInput:
       type: object
       required: [appId]
@@ -672,7 +693,7 @@ components:
         appId: { type: string, format: uuid }
     AssistantSettings:
       type: object
-      required: [provider, modelId, fallbackModelId, localSetupAllowed, providerSettingsAllowed, hasOpenaiKey, hasDeepseekKey, hasGeminiKey, hasOpenrouterKey, codeRunnerEnabled]
+      required: [provider, modelId, fallbackModelId, localSetupAllowed, providerSettingsAllowed, hasOpenaiKey, hasDeepseekKey, hasGeminiKey, hasOpenrouterKey, codeRunnerEnabled, appPreviewsEnabled]
       properties:
         provider: { type: string, enum: [openai, deepseek, gemini, openrouter] }
         modelId: { type: string }
@@ -684,6 +705,7 @@ components:
         hasGeminiKey: { type: boolean }
         hasOpenrouterKey: { type: boolean }
         codeRunnerEnabled: { type: boolean }
+        appPreviewsEnabled: { type: boolean }
     AssistantSettingsInput:
       type: object
       required: [provider, modelId]
@@ -696,4 +718,5 @@ components:
         geminiApiKey: { type: ["string", "null"], maxLength: 1000 }
         openrouterApiKey: { type: ["string", "null"], maxLength: 1000 }
         codeRunnerEnabled: { type: boolean }
+        appPreviewsEnabled: { type: boolean }
 

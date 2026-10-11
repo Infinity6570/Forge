@@ -34,10 +34,16 @@ provider API key you configure. It does not use Replit AI Integrations.
   is excluded from Git.
 - OpenAI, Gemini, and OpenRouter use their standard provider APIs through an
   OpenAI-compatible client. You supply and pay for your own provider account.
-- The Python runner is disabled by default. If enabled in local Settings, model
-  generated code runs with your operating-system account's normal permissions
-  and can access files beyond this project. Enable it only for work you trust;
-  it is always disabled in Replit.
+- Local app previews are disabled by default. Enable **Enable Local App Previews
+  (Unrestricted Workspace Execution)** in Preferences to let the assistant start
+  Flask, Streamlit, or FastAPI apps from `workspace/`. They bind to localhost,
+  use a cleaned environment without provider API keys, and are stopped when the
+  Live Preview panel closes or after one hour. They are always disabled in
+  Replit Cloud.
+- **Running generated Python apps executes code with standard local user
+  permissions.** Setting `cwd=workspace/` does not confine file access: generated
+  code can read or modify files your local account can access. Enable previews
+  only for code you trust.
 
 ## Important
 

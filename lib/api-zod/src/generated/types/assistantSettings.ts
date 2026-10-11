@@ -18,4 +18,5 @@ export interface AssistantSettings {
   hasGeminiKey: boolean;
   hasOpenrouterKey: boolean;
   codeRunnerEnabled: boolean;
+  appPreviewsEnabled: boolean;
 }

@@ -13,5 +13,8 @@ export interface WorkspacePreviewStatus {
   staticEntryPath: string | null;
   /** @nullable */
   staticPreviewUrl: string | null;
+  pythonPreviewsEnabled: boolean;
+  /** @minimum 1 */
+  pythonPreviewRuntimeLimitSeconds: number;
   apps: WorkspacePreviewApp[];
 }

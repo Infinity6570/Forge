@@ -12,4 +12,5 @@ export type WorkspacePreviewAppFramework = typeof WorkspacePreviewAppFramework[k
 export const WorkspacePreviewAppFramework = {
   streamlit: 'streamlit',
   flask: 'flask',
+  fastapi: 'fastapi',
 } as const;

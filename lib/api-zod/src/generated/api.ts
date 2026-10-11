@@ -490,7 +490,8 @@ export const GetAssistantSettingsResponse = zod.object({
   "hasDeepseekKey": zod.boolean(),
   "hasGeminiKey": zod.boolean(),
   "hasOpenrouterKey": zod.boolean(),
-  "codeRunnerEnabled": zod.boolean()
+  "codeRunnerEnabled": zod.boolean(),
+  "appPreviewsEnabled": zod.boolean()
 })
 
 
@@ -523,7 +524,8 @@ export const UpdateAssistantSettingsBody = zod.object({
   "deepseekApiKey": zod.string().max(updateAssistantSettingsBodyDeepseekApiKeyMax).nullish(),
   "geminiApiKey": zod.string().max(updateAssistantSettingsBodyGeminiApiKeyMax).nullish(),
   "openrouterApiKey": zod.string().max(updateAssistantSettingsBodyOpenrouterApiKeyMax).nullish(),
-  "codeRunnerEnabled": zod.boolean().optional()
+  "codeRunnerEnabled": zod.boolean().optional(),
+  "appPreviewsEnabled": zod.boolean().optional()
 })
 
 export const UpdateAssistantSettingsResponse = zod.object({
@@ -536,7 +538,8 @@ export const UpdateAssistantSettingsResponse = zod.object({
   "hasDeepseekKey": zod.boolean(),
   "hasGeminiKey": zod.boolean(),
   "hasOpenrouterKey": zod.boolean(),
-  "codeRunnerEnabled": zod.boolean()
+  "codeRunnerEnabled": zod.boolean(),
+  "appPreviewsEnabled": zod.boolean()
 })
 
 
@@ -549,6 +552,7 @@ export const DownloadAssistantWorkspaceResponse = zod.unknown()
 /**
  * @summary Get the available workspace previews and running apps
  */
+
 export const getWorkspacePreviewResponseAppsItemPortMax = 65535;
 
 
@@ -557,9 +561,11 @@ export const GetWorkspacePreviewResponse = zod.object({
   "staticAvailable": zod.boolean(),
   "staticEntryPath": zod.string().nullable(),
   "staticPreviewUrl": zod.string().nullable(),
+  "pythonPreviewsEnabled": zod.boolean(),
+  "pythonPreviewRuntimeLimitSeconds": zod.number().int().min(1),
   "apps": zod.array(zod.object({
   "id": zod.string().uuid(),
-  "framework": zod.enum(['streamlit', 'flask']),
+  "framework": zod.enum(['streamlit', 'flask', 'fastapi']),
   "entryPath": zod.string(),
   "port": zod.number().int().min(1).max(getWorkspacePreviewResponseAppsItemPortMax),
   "localUrl": zod.string().url(),
@@ -577,6 +583,7 @@ export const StopWorkspacePreviewAppBody = zod.object({
   "appId": zod.string().uuid()
 })
 
+
 export const stopWorkspacePreviewAppResponseAppsItemPortMax = 65535;
 
 
@@ -585,9 +592,11 @@ export const StopWorkspacePreviewAppResponse = zod.object({
   "staticAvailable": zod.boolean(),
   "staticEntryPath": zod.string().nullable(),
   "staticPreviewUrl": zod.string().nullable(),
+  "pythonPreviewsEnabled": zod.boolean(),
+  "pythonPreviewRuntimeLimitSeconds": zod.number().int().min(1),
   "apps": zod.array(zod.object({
   "id": zod.string().uuid(),
-  "framework": zod.enum(['streamlit', 'flask']),
+  "framework": zod.enum(['streamlit', 'flask', 'fastapi']),
   "entryPath": zod.string(),
   "port": zod.number().int().min(1).max(stopWorkspacePreviewAppResponseAppsItemPortMax),
   "localUrl": zod.string().url(),
@@ -595,6 +604,38 @@ export const StopWorkspacePreviewAppResponse = zod.object({
   "status": zod.enum(['running']),
   "startedAt": zod.coerce.date()
 }))
+})
+
+
+/**
+ * @summary Stop all active workspace app previews when the preview panel closes
+ */
+export const stopAllWorkspacePreviewAppsResponseStoppedMin = 0;
+
+
+export const stopAllWorkspacePreviewAppsResponsePreviewAppsItemPortMax = 65535;
+
+
+
+export const StopAllWorkspacePreviewAppsResponse = zod.object({
+  "stopped": zod.number().int().min(stopAllWorkspacePreviewAppsResponseStoppedMin),
+  "preview": zod.object({
+  "staticAvailable": zod.boolean(),
+  "staticEntryPath": zod.string().nullable(),
+  "staticPreviewUrl": zod.string().nullable(),
+  "pythonPreviewsEnabled": zod.boolean(),
+  "pythonPreviewRuntimeLimitSeconds": zod.number().int().min(1),
+  "apps": zod.array(zod.object({
+  "id": zod.string().uuid(),
+  "framework": zod.enum(['streamlit', 'flask', 'fastapi']),
+  "entryPath": zod.string(),
+  "port": zod.number().int().min(1).max(stopAllWorkspacePreviewAppsResponsePreviewAppsItemPortMax),
+  "localUrl": zod.string().url(),
+  "previewUrl": zod.string(),
+  "status": zod.enum(['running']),
+  "startedAt": zod.coerce.date()
+}))
+})
 })
 
 

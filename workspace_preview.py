@@ -271,6 +271,14 @@ class WorkspacePreviewManager:
         temp_dir = runtime_dir / "tmp"
         home_dir.mkdir(parents=True, exist_ok=True)
         temp_dir.mkdir(parents=True, exist_ok=True)
+        python_paths = [str(self.workspace)]
+        python_paths.extend(
+            value
+            for value in sys.path
+            if value
+            and Path(value).is_dir()
+            and ("site-packages" in value or "dist-packages" in value)
+        )
         child_env = {
             "PATH": os.environ.get("PATH", os.defpath),
             "HOME": str(home_dir),
@@ -282,7 +290,7 @@ class WorkspacePreviewManager:
             "LC_ALL": os.environ.get("LC_ALL", "C.UTF-8"),
             "PYTHONUNBUFFERED": "1",
             "PYTHONNOUSERSITE": "1",
-            "PYTHONPATH": str(self.workspace),
+            "PYTHONPATH": os.pathsep.join(dict.fromkeys(python_paths)),
             "PORT": str(port),
             "HOST": "127.0.0.1",
             "BIND_HOST": "127.0.0.1",
@@ -360,7 +368,19 @@ class WorkspacePreviewManager:
                 "if app is None:\n"
                 "    raise RuntimeError('FastAPI script must export app, application, or create_app().')\n"
                 "import uvicorn\n"
-                "uvicorn.run(app, host='127.0.0.1', port=port, root_path=prefix, "
+                "class PreviewPrefix:\n"
+                "    def __init__(self, child, mount):\n"
+                "        self.child, self.mount = child, mount\n"
+                "    async def __call__(self, scope, receive, send):\n"
+                "        if scope.get('type') in {'http', 'websocket'}:\n"
+                "            path = scope.get('path', '')\n"
+                "            if path == self.mount or path.startswith(self.mount + '/'):\n"
+                "                scope = dict(scope)\n"
+                "                scope['path'] = path[len(self.mount):] or '/'\n"
+                "                scope['root_path'] = self.mount\n"
+                "                scope['raw_path'] = scope['path'].encode('utf-8')\n"
+                "        await self.child(scope, receive, send)\n"
+                "uvicorn.run(PreviewPrefix(app, prefix), host='127.0.0.1', port=port, "
                 "proxy_headers=False, access_log=False)\n",
                 encoding="utf-8",
             )
@@ -550,6 +570,10 @@ class WorkspacePreviewManager:
             shutil.rmtree(app.runtime_path, ignore_errors=True)
         elif app.wrapper_path:
             app.wrapper_path.unlink(missing_ok=True)
+        if app.reader_thread and app.reader_thread is not threading.current_thread():
+            app.reader_thread.join(timeout=0.2)
+        if app.process.stdout:
+            app.process.stdout.close()
 
     def stop(self, app_id: str) -> bool:
         try:

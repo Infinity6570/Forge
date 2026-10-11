@@ -1,1 +1,1 @@
-- [Local execution and elevation boundary](local-execution-boundary.md) — ordinary tools stay workspace-scoped; admin commands require visible approval and OS elevation.
+- [Local execution and elevation boundary](local-execution-boundary.md) — file tools stay workspace-scoped; local Python previews are explicit opt-in and unrestricted; admin actions require approval.

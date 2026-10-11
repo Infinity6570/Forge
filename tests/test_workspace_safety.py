@@ -87,13 +87,164 @@ class WorkspaceSafetyTests(unittest.IsolatedAsyncioTestCase):
             with self.subTest(command=command), self.assertRaises(PermissionError):
                 main.parse_workspace_command(command)
 
-    async def test_static_preview_is_available_but_python_processes_are_blocked(self) -> None:
+    async def test_static_preview_is_available_and_python_previews_are_disabled_by_default(self) -> None:
         manager = main.WorkspacePreviewManager(self.workspace)
         preview = await manager.launch("static", "sample.html")
         self.assertTrue(preview["started"])
         self.assertEqual(preview["framework"], "static")
+        with patch.dict(
+            "os.environ",
+            {
+                "RUN_LOCAL_APP_PREVIEWS": "false",
+                "REPL_ID": "",
+                "REPLIT_DEV_DOMAIN": "",
+                "REPLIT_DOMAINS": "",
+            },
+        ):
+            with self.assertRaises(PermissionError):
+                await manager.launch("flask", "app.py")
+
+    async def test_replit_cloud_disables_python_previews_even_if_env_flag_is_true(self) -> None:
+        manager = main.WorkspacePreviewManager(self.workspace)
+        with patch.dict(
+            "os.environ",
+            {
+                "RUN_LOCAL_APP_PREVIEWS": "true",
+                "REPL_ID": "test-repl",
+                "REPLIT_DEV_DOMAIN": "assistant.replit.dev",
+                "REPLIT_DOMAINS": "",
+            },
+        ):
+            self.assertFalse(manager.get_status()["pythonPreviewsEnabled"])
+            with self.assertRaises(PermissionError):
+                await manager.launch("flask", "app.py")
+
+    async def test_python_preview_files_remain_workspace_confined_and_overwrites_need_approval(self) -> None:
+        created = main.write_workspace_app_script(
+            self.workspace,
+            "preview_app.py",
+            "app = None\n",
+        )
+        self.assertEqual(created["path"], "preview_app.py")
         with self.assertRaises(PermissionError):
-            await manager.launch("flask", "app.py")
+            main.write_workspace_app_script(self.workspace, "../outside.py", "app = None\n")
+
+        required = main.workspace_action_requiring_approval(
+            "write_workspace_app_script",
+            {"path": "preview_app.py", "content": "app = 'replacement'\n"},
+        )
+        self.assertIsNotNone(required)
+        action, payload, _summary = required
+        self.assertEqual(action, "write_app_script")
+        result = main.parse_json(main.apply_approved_workspace_action(action, payload), {})
+        self.assertTrue(result["approved"])
+        self.assertEqual(
+            (self.workspace / "preview_app.py").read_text(encoding="utf-8"),
+            "app = 'replacement'\n",
+        )
+
+    async def test_local_flask_preview_uses_workspace_cwd_scrubbed_env_and_stops(self) -> None:
+        app_script = self.workspace / "preview_app.py"
+        app_script.write_text(
+            "import os\n"
+            "from flask import Flask\n"
+            "app = Flask(__name__)\n"
+            "@app.get('/')\n"
+            "def index():\n"
+            "    return os.getcwd() + '|' + os.getenv('OPENAI_API_KEY', 'missing')\n",
+            encoding="utf-8",
+        )
+        manager = main.WorkspacePreviewManager(self.workspace)
+        with patch.dict(
+            "os.environ",
+            {
+                "RUN_LOCAL_APP_PREVIEWS": "true",
+                "REPL_ID": "",
+                "REPLIT_DEV_DOMAIN": "",
+                "REPLIT_DOMAINS": "",
+                "OPENAI_API_KEY": "parent-process-key-must-not-be-inherited",
+            },
+        ):
+            try:
+                launched = await manager.launch("flask", "preview_app.py")
+                async with httpx.AsyncClient(timeout=5) as client:
+                    response = await client.get(launched["localUrl"] + "/")
+                self.assertEqual(response.status_code, 200, response.text)
+                self.assertEqual(
+                    response.text,
+                    f"{self.workspace.resolve()}|missing",
+                )
+                with patch.object(main, "PREVIEW_MANAGER", manager):
+                    async with httpx.AsyncClient(
+                        transport=httpx.ASGITransport(app=main.app),
+                        base_url="http://127.0.0.1",
+                    ) as client:
+                        stopped = await client.post("/api/workspace/preview/stop-all")
+                self.assertEqual(stopped.status_code, 200, stopped.text)
+                self.assertEqual(stopped.json()["stopped"], 1)
+                self.assertEqual(manager.list_apps(), [])
+            finally:
+                manager.stop_all()
+
+    async def test_local_streamlit_preview_serves_under_its_preview_prefix(self) -> None:
+        app_script = self.workspace / "streamlit_app.py"
+        app_script.write_text(
+            "import streamlit as st\n"
+            "st.title('Preview smoke test')\n",
+            encoding="utf-8",
+        )
+        manager = main.WorkspacePreviewManager(self.workspace)
+        with patch.dict(
+            "os.environ",
+            {
+                "RUN_LOCAL_APP_PREVIEWS": "true",
+                "REPL_ID": "",
+                "REPLIT_DEV_DOMAIN": "",
+                "REPLIT_DOMAINS": "",
+            },
+        ):
+            try:
+                launched = await manager.launch("streamlit", "streamlit_app.py")
+                async with httpx.AsyncClient(timeout=10) as client:
+                    response = await client.get(launched["localUrl"] + "/")
+                    health = await client.get(launched["localUrl"] + "/_stcore/health")
+                self.assertEqual(response.status_code, 200, response.text)
+                self.assertIn('id="root"', response.text)
+                self.assertEqual(health.status_code, 200, health.text)
+            finally:
+                manager.stop_all()
+
+    async def test_local_fastapi_preview_starts_on_loopback_and_stops_on_close(self) -> None:
+        app_script = self.workspace / "fastapi_app.py"
+        app_script.write_text(
+            "import os\n"
+            "from fastapi import FastAPI\n"
+            "app = FastAPI()\n"
+            "@app.get('/')\n"
+            "def index():\n"
+            "    return {'cwd': os.getcwd()}\n",
+            encoding="utf-8",
+        )
+        manager = main.WorkspacePreviewManager(self.workspace)
+        with patch.dict(
+            "os.environ",
+            {
+                "RUN_LOCAL_APP_PREVIEWS": "true",
+                "REPL_ID": "",
+                "REPLIT_DEV_DOMAIN": "",
+                "REPLIT_DOMAINS": "",
+            },
+        ):
+            try:
+                launched = await manager.launch("fastapi", "fastapi_app.py")
+                async with httpx.AsyncClient(timeout=5) as client:
+                    response = await client.get(launched["localUrl"] + "/")
+                self.assertEqual(response.status_code, 200, response.text)
+                self.assertEqual(response.json()["cwd"], str(self.workspace.resolve()))
+                self.assertEqual(manager.stop_all(), 1)
+                self.assertEqual(manager.list_apps(), [])
+            finally:
+                manager.stop_all()
 
     async def _create_pending_task(self, approval_id: str, action: str, payload: dict[str, str]) -> str:
         task_id = f"task-{approval_id}"

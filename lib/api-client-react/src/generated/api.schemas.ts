@@ -252,6 +252,7 @@ export type WorkspacePreviewAppFramework = typeof WorkspacePreviewAppFramework[k
 export const WorkspacePreviewAppFramework = {
   streamlit: 'streamlit',
   flask: 'flask',
+  fastapi: 'fastapi',
 } as const;
 
 export type WorkspacePreviewAppStatus = typeof WorkspacePreviewAppStatus[keyof typeof WorkspacePreviewAppStatus];
@@ -282,7 +283,16 @@ export interface WorkspacePreviewStatus {
   staticEntryPath: string | null;
   /** @nullable */
   staticPreviewUrl: string | null;
+  pythonPreviewsEnabled: boolean;
+  /** @minimum 1 */
+  pythonPreviewRuntimeLimitSeconds: number;
   apps: WorkspacePreviewApp[];
+}
+
+export interface WorkspacePreviewStopAllResult {
+  /** @minimum 0 */
+  stopped: number;
+  preview: WorkspacePreviewStatus;
 }
 
 export interface WorkspacePreviewStopInput {
@@ -310,6 +320,7 @@ export interface AssistantSettings {
   hasGeminiKey: boolean;
   hasOpenrouterKey: boolean;
   codeRunnerEnabled: boolean;
+  appPreviewsEnabled: boolean;
 }
 
 export type AssistantSettingsInputProvider = typeof AssistantSettingsInputProvider[keyof typeof AssistantSettingsInputProvider];
@@ -356,5 +367,6 @@ export interface AssistantSettingsInput {
      */
   openrouterApiKey?: string | null;
   codeRunnerEnabled?: boolean;
+  appPreviewsEnabled?: boolean;
 }
 

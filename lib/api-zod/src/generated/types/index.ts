@@ -38,4 +38,5 @@ export * from './workspacePreviewApp';
 export * from './workspacePreviewAppFramework';
 export * from './workspacePreviewAppStatus';
 export * from './workspacePreviewStatus';
+export * from './workspacePreviewStopAllResult';
 export * from './workspacePreviewStopInput';
