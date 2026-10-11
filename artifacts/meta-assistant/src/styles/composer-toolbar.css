@@ -1,0 +1,58 @@
+/* One prompt surface and a compact bottom-right action cluster. */
+html[data-theme] .command-composer form {
+  display:grid!important; grid-template-columns:minmax(0,1fr)!important;
+  gap:8px!important; padding:12px!important;
+}
+html[data-theme] .command-composer .terminal-input-row {
+  grid-column:1/-1!important; grid-row:auto!important;
+  width:100%; align-items:flex-start; padding:0; border:0; background:transparent;
+}
+html[data-theme] .command-composer :is(.terminal-prompt,textarea) {
+  padding:0; margin:0; font:400 14px/21px var(--font-mono)!important;
+}
+html[data-theme] .command-composer textarea { flex:1; width:100%; min-width:0; }
+html[data-theme] .command-composer :is(.task-attachments,form > .field-error) {
+  grid-column:1/-1!important; grid-row:auto!important;
+}
+html[data-theme] .command-composer .composer-bottom {
+  display:flex!important; grid-column:1/-1!important; grid-row:auto!important;
+  width:100%; justify-content:flex-end; padding:0; margin:0;
+  border:0; background:transparent;
+}
+html[data-theme] .command-composer .composer-actions {
+  display:flex; align-items:center; justify-content:flex-end!important;
+  flex-wrap:wrap; gap:6px; max-width:100%; padding:0; margin:0;
+  border:0; background:transparent;
+}
+html[data-theme] .command-composer .composer-counter {
+  flex:none; white-space:nowrap; color:var(--text-muted);
+  font:400 11px/16px var(--font-mono)!important; padding-right:3px;
+}
+html[data-theme="scifi"] .command-composer .composer-counter { color:rgba(0,240,255,.4); }
+html[data-theme] .command-composer .composer-model {
+  display:flex; align-items:center; gap:4px; height:28px; min-height:28px;
+  width:210px; max-width:min(210px,100%); padding:2px 8px;
+  border:1px solid var(--border); border-radius:20px;
+  background:var(--bg-card); color:var(--accent); box-shadow:none;
+}
+html[data-theme] .command-composer .composer-model svg { flex:none; }
+html[data-theme] .command-composer .composer-actions .composer-model select {
+  height:24px!important; min-height:0; width:100%; max-width:none; min-width:0;
+  padding:0 14px 0 0!important; border:0!important; border-radius:0;
+  background-color:transparent!important; color:var(--text-primary);
+  font:400 12px/20px var(--font-mono)!important; text-overflow:ellipsis;
+  box-shadow:none!important; cursor:pointer;
+}
+html[data-theme] .command-composer .composer-actions .submit-button {
+  height:28px!important; min-height:28px; padding:2px 8px!important;
+  gap:5px; font:500 12px/20px var(--font-mono)!important;
+  box-shadow:none; border-radius:3px;
+}
+html[data-theme] .command-composer .composer-actions .composer-attach {
+  width:28px; padding:2px!important; border-color:transparent; background:transparent;
+}
+html[data-theme] .command-composer .composer-attach:hover { background:var(--surface-raised); }
+@media (max-width:600px) {
+  html[data-theme] .command-composer .composer-actions { gap:5px; }
+  html[data-theme] .command-composer .composer-model { width:180px; }
+}

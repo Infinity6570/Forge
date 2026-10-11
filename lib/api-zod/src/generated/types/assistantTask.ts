@@ -14,6 +14,8 @@ import type { TaskLog } from './taskLog';
 export interface AssistantTask {
   id: string;
   objective: string;
+  /** @nullable */
+  threadId?: string | null;
   status: AssistantTaskStatus;
   /** @nullable */
   currentStep: string | null;

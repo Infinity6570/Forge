@@ -1,0 +1,23 @@
+html[data-theme] .command-composer .composer-actions button.composer-model { width:210px; justify-content:flex-start; font:400 12px/20px var(--font-mono); color:var(--text-primary); cursor:pointer; }
+html[data-theme] .composer-model .model-trigger-value { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; text-align:left; }
+html[data-theme] .composer-model > svg:last-child { width:12px; height:12px; }
+html[data-theme] .model-menu { z-index:2100; max-height:min(420px,var(--radix-select-content-available-height))!important; min-width:max(var(--radix-select-trigger-width),260px); padding:4px;
+  background:var(--bg-card); color:var(--text-primary); border:1px solid var(--border); border-radius:6px; scrollbar-width:thin; scrollbar-color:var(--border) transparent; }
+html[data-theme] .model-menu::-webkit-scrollbar { width:6px; }
+html[data-theme] .model-menu::-webkit-scrollbar-thumb { background:var(--border); border-radius:3px; }
+html[data-theme] .model-menu-label { padding:8px 10px 4px; color:var(--text-muted); font:600 11px var(--font-mono); text-transform:uppercase; letter-spacing:.08em; }
+html[data-theme] .model-menu-sep { height:1px; margin:4px 2px; background:var(--border); }
+html[data-theme] .model-menu-item { font:400 13px/1.4 var(--font-mono); border-left:2px solid transparent; border-radius:0; cursor:pointer; }
+html[data-theme] .model-menu-item[data-highlighted] { background:color-mix(in srgb,var(--accent) 14%,transparent); color:var(--accent); outline:none; }
+html[data-theme] .model-menu-item[data-state="checked"] { border-left-color:var(--accent); color:var(--accent); }
+html[data-theme] .model-menu-item[data-disabled] { opacity:.45; cursor:not-allowed; }
+
+html[data-theme="scifi"] .model-menu { background:rgba(4,9,20,.98); backdrop-filter:blur(12px); border:1px solid rgba(0,240,255,.35); border-radius:2px; box-shadow:0 0 16px rgba(0,240,255,.15); color:#e2f7ff; scrollbar-color:#00f0ff transparent; }
+html[data-theme="scifi"] .model-menu::-webkit-scrollbar { width:2px; }
+html[data-theme="scifi"] .model-menu::-webkit-scrollbar-thumb { background:#00f0ff; border-radius:0; }
+html[data-theme="scifi"] .model-menu-label { font-family:'Orbitron',var(--font-mono); color:rgba(0,240,255,.8); }
+html[data-theme="scifi"] .model-menu-sep { background:rgba(0,240,255,.15); }
+html[data-theme="scifi"] .model-menu-item { font-family:'Share Tech Mono',var(--font-mono); color:#e2f7ff; }
+html[data-theme="scifi"] .model-menu-item[data-highlighted], html[data-theme="scifi"] .model-menu-item[data-state="checked"] { background:rgba(0,240,255,.12); color:#00f0ff; border-left-color:#00f0ff; }
+html[data-theme="scifi"] .model-menu-item[data-state="unchecked"][data-highlighted] { border-left-color:#00f0ff; }
+html[data-theme="scifi"] .composer-model { border-radius:2px; }

@@ -1,0 +1,27 @@
+Please execute a complete, unified pass across the frontend and provider configuration to resolve all remaining layout alignment, interaction, theme leak, typography scaling, and model persistence bugs:
+
+1. Chat Input Bar Fixes (Alignment & Keybindings):
+   - Keyboard interaction: Configure the primary command textarea so pressing 'Enter' submits the prompt immediately, while 'Shift + Enter' inserts a newline.
+   - Baseline alignment: Fix the vertical alignment mismatch between the terminal prefix (`USR@FORGE-6570:~$`) and the text input field/placeholder (`Describe what you want done...`). Wrap them in an `align-items: center` flex container so they share the exact same font size, line-height, and baseline.
+   - Cleanly dock the character counter (`0 / 12,000 characters`) in the bottom corner without disrupting horizontal alignment.
+
+2. Global Typography Scaling & Complete Theme Purge:
+   - Scale up all small typography across the entire interface by 1.5px to 2px for comfortable desktop readability:
+     * Increase micro text (10px–11px timestamps, system metrics, log lines, character counts, status badges) to a crisp 12px–13px.
+     * Increase standard body and monospace descriptions from 12px to 14px with `line-height: 1.5`.
+   - Purge remaining cream/white container leaks in Sci-Fi mode:
+     * In `/tasks`, restyle the "CURRENT STEP" box from a solid cream/white block into a dark translucent HUD surface (`background: rgba(4, 9, 20, 0.95); border: 1px solid rgba(0, 240, 255, 0.28);`) with high-contrast text (`#e2f7ff`).
+     * Ensure all inner containers, error boxes, and empty states inherit the active cyberdeck palette with zero bright pastel fills.
+
+3. Fix Google Gemini Model Identifier (Resolve 404 API Error):
+   - The backend and dropdowns currently default to `gemini-2.5-flash`, which returns: "Error code: 404 - This model models/gemini-2.5-flash is no longer available to new users. Please update your code to use models/gemini-3.0-flash".
+   - Update the provider mapping, defaults, and select options to use valid production endpoints:
+     * Primary default: `gemini-3.0-flash`
+     * Available alternates: `gemini-2.0-flash`, `gemini-1.5-pro`
+
+4. Preferences Overhaul: Apply Button & Real-Time Vault State:
+   - "ACTIVE WORKING MODEL" Panel: Add a prominent, high-contrast action button labeled "[ APPLY MODEL ]" directly inside the panel. Clicking it must immediately dispatch a PATCH/POST request to set the active backend model, update the local runtime state, and display a confirmation toast: "ACTIVE MODEL SET: <model_name>".
+   - Sync with Command Center: Ensure the quick model indicator/picker on the bottom chat bar reflects this applied model immediately.
+   - "API KEYS VAULT" Panel: When "[ SAVE KEYS ]" is clicked, immediately update local component state or invalidate/refetch the settings query so provider status badges flip from "NO KEY" to "ACTIVE KEY" instantly without requiring a page navigation or manual reload.
+
+5. Keep all existing backend test suites, SQLite schemas, sandbox path boundaries, and local process lifecycle handlers fully intact.

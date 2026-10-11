@@ -1,0 +1,28 @@
+Please execute this combined backend and UI overhaul to fix the Gemini tool-calling bug, eliminate intrusive modal popups, and streamline conversation flow:
+
+1. Stop Auto-Opening the "TASK DETAILS" Modal on Prompt Submission:
+   - When the user sends a message, do NOT trigger or open the modal dialog / popup overlay automatically.
+   - Behavior should flow like a standard conversational agent directly inside the main feed:
+     * Display the user message, followed by an inline collapsible "Thinking / Processing" indicator, followed by the streaming assistant response.
+     * Keep raw diagnostic logs, stack traces, and deep task details hidden by default.
+     * Only display full task details if the user explicitly clicks a discreet `[ View Details ]` or `[ ℹ ]` action link on that specific message.
+
+2. Inline Thinking & Reasoning Steps (Collapsible):
+   - Render intermediate actions and reasoning inline directly above the final answer in the feed:
+     * Use a sleek, collapsible HUD accordion: `[ 🧠 Thinking (X steps) ⌵ ]`.
+     * Inside, display single-line collapsed action pills (e.g., `[ 🔍 ] Searching web: "weather Manali"`, `[ >_ ] Tool execution complete`).
+     * Keep it collapsed or compact so the primary focus stays on the final conversational response.
+
+3. Fix Gemini `thought_signature` Error 400 (Backend Adapter):
+   - Fix the API failure: "Function call is missing a thought_signature in functionCall parts. This is required for tools to work correctly...".
+   - Cause: When a thinking-enabled Gemini model triggers a tool call (such as `default_api:web_search`), Google's API returns thought metadata attached to the turn. The agent loop is stripping or omitting `thought_signature` when appending the assistant turn back to conversation history prior to submitting tool results.
+   - Fix:
+     * In the Gemini provider adapter, preserve the complete raw `part` object (including `thought_signature` / `thoughtSignature`) exactly as returned by the API when appending model function calls to turn history.
+     * Ensure the corresponding tool result part (`functionResponse`) cleanly pairs with that turn according to Google's multi-turn function calling spec.
+
+4. Purge Modal Scrollbar Theme Leak:
+   - If the task details modal or any side drawer is manually opened, ensure its scrollbar uses cyberdeck styling instead of native cream/tan tracks:
+     `scrollbar-width: thin; scrollbar-color: rgba(0, 240, 255, 0.4) transparent;`
+     Style WebKit scrollbars with a transparent track and a subtle 2px cyan thumb (`rgba(0, 240, 255, 0.35)`).
+
+5. Verify all changes pass backend test suites and maintain active API vault persistence.

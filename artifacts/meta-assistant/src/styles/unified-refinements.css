@@ -1,0 +1,140 @@
+/* Readable shared type scale; theme colors remain owned by root tokens. */
+html[data-theme] {
+  --type-body: 14px;
+  --type-control: 13px;
+  --type-micro: 12px;
+}
+html[data-theme] body { font-size: var(--type-body); line-height: 1.5; }
+
+html[data-theme] .app-frame :is(
+  .brand-caption, .workspace-label, .sidebar-section-title, .quick-status,
+  .quick-status strong, .agent-card-copy span, .user-meta span, .breadcrumbs,
+  .system-online, .app-footer, .footer-build, .eyebrow, .ops-tagline,
+  .welcome-stamp, .stat-label, .stat-note, .task-row-main > span,
+  .task-row-side time, .status-pill, .focus-kicker, .mini-resource-top,
+  .live-label, .file-main span, .file-added, .note-tags span, .note-card-foot,
+  .log-heading span, .log-meta time, .file-preview-meta, .connection-state,
+  .recommended, .model-descriptor, .settings-footnote, .save-state,
+  .reminder-copy span, .key-status, .preview-view-label span,
+  .preview-app-meta, .inspector-section-label, .inspector-file small,
+  .inspector-file-heading span, .copy-feedback, .command-status,
+  .command-metrics > span, .stream-task-heading small, .stream-current small,
+  .stream-step summary time, .step-category, .stream-no-events,
+  .theme-option, .cyber-fx-toggle, .composer-model, .char-count
+) { font-size: var(--type-micro) !important; line-height: 1.5; }
+
+html[data-theme] .app-frame :is(
+  .nav-link, .button, .button-small, .task-row-main strong, .text-link,
+  .focus-link, .filter-pill, .library-tabs button, .file-main strong,
+  .form-label, .segmented-control button, .log-heading strong, .log-meta strong,
+  .model-copy strong, .setting-copy strong, .settings-note strong,
+  .reminder-copy strong, .preview-choice strong, .preview-address button,
+  .inspector-heading strong, .inspector-tabs button, .inspector-file,
+  .inspector-file-heading strong, .preview-open, .stream-task-heading strong,
+  .stream-step summary, .stream-code button, .dock-heading, .dock-card strong,
+  .attachment-chip, .composer-heading strong, .submit-button,
+  .search-box input, .provider-select-label, .model-choice-label
+) { font-size: var(--type-control) !important; line-height: 1.5; }
+
+html[data-theme] .app-frame p,
+html[data-theme] .app-frame :is(
+  .page-description, .model-copy > span, .setting-copy span, .detail-objective p,
+  .preview-choice small, .preview-state, .preview-address input, .preview-empty > span,
+  .inspector-empty, .inspector-empty-preview span, .stream-empty span,
+  .stream-current strong, .step-body, .stream-result, .stream-error,
+  .dock-card, .dock-card code, .log-item p, .log-empty, .empty-inline,
+  .extracted-text, .file-code, .stream-code pre, .form-label input,
+  .form-label textarea, .form-label select, .field-error, .inline-error,
+  .preview-address-error, .preview-stop-error
+) { font-size: var(--type-body) !important; line-height: 1.5; }
+
+html[data-theme] .app-frame .current-step small { font-size:12px!important; line-height:1.5; }
+html[data-theme] .app-frame .current-step strong { font-size:14px!important; line-height:1.5; color:var(--text-primary); }
+html[data-theme] .app-frame .quick-status .model-name {
+  font-size:12px!important; max-width:125px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+html[data-theme] .code-line { min-height:21px; }
+html[data-theme] .center-pane-home { overflow:hidden; }
+html[data-theme] .center-pane-home .page-wrap { min-height:0; display:flex; flex-direction:column; }
+html[data-theme] .center-pane-home .command-center { flex:1; height:auto; min-height:0; }
+html[data-theme] .center-pane-home .activity-panel { min-height:0; }
+html[data-theme] .center-pane-home :is(.command-heading,.command-metrics,.command-composer,.action-dock) { flex-shrink:0; }
+html[data-theme] .command-composer .composer-model select { font-size:12px!important; height:36px; max-width:190px; }
+html[data-theme] .command-composer .submit-button { font-size:13px!important; height:36px; }
+html[data-theme] .command-composer .composer-heading > div span { font-size:12px!important; }
+html[data-theme] .command-composer .composer-bottom > span:first-child {
+  font-size:12px!important; line-height:1.5; text-align:right; align-self:end;
+}
+html[data-theme] .terminal-input-row { display:flex; align-items:center; gap:10px; min-width:0; }
+html[data-theme] .command-composer .terminal-prompt,
+html[data-theme] .command-composer textarea {
+  font-size:14px!important; line-height:1.5!important;
+}
+html[data-theme] .command-composer textarea { flex:1; min-width:0; min-height:21px; max-height:120px; resize:none; }
+
+/* A single flex row keeps the prompt and the first text line aligned. */
+html[data-theme="scifi"] .command-composer form {
+  grid-template-columns:minmax(0,1fr) auto; gap:8px 12px; padding:12px;
+}
+html[data-theme="scifi"] .command-composer .terminal-input-row {
+  display:flex; align-items:center; grid-column:1; grid-row:1;
+  padding:0; border:0!important; background:transparent!important; box-shadow:none!important;
+}
+html[data-theme="scifi"] .command-composer .terminal-prompt,
+html[data-theme="scifi"] .command-composer textarea {
+  font:400 14px/1.5 'Share Tech Mono',ui-monospace,monospace!important;
+  padding:0; margin:0; min-height:21px;
+}
+html[data-theme="scifi"] .command-composer .terminal-prompt { flex:none; }
+html[data-theme="scifi"] .command-composer .composer-actions { grid-column:2; grid-row:1; flex-wrap:wrap; }
+html[data-theme="scifi"] .command-composer .task-attachments,
+html[data-theme="scifi"] .command-composer form > .field-error,
+html[data-theme="scifi"] .command-composer .composer-bottom > span:first-child {
+  grid-column:1/-1; grid-row:auto; padding-top:0;
+}
+html[data-theme="scifi"] .command-composer .composer-bottom > span:first-child { justify-self:end; }
+
+/* Remove legacy pastel surfaces from detail, failure, and empty states. */
+html[data-theme="scifi"] :is(
+  .current-step, .outcome-box, .empty-inline, .log-empty, .query-problem,
+  .empty-state, .stream-empty, .preview-state, .inspector-empty,
+  .inspector-empty-preview, .preview-empty, .file-preview-meta
+) {
+  background:rgba(4,9,20,.95)!important;
+  border-color:rgba(0,240,255,.28)!important;
+  color:#e2f7ff!important;
+}
+html[data-theme="scifi"] .current-step { border:1px solid rgba(0,240,255,.28)!important; }
+html[data-theme="scifi"] :is(.current-step,.outcome-box) :is(strong,p) { color:#e2f7ff!important; }
+html[data-theme="scifi"] :is(.error-box,.inline-error,.preview-error,.stream-error,.query-problem) {
+  background:rgba(29,8,27,.95)!important; border-color:#ff4f9b55!important; color:#ff91bd!important;
+}
+html[data-theme="scifi"] :is(.error-box,.inline-error,.preview-error,.query-problem) :is(p,strong) { color:#ffb1d0!important; }
+html[data-theme="scifi"] .current-step small { color:#00f0ff!important; }
+
+html[data-theme] .model-apply-row { margin-top:18px; gap:12px; }
+html[data-theme] .model-apply-row .button { min-height:44px; padding-inline:22px; white-space:nowrap; }
+html[data-theme] .model-apply-row .save-state { overflow-wrap:anywhere; }
+html[data-theme] .settings-save-row { flex-wrap:wrap; }
+html[data-theme] .key-status { display:inline-flex; width:fit-content; padding:2px 7px; }
+html[data-theme] .form-label input, html[data-theme] .form-label select { min-height:44px; }
+html[data-theme] .forge-toast {
+  background:var(--bg-card)!important; color:var(--text-primary)!important;
+  border:1px solid var(--border)!important; font:14px/1.5 var(--font-mono);
+}
+html[data-theme="scifi"] .forge-toast { border-color:#00f0ff77!important; box-shadow:0 0 22px #00f0ff22; }
+
+@media(max-width:1300px) {
+  html[data-theme="scifi"] .command-composer form { grid-template-columns:minmax(0,1fr); }
+  html[data-theme="scifi"] .command-composer .composer-actions { grid-column:1; grid-row:2; justify-content:flex-end; }
+  html[data-theme] .topbar .ops-tagline { display:none; }
+}
+@media(max-width:600px) {
+  html[data-theme="scifi"] .command-composer .terminal-input-row { flex-wrap:wrap; gap:5px; }
+  html[data-theme="scifi"] .command-composer textarea { flex-basis:100%; }
+  html[data-theme] .command-composer .composer-actions { justify-content:flex-start; gap:7px; }
+  html[data-theme] .command-composer .composer-model { flex:1; min-width:0; }
+  html[data-theme] .command-composer .composer-model select { max-width:160px; }
+  html[data-theme] .model-apply-row .button { width:100%; }
+  html[data-theme] .inspector-tabs button { font-size:12px!important; letter-spacing:.03em; }
+}

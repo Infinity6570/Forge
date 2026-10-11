@@ -82,6 +82,8 @@ export const AssistantTaskRecommendedProvider = {
 export interface AssistantTask {
   id: string;
   objective: string;
+  /** @nullable */
+  threadId?: string | null;
   status: AssistantTaskStatus;
   /** @nullable */
   currentStep: string | null;
@@ -122,6 +124,59 @@ export interface DashboardSummary {
   recentTasks: AssistantTask[];
 }
 
+export interface ConversationThread {
+  id: string;
+  title: string;
+  pinned: boolean;
+  /** @nullable */
+  activeTaskId: string | null;
+  messageCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type ConversationMessageRole = typeof ConversationMessageRole[keyof typeof ConversationMessageRole];
+
+
+export const ConversationMessageRole = {
+  user: 'user',
+  assistant: 'assistant',
+  tool: 'tool',
+} as const;
+
+export interface ConversationMessage {
+  id: string;
+  threadId: string;
+  taskId: string;
+  role: ConversationMessageRole;
+  content: string;
+  thoughtSteps: TaskLog[];
+  isToolCall: boolean;
+  createdAt: string;
+}
+
+export type ConversationThreadDetail = ConversationThread & {
+  messages: ConversationMessage[];
+  tasks: AssistantTask[];
+};
+
+export interface ThreadInput {
+  /**
+     * @minLength 1
+     * @maxLength 100
+     */
+  title?: string;
+}
+
+export interface ThreadUpdate {
+  /**
+     * @minLength 1
+     * @maxLength 100
+     */
+  title?: string;
+  pinned?: boolean;
+}
+
 export type TaskInputProvider = typeof TaskInputProvider[keyof typeof TaskInputProvider];
 
 
@@ -139,6 +194,8 @@ export interface TaskInput {
      * @maxLength 12000
      */
   objective: string;
+  /** @nullable */
+  threadId?: string | null;
   provider?: TaskInputProvider;
   /** @maxLength 120 */
   modelId?: string;
@@ -326,6 +383,57 @@ export interface AssistantSettings {
   hasOpenrouterKey: boolean;
   codeRunnerEnabled: boolean;
   appPreviewsEnabled: boolean;
+}
+
+export type ModelSelectionInputProvider = typeof ModelSelectionInputProvider[keyof typeof ModelSelectionInputProvider];
+
+
+export const ModelSelectionInputProvider = {
+  openai: 'openai',
+  deepseek: 'deepseek',
+  gemini: 'gemini',
+  openrouter: 'openrouter',
+  ollama: 'ollama',
+} as const;
+
+export interface ModelSelectionInput {
+  provider: ModelSelectionInputProvider;
+  /**
+     * @minLength 1
+     * @maxLength 120
+     * @pattern ^[A-Za-z0-9][A-Za-z0-9._:/-]{0,119}$
+     */
+  modelId: string;
+  /**
+     * @maxLength 120
+     * @pattern ^$|^[A-Za-z0-9][A-Za-z0-9._:/-]{0,119}$
+     */
+  fallbackModelId?: string;
+}
+
+export interface ProviderKeysInput {
+  /**
+     * @maxLength 1000
+     * @nullable
+     */
+  openaiApiKey?: string | null;
+  /**
+     * @maxLength 1000
+     * @nullable
+     */
+  deepseekApiKey?: string | null;
+  /**
+     * @maxLength 1000
+     * @nullable
+     */
+  geminiApiKey?: string | null;
+  /**
+     * @maxLength 1000
+     * @nullable
+     */
+  openrouterApiKey?: string | null;
+  /** @maxLength 500 */
+  ollamaBaseUrl?: string;
 }
 
 export type AssistantSettingsInputProvider = typeof AssistantSettingsInputProvider[keyof typeof AssistantSettingsInputProvider];

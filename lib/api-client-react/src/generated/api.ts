@@ -26,14 +26,20 @@ import type {
   AssistantSettingsInput,
   AssistantTask,
   AssistantTimer,
+  ConversationThread,
+  ConversationThreadDetail,
   DashboardSummary,
   FileUploadInput,
   HealthStatus,
+  ModelSelectionInput,
   NoteInput,
+  ProviderKeysInput,
   TaskApprovalInput,
   TaskFallbackChoiceInput,
   TaskInput,
   TaskModelChoiceInput,
+  ThreadInput,
+  ThreadUpdate,
   TimerInput,
   WorkspacePreviewStatus,
   WorkspacePreviewStopAllResult,
@@ -221,6 +227,381 @@ export function useGetAssistantDashboard<TData = Awaited<ReturnType<typeof getAs
 
 
 
+
+export const getListConversationThreadsUrl = () => {
+
+
+
+
+  return `/api/assistant/threads`
+}
+
+export const listConversationThreads = async ( options?: Parameters<typeof customFetch>[1]): Promise<ConversationThread[]> => {
+
+  return customFetch<ConversationThread[]>(getListConversationThreadsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListConversationThreadsQueryKey = () => {
+    return [
+    `/api/assistant/threads`
+    ] as const;
+    }
+
+
+export const getListConversationThreadsQueryOptions = <TData = Awaited<ReturnType<typeof listConversationThreads>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listConversationThreads>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListConversationThreadsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listConversationThreads>>> = ({ signal }) => listConversationThreads({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listConversationThreads>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListConversationThreadsQueryResult = NonNullable<Awaited<ReturnType<typeof listConversationThreads>>>
+export type ListConversationThreadsQueryError = ErrorType<unknown>
+
+
+
+export function useListConversationThreads<TData = Awaited<ReturnType<typeof listConversationThreads>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listConversationThreads>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListConversationThreadsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreateConversationThreadUrl = () => {
+
+
+
+
+  return `/api/assistant/threads`
+}
+
+export const createConversationThread = async (threadInput: ThreadInput, options?: Parameters<typeof customFetch>[1]): Promise<ConversationThread> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<ConversationThread>(getCreateConversationThreadUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(threadInput)
+  }
+);}
+
+
+
+
+
+export const getCreateConversationThreadMutationKey = () => ['createConversationThread'] as const;
+
+export const getCreateConversationThreadMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createConversationThread>>, TError,CreateConversationThreadMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createConversationThread>>, TError,CreateConversationThreadMutationVariables, TContext> => {
+
+const mutationKey = getCreateConversationThreadMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createConversationThread>>, CreateConversationThreadMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  createConversationThread(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateConversationThreadMutationResult = NonNullable<Awaited<ReturnType<typeof createConversationThread>>>
+    export type CreateConversationThreadMutationBody = BodyType<ThreadInput>
+    export type CreateConversationThreadMutationError = ErrorType<unknown>
+    export type CreateConversationThreadMutationVariables = {data: BodyType<ThreadInput>}
+
+    export const useCreateConversationThread = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createConversationThread>>, TError,CreateConversationThreadMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createConversationThread>>,
+        TError,
+        CreateConversationThreadMutationVariables,
+        TContext
+      > => {
+      return useMutation(getCreateConversationThreadMutationOptions(options));
+    }
+
+export const getGetConversationThreadUrl = (id: string,) => {
+
+
+
+
+  return `/api/assistant/threads/${id}`
+}
+
+export const getConversationThread = async (id: string, options?: Parameters<typeof customFetch>[1]): Promise<ConversationThreadDetail> => {
+
+  return customFetch<ConversationThreadDetail>(getGetConversationThreadUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetConversationThreadQueryKey = (id: string,) => {
+    return [
+    `/api/assistant/threads/${id}`
+    ] as const;
+    }
+
+
+export const getGetConversationThreadQueryOptions = <TData = Awaited<ReturnType<typeof getConversationThread>>, TError = ErrorType<unknown>>(id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getConversationThread>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetConversationThreadQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getConversationThread>>> = ({ signal }) => getConversationThread(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getConversationThread>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetConversationThreadQueryResult = NonNullable<Awaited<ReturnType<typeof getConversationThread>>>
+export type GetConversationThreadQueryError = ErrorType<unknown>
+
+
+
+export function useGetConversationThread<TData = Awaited<ReturnType<typeof getConversationThread>>, TError = ErrorType<unknown>>(
+ id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getConversationThread>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetConversationThreadQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getUpdateConversationThreadUrl = (id: string,) => {
+
+
+
+
+  return `/api/assistant/threads/${id}`
+}
+
+export const updateConversationThread = async (id: string,
+    threadUpdate: ThreadUpdate, options?: Parameters<typeof customFetch>[1]): Promise<ConversationThread> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<ConversationThread>(getUpdateConversationThreadUrl(id),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(threadUpdate)
+  }
+);}
+
+
+
+
+
+export const getUpdateConversationThreadMutationKey = () => ['updateConversationThread'] as const;
+
+export const getUpdateConversationThreadMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateConversationThread>>, TError,UpdateConversationThreadMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateConversationThread>>, TError,UpdateConversationThreadMutationVariables, TContext> => {
+
+const mutationKey = getUpdateConversationThreadMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateConversationThread>>, UpdateConversationThreadMutationVariables> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  updateConversationThread(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateConversationThreadMutationResult = NonNullable<Awaited<ReturnType<typeof updateConversationThread>>>
+    export type UpdateConversationThreadMutationBody = BodyType<ThreadUpdate>
+    export type UpdateConversationThreadMutationError = ErrorType<unknown>
+    export type UpdateConversationThreadMutationVariables = {id: string;data: BodyType<ThreadUpdate>}
+
+    export const useUpdateConversationThread = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateConversationThread>>, TError,UpdateConversationThreadMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateConversationThread>>,
+        TError,
+        UpdateConversationThreadMutationVariables,
+        TContext
+      > => {
+      return useMutation(getUpdateConversationThreadMutationOptions(options));
+    }
+
+export const getDeleteConversationThreadUrl = (id: string,) => {
+
+
+
+
+  return `/api/assistant/threads/${id}`
+}
+
+export const deleteConversationThread = async (id: string, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+  return customFetch<void>(getDeleteConversationThreadUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getDeleteConversationThreadMutationKey = () => ['deleteConversationThread'] as const;
+
+export const getDeleteConversationThreadMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteConversationThread>>, TError,DeleteConversationThreadMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteConversationThread>>, TError,DeleteConversationThreadMutationVariables, TContext> => {
+
+const mutationKey = getDeleteConversationThreadMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteConversationThread>>, DeleteConversationThreadMutationVariables> = (props) => {
+          const {id} = props ?? {};
+
+          return  deleteConversationThread(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteConversationThreadMutationResult = NonNullable<Awaited<ReturnType<typeof deleteConversationThread>>>
+
+    export type DeleteConversationThreadMutationError = ErrorType<void>
+    export type DeleteConversationThreadMutationVariables = {id: string}
+
+    export const useDeleteConversationThread = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteConversationThread>>, TError,DeleteConversationThreadMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteConversationThread>>,
+        TError,
+        DeleteConversationThreadMutationVariables,
+        TContext
+      > => {
+      return useMutation(getDeleteConversationThreadMutationOptions(options));
+    }
 
 export const getListAssistantTasksUrl = () => {
 
@@ -1673,6 +2054,182 @@ export const useUpdateAssistantSettings = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getUpdateAssistantSettingsMutationOptions(options));
+    }
+
+export const getApplyAssistantModelUrl = () => {
+
+
+
+
+  return `/api/assistant/settings/model`
+}
+
+/**
+ * @summary Apply the working model without modifying keys or execution settings
+ */
+export const applyAssistantModel = async (modelSelectionInput: ModelSelectionInput, options?: Parameters<typeof customFetch>[1]): Promise<AssistantSettings> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<AssistantSettings>(getApplyAssistantModelUrl(),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(modelSelectionInput)
+  }
+);}
+
+
+
+
+
+export const getApplyAssistantModelMutationKey = () => ['applyAssistantModel'] as const;
+
+export const getApplyAssistantModelMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof applyAssistantModel>>, TError,ApplyAssistantModelMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof applyAssistantModel>>, TError,ApplyAssistantModelMutationVariables, TContext> => {
+
+const mutationKey = getApplyAssistantModelMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof applyAssistantModel>>, ApplyAssistantModelMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  applyAssistantModel(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ApplyAssistantModelMutationResult = NonNullable<Awaited<ReturnType<typeof applyAssistantModel>>>
+    export type ApplyAssistantModelMutationBody = BodyType<ModelSelectionInput>
+    export type ApplyAssistantModelMutationError = ErrorType<unknown>
+    export type ApplyAssistantModelMutationVariables = {data: BodyType<ModelSelectionInput>}
+
+    /**
+ * @summary Apply the working model without modifying keys or execution settings
+ */
+export const useApplyAssistantModel = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof applyAssistantModel>>, TError,ApplyAssistantModelMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof applyAssistantModel>>,
+        TError,
+        ApplyAssistantModelMutationVariables,
+        TContext
+      > => {
+      return useMutation(getApplyAssistantModelMutationOptions(options));
+    }
+
+export const getSaveAssistantProviderKeysUrl = () => {
+
+
+
+
+  return `/api/assistant/settings/keys`
+}
+
+/**
+ * @summary Save provider credentials without changing the working model
+ */
+export const saveAssistantProviderKeys = async (providerKeysInput: ProviderKeysInput, options?: Parameters<typeof customFetch>[1]): Promise<AssistantSettings> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<AssistantSettings>(getSaveAssistantProviderKeysUrl(),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(providerKeysInput)
+  }
+);}
+
+
+
+
+
+export const getSaveAssistantProviderKeysMutationKey = () => ['saveAssistantProviderKeys'] as const;
+
+export const getSaveAssistantProviderKeysMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof saveAssistantProviderKeys>>, TError,SaveAssistantProviderKeysMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof saveAssistantProviderKeys>>, TError,SaveAssistantProviderKeysMutationVariables, TContext> => {
+
+const mutationKey = getSaveAssistantProviderKeysMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof saveAssistantProviderKeys>>, SaveAssistantProviderKeysMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  saveAssistantProviderKeys(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SaveAssistantProviderKeysMutationResult = NonNullable<Awaited<ReturnType<typeof saveAssistantProviderKeys>>>
+    export type SaveAssistantProviderKeysMutationBody = BodyType<ProviderKeysInput>
+    export type SaveAssistantProviderKeysMutationError = ErrorType<unknown>
+    export type SaveAssistantProviderKeysMutationVariables = {data: BodyType<ProviderKeysInput>}
+
+    /**
+ * @summary Save provider credentials without changing the working model
+ */
+export const useSaveAssistantProviderKeys = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof saveAssistantProviderKeys>>, TError,SaveAssistantProviderKeysMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof saveAssistantProviderKeys>>,
+        TError,
+        SaveAssistantProviderKeysMutationVariables,
+        TContext
+      > => {
+      return useMutation(getSaveAssistantProviderKeysMutationOptions(options));
     }
 
 export const getDownloadAssistantWorkspaceUrl = () => {

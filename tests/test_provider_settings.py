@@ -348,6 +348,68 @@ class ProviderSettingsTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status_code, 200, response.text)
         self.assertEqual(response.json()["fallbackModelId"], "")
 
+    async def test_new_gemini_default_and_catalog_are_synchronized(self) -> None:
+        os.environ["AGENT_PROVIDER"] = "gemini"
+        response = await self.get_settings()
+        self.assertEqual(response.json()["modelId"], "gemini-3.5-flash-lite")
+        self.assertEqual(main.MODEL_OPTIONS["gemini"], {"gemini-3.5-flash-lite", "gemini-3.8-flash", "gemma-4-31b-it"})
+        self.assertTrue(main.is_budget_model("gemini", "gemini-3.5-flash-lite"))
+
+    async def test_apply_model_preserves_keys_and_execution_settings(self) -> None:
+        await self.put_settings(
+            base_url="http://127.0.0.1", geminiApiKey="test-gemini-preserved",
+            codeRunnerEnabled=True, appPreviewsEnabled=True,
+        )
+        before = dotenv_values(self.env_file)
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=main.app), base_url="http://127.0.0.1") as client:
+            response = await client.patch("/api/assistant/settings/model", json={"provider": "gemini", "modelId": "gemini-3.8-flash"})
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["modelId"], "gemini-3.8-flash")
+        after = dotenv_values(self.env_file)
+        for name in ("GEMINI_API_KEY", "RUN_LOCAL_CODE", "RUN_LOCAL_APP_PREVIEWS"):
+            self.assertEqual(after[name], before[name])
+        self.assertEqual(os.environ["AGENT_MODEL"], "gemini-3.8-flash")
+        self.assertNotIn("test-gemini-preserved", response.text)
+        self.assertEqual(self.env_file.stat().st_mode & 0o777, 0o600)
+
+    async def test_save_keys_without_selecting_the_key_provider(self) -> None:
+        os.environ.update({"AGENT_PROVIDER": "deepseek", "AGENT_MODEL": "deepseek-chat"})
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=main.app), base_url="http://127.0.0.1") as client:
+            response = await client.put("/api/assistant/settings/keys", json={"geminiApiKey": "vault-gemini-test"})
+            preserved = await client.put("/api/assistant/settings/keys", json={"geminiApiKey": ""})
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertTrue(response.json()["hasGeminiKey"])
+        self.assertEqual(response.json()["provider"], "deepseek")
+        self.assertEqual(response.json()["modelId"], "deepseek-chat")
+        self.assertTrue(preserved.json()["hasGeminiKey"])
+        self.assertNotIn("vault-gemini-test", response.text)
+        values = dotenv_values(self.env_file)
+        self.assertEqual(values["GEMINI_API_KEY"], "vault-gemini-test")
+        self.assertNotIn("AGENT_MODEL", values)
+
+    async def test_vault_validates_url_before_saving_any_keys(self) -> None:
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=main.app), base_url="http://127.0.0.1") as client:
+            response = await client.put("/api/assistant/settings/keys", json={"geminiApiKey": "must-not-save", "ollamaBaseUrl": "https://external.example/v1"})
+        self.assertEqual(response.status_code, 422)
+        self.assertFalse(self.env_file.exists())
+
+    async def test_apply_model_requires_key_and_valid_identifier(self) -> None:
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=main.app), base_url="http://127.0.0.1") as client:
+            missing_key = await client.patch("/api/assistant/settings/model", json={"provider": "gemini", "modelId": "gemini-3.8-flash"})
+            invalid_model = await client.patch("/api/assistant/settings/model", json={"provider": "gemini", "modelId": "../escape?bad"})
+        self.assertEqual(missing_key.status_code, 400)
+        self.assertEqual(invalid_model.status_code, 422)
+        self.assertFalse(self.env_file.exists())
+
+    async def test_new_settings_actions_reject_untrusted_origins(self) -> None:
+        os.environ.update({"REPL_ID": "test-repl", "REPLIT_DEV_DOMAIN": "assistant.replit.dev"})
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=main.app), base_url="https://assistant.replit.dev", headers={"Origin": "https://attacker.example"}) as client:
+            keys = await client.put("/api/assistant/settings/keys", json={"geminiApiKey": "must-not-save"})
+            model = await client.patch("/api/assistant/settings/model", json={"provider": "gemini", "modelId": "gemini-3.8-flash"})
+        self.assertEqual(keys.status_code, 403)
+        self.assertEqual(model.status_code, 403)
+        self.assertFalse(self.env_file.exists())
+
     async def test_ollama_provider_and_local_url_persist_without_an_api_key(self) -> None:
         response = await self.put_settings(
             base_url="http://127.0.0.1",

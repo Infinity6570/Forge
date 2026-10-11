@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, FormEvent, ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
 import { Link, Route, Router as WouterRouter, Switch, useLocation } from 'wouter';
 import {
@@ -18,10 +19,15 @@ import {
   useGetAssistantSettings,
   useGetWorkspacePreview,
   useListAssistantFiles,
+  useGetConversationThread,
+  getGetConversationThreadQueryKey,
+  getListConversationThreadsQueryKey,
   useListAssistantNotes,
   useListAssistantTasks,
   useListAssistantTimers,
   useUpdateAssistantSettings,
+  useApplyAssistantModel,
+  useSaveAssistantProviderKeys,
   useStopWorkspacePreviewApp,
   useRetryAssistantTaskStep,
   getGetAssistantDashboardQueryKey,
@@ -41,8 +47,13 @@ import {
   KeyRound, LoaderCircle, LockKeyhole, Menu, MoreHorizontal, Plus, RefreshCw, Search,
   Send, Settings2, ShieldCheck, Sparkles, StopCircle, Trash2, Upload, X, Zap, PanelRight, GripVertical,
 } from 'lucide-react';
+import { ConversationProvider, useConversations } from '@/components/conversation-provider';
+import { ChatSidebar } from '@/components/chat-sidebar';
+import { ChatModelPicker } from '@/components/chat-model-picker';
+import { ActivityStream } from '@/components/activity-stream';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { Toaster } from '@/components/ui/toaster';
+import { toast } from '@/hooks/use-toast';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import NotFound from '@/pages/not-found';
 
@@ -170,7 +181,14 @@ function PageHeading({ eyebrow, title, description, right }: { eyebrow: string; 
 }
 
 function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
-  return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><section className="modal-card enter" role="dialog" aria-modal="true" aria-label={title}><div className="modal-heading"><h2 className="font-display">{title}</h2><button className="icon-button" onClick={onClose} aria-label="Close dialog" data-testid="button-close-modal"><X size={18} /></button></div>{children}</section></div>;
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') closeRef.current(); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, []);
+  return createPortal(<div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><section className="modal-card enter" role="dialog" aria-modal="true" aria-label={title}><div className="modal-heading"><h2 className="font-display">{title}</h2><button className="icon-button" onClick={onClose} aria-label="Close dialog" data-testid="button-close-modal"><X size={18} /></button></div>{children}</section></div>, document.body);
 }
 
 function AppShell({ children, page }: { children: ReactNode; page: Page }) {
@@ -208,6 +226,7 @@ function AppShell({ children, page }: { children: ReactNode; page: Page }) {
   return <div className={`app-frame shell-noise ${inspectorOpen ? 'inspector-open' : 'inspector-closed'}`} style={{ '--inspector-width': `${inspectorWidth}px` } as CSSProperties}>
     <aside className={`sidebar ${mobileOpen ? 'mobile-open' : ''}`}>
       <div className="brand"><div className="brand-mark" aria-hidden="true"><svg viewBox="0 0 32 32" fill="none"><path d="M5 9.5 16 4l11 5.5-4.7 2.35L16 9l-6.3 2.85L5 9.5Z" /><path d="m5 9.5 2.8 12L16 27l8.2-5.5L27 9.5" /><path d="m9.7 11.85 1.55 7.1L16 22l4.75-3.05 1.55-7.1" /><path d="m11.25 18.95 4.75-2.6 4.75 2.6M16 9v7.35" /></svg></div><div><div className="brand-name">Forge</div><div className="brand-caption">LOCAL OPERATIONS</div></div><span className="runtime-ready-dot" aria-label="Local runtime ready" title="Local runtime ready" /><button className="sidebar-close icon-button" onClick={() => setMobileOpen(false)} aria-label="Close navigation"><X size={17} /></button></div>
+      <ChatSidebar onPicked={() => setMobileOpen(false)} />
       <div className="workspace-label">YOUR WORKSPACE</div>
       <nav className="side-nav" aria-label="Main navigation">{navItems.map(({ href, label, icon: Icon }) => <Link key={href} href={href} className={`nav-link ${current === (href === '/' ? 'home' : href.slice(1)) ? 'active' : ''}`} onClick={() => setMobileOpen(false)} data-testid={`link-nav-${href === '/' ? 'home' : href.slice(1)}`}><Icon size={17} /><span>{label}</span>{href === '/tasks' && <span className="nav-trailing"><span className="nav-dot" /></span>}</Link>)}</nav>
       <div className="side-divider" />
@@ -220,7 +239,7 @@ function AppShell({ children, page }: { children: ReactNode; page: Page }) {
     {mobileOpen && <button className="mobile-scrim" onClick={() => setMobileOpen(false)} aria-label="Close menu" />}
     <main className="main-area">
       <header className="topbar"><button className="mobile-menu icon-button" aria-label="Open navigation" onClick={() => setMobileOpen(true)} data-testid="button-open-navigation"><Menu size={20} /></button><div className="breadcrumbs"><span>Workspace</span><span className="crumb-slash">/</span><strong>{navItems.find((n) => (n.href === '/' ? 'home' : n.href.slice(1)) === current)?.label ?? 'Overview'}</strong></div><div className="topbar-right"><span className="ops-tagline">LOCAL OPS // 6570</span><div className="system-online"><span className="online-pip" />All systems operational</div><ThemeChooser /><CyberFxToggle /><button className="inspector-toggle icon-button" aria-label={inspectorOpen ? 'Close workspace inspector' : 'Open workspace inspector'} aria-expanded={inspectorOpen} onClick={() => setInspectorOpen((open) => !open)} data-testid="button-toggle-inspector"><PanelRight size={17} /></button><button className="topbar-icon" aria-label="Help" onClick={() => window.alert('Your agent can help with documents, reminders, research, and code-related work.')} data-testid="button-help"><CircleHelp size={18} /></button><div className="topbar-avatar">F</div></div></header>
-      <div className="center-pane"><div className="page-wrap">{children}</div><footer className="app-footer"><span>Made for thoughtful delegation.</span><span className="footer-build">FORGE <span>·</span> LOCAL COMMAND CENTER</span></footer></div>
+      <div className={`center-pane ${page === 'home' ? 'center-pane-home' : ''}`}><div className="page-wrap">{children}</div><footer className="app-footer"><span>Made for thoughtful delegation.</span><span className="footer-build">FORGE <span>·</span> LOCAL COMMAND CENTER</span></footer></div>
     </main>
     {inspectorOpen && <div className="inspector-resize" role="separator" aria-orientation="vertical" aria-label="Resize workspace inspector" aria-valuemin={380} aria-valuemax={450} aria-valuenow={inspectorWidth} tabIndex={0} onPointerDown={(event) => { event.preventDefault(); setResizingInspector(true); }} onKeyDown={(event) => { if (event.key === 'ArrowLeft') setInspectorWidth((width) => Math.min(450, width + 10)); if (event.key === 'ArrowRight') setInspectorWidth((width) => Math.max(380, width - 10)); }} data-testid="separator-inspector"><GripVertical size={14} /></div>}
     {inspectorOpen && <InspectorPanel onClose={() => setInspectorOpen(false)} />}
@@ -326,41 +345,6 @@ function LogMessage({ message, kind }: { message: string; kind: string }) {
   })}</div>;
 }
 
-function ActivityStream({ tasks, loading, onOpen }: { tasks: AssistantTask[]; loading: boolean; onOpen: (task: AssistantTask) => void }) {
-  const scroller = useRef<HTMLDivElement>(null);
-  const following = useRef(true);
-  const streamKey = tasks.map((task) => `${task.id}:${task.logs?.length ?? 0}:${task.updatedAt}`).join('|');
-  useEffect(() => {
-    if (following.current && scroller.current) scroller.current.scrollTop = scroller.current.scrollHeight;
-  }, [streamKey]);
-  const sectionFor = (kind: string, message: string) => {
-    const lower = message.toLowerCase();
-    if (kind === 'plan') return 'Planning';
-    if (kind === 'tool' && /terminal|shell|command|python|node|bash/.test(lower)) return 'Terminal runs';
-    if (kind === 'tool') return 'Tool calls';
-    if (kind === 'success' || kind === 'result' || /verif|check|test/.test(lower)) return 'Verification';
-    return 'Agent activity';
-  };
-  if (loading) return <div className="activity-stream"><Skeleton rows={6} /></div>;
-  if (!tasks.length) return <div className="activity-stream"><div className="stream-empty"><Activity size={20} /><strong>Waiting for your first task</strong><span>Send a request below. Real execution steps will appear here.</span></div></div>;
-  return <div className="activity-stream" ref={scroller} onScroll={(event) => {
-    const element = event.currentTarget;
-    following.current = element.scrollHeight - element.scrollTop - element.clientHeight < 72;
-  }} data-testid="activity-stream">
-    {tasks.map((task) => <article className="stream-task" key={task.id} data-task-status={task.status} data-task-running={task.status === 'running' || String(task.status) === 'processing' ? 'true' : 'false'} data-testid={`stream-task-${task.id}`}>
-      <button className="stream-task-heading" onClick={() => onOpen(task)} data-testid={`button-stream-task-${task.id}`}><span className="stream-task-marker"><span className={statusTone(task.status)} /></span><span><strong>{task.objective}</strong><small>{task.currentStep || task.result || task.error || 'Task activity'} · {timeAgo(task.updatedAt)}</small></span><StatusPill status={task.status} /><ArrowRight size={14} /></button>
-      {task.currentStep && <div className="stream-current"><span className="stream-live-mark" /><div><small>CURRENT STEP</small><strong>{task.currentStep}{(task.status === 'running' || String(task.status) === 'processing') && <span className="terminal-cursor" aria-hidden="true">▋</span>}</strong></div></div>}
-      <div className="stream-steps">{(task.logs ?? []).map((log) => <details className="stream-step" key={log.id} open={log.kind === 'error' || log.kind === 'warning'} data-testid={`step-log-${log.id}`}>
-        <summary><span className={`log-dot ${log.kind}`} /><span className="step-category">{sectionFor(log.kind, log.message)}</span><span className="step-title">{log.kind}</span><time>{formatDate(log.createdAt)}</time><ChevronDown size={13} /></summary>
-         <div className="step-body"><LogMessage message={log.message} kind={log.kind} /></div>
-      </details>)}</div>
-      {task.result && <div className="stream-result"><CheckCircle2 size={14} /><span>{task.result}</span></div>}
-      {task.error && <div className="stream-error"><AlertCircle size={14} /><span>{task.error}</span></div>}
-      {!task.currentStep && !task.logs?.length && !task.result && !task.error && <p className="stream-no-events">No execution updates yet.</p>}
-    </article>)}
-  </div>;
-}
-
 function TaskActionDock({ task }: { task?: AssistantTask }) {
   const qc = useQueryClient();
   const approval = useChooseAssistantTaskApproval();
@@ -406,9 +390,13 @@ function TaskActionDock({ task }: { task?: AssistantTask }) {
 
 function Dashboard() {
   const qc = useQueryClient();
-  const summary = useGetAssistantDashboard();
-  const listTasks = useListAssistantTasks();
+  const summary = useGetAssistantDashboard({ query: { queryKey: getGetAssistantDashboardQueryKey(), refetchInterval: 4000 } });
+  const listTasks = useListAssistantTasks({ query: { queryKey: getListAssistantTasksQueryKey(), refetchInterval: 2000 } });
   const createTask = useCreateAssistantTask();
+  const conv = useConversations();
+  const { selectedId: threadId } = conv;
+  const threadDetail = useGetConversationThread(threadId ?? '', { query: { enabled: !!threadId, queryKey: getGetConversationThreadQueryKey(threadId ?? ''), refetchInterval: 2000 } });
+  const threadStale = (threadDetail.error as { status?: number } | null)?.status === 404;
   const settingsQuery = useGetAssistantSettings();
   const [objective, setObjective] = useState('');
   const [submitError, setSubmitError] = useState('');
@@ -418,36 +406,72 @@ function Dashboard() {
   const [attachmentError, setAttachmentError] = useState('');
   const [modelMode, setModelMode] = useState('configured');
   const attachmentInput = useRef<HTMLInputElement>(null);
+  const objectiveInput = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => {
+    const input = objectiveInput.current;
+    if (input) {
+      input.style.height = 'auto';
+      input.style.height = `${Math.min(input.scrollHeight, 120)}px`;
+    }
+  }, [objective]);
+  useEffect(() => {
+    const syncModel = () => setModelMode('configured');
+    window.addEventListener('forge:model-applied', syncModel);
+    return () => window.removeEventListener('forge:model-applied', syncModel);
+  }, []);
   const details = useGetAssistantTask(selectedTaskId ?? '', { query: { enabled: !!selectedTaskId, queryKey: getGetAssistantTaskQueryKey(selectedTaskId ?? ''), refetchInterval: (query) => {
     const task = query.state.data;
     return task && ['queued', 'running', 'processing', 'awaiting_approval', 'awaiting_confirmation'].includes(task.status) ? 2500 : false;
   } } });
   const abort = useAbortAssistantTask();
-  const tasks = summary.data?.recentTasks ?? listTasks.data ?? [];
-  const actionTaskId = tasks.find((task) => task.requiresApproval || task.requiresModelConfirmation || task.recommendationKind === 'fallback')?.id
-    ?? tasks.find((task) => ['running', 'processing', 'queued', 'awaiting_confirmation', 'awaiting_approval'].includes(task.status))?.id ?? '';
+  const { select: selectThread, resetSignal } = conv;
+  const selectedThreadRef = useRef(threadId);
+  selectedThreadRef.current = threadId;
+  const adoptingSentThread = useRef<string | undefined>(undefined);
+  useEffect(() => { if (threadStale) selectThread(undefined); }, [threadStale, selectThread]);
+  useEffect(() => {
+    if (!adoptingSentThread.current || adoptingSentThread.current !== threadId) {
+      setObjective(''); setAttachments([]);
+    }
+    adoptingSentThread.current = undefined;
+    setSubmitError(''); setAttachmentError(''); setSelectedTaskId(undefined);
+  }, [threadId, resetSignal]);
+  const tasks = useMemo(() => (threadId ? threadDetail.data?.tasks ?? [] : []), [threadId, threadDetail.data]);
+  const threadMessages = threadDetail.data?.messages;
+  const threadTitle = threadId ? threadDetail.data?.title ?? conv.threads.find((t) => t.id === threadId)?.title ?? 'Chat' : 'New chat';
+  const actionTaskId = tasks.find((task) => task.requiresApproval || task.requiresModelConfirmation)?.id
+    ?? tasks.find((task) => ['running', 'processing', 'queued', 'awaiting_confirmation', 'awaiting_approval'].includes(task.status))?.id
+    ?? [...tasks].reverse().find((task) => task.recommendationKind === 'fallback')?.id ?? '';
   const actionTask = useGetAssistantTask(actionTaskId, { query: { enabled: !!actionTaskId, queryKey: getGetAssistantTaskQueryKey(actionTaskId), refetchInterval: (query) => {
     const task = query.state.data;
     return task && ['queued', 'running', 'processing', 'awaiting_approval', 'awaiting_confirmation'].includes(task.status) ? 2500 : false;
   } } });
-  const activeExecution = [details.data, actionTask.data].some((task) => task?.status === 'running' || String(task?.status) === 'processing');
-  const referenceModel = tasks.find((task) => task.modelId);
+  const activeExecution = [...tasks, details.data, actionTask.data].some((task) => task?.status === 'running' || String(task?.status) === 'processing');
+  const referenceModel = [...tasks].reverse().find((task) => task.modelId);
   const isPending = createTask.isPending;
+  const threadBusy = !!threadId && (!threadDetail.data || !!threadDetail.data.activeTaskId);
   const submit = (event: FormEvent) => {
     event.preventDefault();
     const text = objective.trim();
-    if (!text) return;
+    if (!text || createTask.isPending || uploadingAttachment || threadBusy) return;
     setSubmitError('');
     const directModel = modelMode.startsWith('direct|') ? modelMode.split('|') : undefined;
-    createTask.mutate({ data: { objective: text, ...(attachments.length ? { fileIds: attachments.map((file) => file.id) } : {}), ...(directModel?.length === 3 ? { provider: directModel[1] as AssistantTask['provider'], modelId: directModel[2] } : modelMode === 'last-used' && referenceModel ? { provider: referenceModel.provider, modelId: referenceModel.modelId } : {}) } }, {
-      onSuccess: (task) => {
-        setObjective('');
-        setAttachments([]);
-        setSelectedTaskId(task.id);
+    createTask.mutate({ data: { objective: text, ...(threadId ? { threadId } : {}), ...(attachments.length ? { fileIds: attachments.map((file) => file.id) } : {}), ...(directModel?.length === 3 ? { provider: directModel[1] as AssistantTask['provider'], modelId: directModel[2] } : modelMode === 'last-used' && referenceModel ? { provider: referenceModel.provider, modelId: referenceModel.modelId } : {}) } }, {
+      onSuccess: async (task) => {
+        if (task.threadId) {
+          await qc.invalidateQueries({ queryKey: getGetConversationThreadQueryKey(task.threadId) });
+          if (selectedThreadRef.current === threadId) {
+            setObjective(''); setAttachments([]);
+            if (task.threadId !== threadId) adoptingSentThread.current = task.threadId;
+            await conv.adopt(task.threadId);
+          } else {
+            await qc.invalidateQueries({ queryKey: getListConversationThreadsQueryKey() });
+          }
+        }
         qc.invalidateQueries({ queryKey: getGetAssistantDashboardQueryKey() });
         qc.invalidateQueries({ queryKey: getListAssistantTasksQueryKey() });
       },
-      onError: () => setSubmitError('Your request could not be sent. Please try again.'),
+      onError: (error) => { if (selectedThreadRef.current === threadId) setSubmitError((error as { status?: number }).status === 409 ? 'This chat is still working. Wait for it to finish or stop the task.' : 'Your request could not be sent. Please try again.'); },
     });
   };
   const attachFile = async (file?: File) => {
@@ -477,19 +501,26 @@ function Dashboard() {
     { label: 'Knowledge', value: (summary.data?.notesCount ?? 0) + (summary.data?.filesCount ?? 0), icon: BookOpen, tint: 'plum', note: `${summary.data?.notesCount ?? 0} notes · ${summary.data?.filesCount ?? 0} files` },
   ];
   return <AppShell page="home"><div className="dashboard-page command-center enter" data-task-active={activeExecution ? 'true' : 'false'} data-testid="dashboard-command-center">
-    <div className="command-heading"><div><p className="eyebrow">FORGE / COMMAND CENTER</p><h1>Work in motion</h1></div><div className="command-status" data-testid="status-agent-state"><span className={`online-pip ${activeExecution ? 'working' : ''}`} />{summary.isLoading ? 'Connecting' : activeExecution ? 'Running' : 'Idle'}<span className="status-divider" />{referenceModel ? modelDisplayName(referenceModel.provider, referenceModel.modelId) : 'Configured model'}</div></div>
+    <div className="command-heading"><div><p className="eyebrow">FORGE / COMMAND CENTER</p><h1>Work in motion</h1></div><div className="command-status" data-testid="status-agent-state"><span className={`online-pip ${activeExecution ? 'working' : ''}`} />{summary.isLoading ? 'Connecting' : activeExecution ? 'Running' : 'Idle'}<span className="status-divider" />{settingsQuery.data ? modelDisplayName(settingsQuery.data.provider, settingsQuery.data.modelId) : 'Configured model'}</div></div>
     {summary.isError && <QueryProblem retry={() => summary.refetch()} message="Your overview is temporarily unavailable." />}
     <div className="command-metrics" aria-label="Workspace status">{counts.map(({ label, value }) => <span key={label} data-testid={`metric-${label.toLowerCase().replaceAll(' ', '-')}`}><i />{label}<strong>{summary.isLoading ? '—' : value ?? 0}</strong></span>)}</div>
-    <section className="activity-panel execution-panel" data-task-active={activeExecution ? 'true' : 'false'}><div className="activity-panel-heading"><div><span className="live-label"><span className="online-pip" />LIVE TASK STREAM</span><h2>Recent execution</h2></div><Link href="/tasks" className="text-link" data-testid="link-all-tasks">Task activity <ArrowRight size={14} /></Link></div>
-      {listTasks.isError && !summary.data ? <QueryProblem retry={() => listTasks.refetch()} /> : <ActivityStream tasks={tasks.slice(0, 8)} loading={summary.isLoading && listTasks.isLoading} onOpen={(task) => setSelectedTaskId(task.id)} />}
+    <section className="activity-panel execution-panel" data-task-active={activeExecution ? 'true' : 'false'}><div className="activity-panel-heading"><div><span className="live-label"><span className="online-pip" />LIVE TASK STREAM</span><h2 className="thread-title" data-testid="text-thread-title">{threadTitle}</h2></div><Link href="/tasks" className="text-link" data-testid="link-all-tasks">Task activity <ArrowRight size={14} /></Link></div>
+      {threadId && threadDetail.isError && !threadStale && !threadDetail.data ? <QueryProblem retry={() => threadDetail.refetch()} message="This chat could not be loaded." /> : <ActivityStream key={threadId ?? 'new'} tasks={tasks} messages={threadMessages} loading={!!threadId && threadDetail.isLoading} onOpen={(task) => setSelectedTaskId(task.id)} />}
     </section>
     <TaskActionDock task={actionTask.data} />
     <section className="composer-panel command-composer">
       <div className="composer-heading"><span className="composer-icon"><Sparkles size={15} /></span><div><strong>Give Forge a task</strong><span>Specific requests produce better work.</span></div></div>
-      <form onSubmit={submit}><div className="terminal-input-row"><span className="terminal-prompt" aria-hidden="true">USR@FORGE-6570:~$</span><textarea value={objective} onChange={(event) => setObjective(event.target.value)} placeholder="Describe what you want done…" maxLength={12000} rows={2} data-testid="input-objective" aria-label="Task objective" /></div>
+      <form onSubmit={submit}><div className="terminal-input-row"><span className="terminal-prompt" aria-hidden="true">USR@FORGE-6570:~$</span><textarea ref={objectiveInput} value={objective} onChange={(event) => setObjective(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); if (!event.repeat) event.currentTarget.form?.requestSubmit(); } }} placeholder="Describe what you want done…" maxLength={12000} rows={1} data-testid="input-objective" aria-label="Task objective" aria-keyshortcuts="Enter Shift+Enter" /></div>
         {attachments.length > 0 && <div className="task-attachments">{attachments.map((file) => <span className="attachment-chip" key={file.id}><FileText size={13} />{file.name}<button type="button" onClick={() => setAttachments((current) => current.filter((item) => item.id !== file.id))} aria-label={`Remove ${file.name}`} data-testid={`button-remove-attachment-${file.id}`}><X size={13} /></button></span>)}</div>}
         {attachmentError && <p className="field-error" role="alert">{attachmentError}</p>}
-        <div className="composer-bottom"><span>{submitError ? <span className="field-error">{submitError}</span> : <span>{objective.length.toLocaleString()} / 12,000 characters</span>}</span><div className="composer-actions"><label className="composer-model">Model<select value={modelMode} onChange={(event) => setModelMode(event.target.value)} aria-label="Task model" data-testid="select-task-model"><option value="configured">Configured default · {settingsQuery.data ? modelDisplayName(settingsQuery.data.provider, settingsQuery.data.modelId) : 'loading'}</option><option value="last-used" disabled={!referenceModel}>Last used · {referenceModel ? modelDisplayName(referenceModel.provider, referenceModel.modelId) : 'unavailable'}</option>{Object.entries(models).map(([groupProvider, items]) => groupProvider === 'ollama' && !settingsQuery.data?.localSetupAllowed ? null : <optgroup key={groupProvider} label={groupProvider === 'gemini' ? 'Google Gemini' : groupProvider === 'openrouter' ? 'OpenRouter' : groupProvider === 'ollama' ? 'Local · Ollama' : groupProvider === 'openai' ? 'OpenAI' : 'DeepSeek'}>{items.map((item) => <option key={`${groupProvider}:${item.id}`} value={`direct|${groupProvider}|${item.id}`}>{item.name}</option>)}</optgroup>)}</select></label><input ref={attachmentInput} type="file" hidden onChange={(event) => { void attachFile(event.currentTarget.files?.[0]); }} data-testid="input-task-attachment" /><button type="button" className="button button-quiet submit-button" onClick={() => attachmentInput.current?.click()} disabled={uploadingAttachment} data-testid="button-attach-task-file"><Upload size={14} />{uploadingAttachment ? 'Uploading' : 'Attach'}</button><button className="button button-primary submit-button" disabled={!objective.trim() || isPending || uploadingAttachment} data-testid="button-submit-task">{isPending ? <LoaderCircle className="spin" size={16} /> : <Send size={15} />}{isPending ? 'Sending…' : 'Send'}</button></div></div></form>
+        {submitError && <p className="field-error" role="alert">{submitError}</p>}
+        <div className="composer-bottom"><div className="composer-actions">
+          <span className="composer-counter" data-testid="text-prompt-counter">{objective.length.toLocaleString()} / 12,000</span>
+          <ChatModelPicker value={modelMode} onChange={setModelMode} configuredLabel={settingsQuery.data ? modelDisplayName(settingsQuery.data.provider, settingsQuery.data.modelId) : 'Loading model…'} lastUsedLabel={referenceModel ? modelDisplayName(referenceModel.provider, referenceModel.modelId) : null} groups={Object.entries(models).filter(([groupProvider]) => groupProvider !== 'ollama' || settingsQuery.data?.localSetupAllowed).map(([groupProvider, items]) => ({ id: groupProvider, label: groupProvider === 'gemini' ? 'Google Gemini' : groupProvider === 'openrouter' ? 'OpenRouter' : groupProvider === 'ollama' ? 'Local · Ollama' : groupProvider === 'openai' ? 'OpenAI' : 'DeepSeek', items }))} />
+          <input ref={attachmentInput} type="file" hidden onChange={(event) => { void attachFile(event.currentTarget.files?.[0]); }} data-testid="input-task-attachment" />
+          <button type="button" className="button button-quiet submit-button composer-attach" title="Attach a file" aria-label={uploadingAttachment ? 'Uploading attachment' : 'Attach a file'} onClick={() => attachmentInput.current?.click()} disabled={uploadingAttachment} data-testid="button-attach-task-file">{uploadingAttachment ? <LoaderCircle className="spin" size={12} /> : <Upload size={12} />}</button>
+          <button className="button button-primary submit-button" disabled={!objective.trim() || isPending || uploadingAttachment || threadBusy} title={threadBusy ? 'Wait for this chat to finish its current task, or stop it in View Details.' : 'Send task'} data-testid="button-submit-task">{isPending ? <LoaderCircle className="spin" size={12} /> : <Send size={12} />}{isPending ? 'Sending…' : threadBusy ? 'Working' : 'Send'}</button>
+        </div></div></form>
     </section>
     {selectedTaskId && <TaskDetailDialog task={details.data} loading={details.isLoading} error={details.isError} retry={() => details.refetch()} close={() => setSelectedTaskId(undefined)} abort={(id) => abort.mutate({ id }, { onSuccess: () => { qc.invalidateQueries({ queryKey: getGetAssistantDashboardQueryKey() }); qc.invalidateQueries({ queryKey: getListAssistantTasksQueryKey() }); } })} aborting={abort.isPending} />}
   </div></AppShell>;
@@ -826,11 +857,9 @@ function WorkspacePage() {
 }
 
 const GEMINI_MODEL_IDS = new Set([
-  'gemini-2.5-flash',
-  'gemini-2.5-pro',
-  'gemini-2.5-flash-lite',
   'gemini-3.5-flash-lite',
   'gemini-3.8-flash',
+  'gemma-4-31b-it',
 ]);
 const DEEPSEEK_MODEL_IDS = new Set(['deepseek-chat', 'deepseek-reasoner']);
 
@@ -845,11 +874,9 @@ const models = {
     { id: 'deepseek-reasoner', name: 'deepseek-reasoner', detail: 'Thinking mode for complex logic and math', descriptor: 'DEEP FOCUS', color: 'gold' },
   ],
   gemini: [
-    { id: 'gemini-2.5-flash', name: 'gemini-2.5-flash', detail: 'Default · Balanced', descriptor: 'BALANCED', color: 'sage' },
-    { id: 'gemini-2.5-pro', name: 'gemini-2.5-pro', detail: 'High reasoning', descriptor: 'DEEP FOCUS', color: 'gold' },
-    { id: 'gemini-2.5-flash-lite', name: 'gemini-2.5-flash-lite', detail: 'Cost-effective · Reliable fallback', descriptor: 'QUICK', color: 'blue' },
-    { id: 'gemini-3.5-flash-lite', name: 'gemini-3.5-flash-lite', detail: 'Ultra-fast · High throughput', descriptor: 'QUICK', color: 'blue' },
-    { id: 'gemini-3.8-flash', name: 'gemini-3.8-flash', detail: 'Latest agentic and coding model', descriptor: 'DEEP FOCUS', color: 'gold' },
+    { id: 'gemini-3.5-flash-lite', name: 'Gemini 3.5 Flash Lite', detail: 'Default · Budget-first', descriptor: 'QUICK', color: 'blue' },
+    { id: 'gemini-3.8-flash', name: 'Gemini 3.8 Flash', detail: 'High-capability Flash model', descriptor: 'BALANCED', color: 'sage' },
+    { id: 'gemma-4-31b-it', name: 'Gemma 4 31B', detail: 'Google open-weight model', descriptor: 'BALANCED', color: 'sage' },
   ],
   openrouter: [
     { id: 'deepseek/deepseek-chat', name: 'DeepSeek Chat (OpenRouter)', detail: 'Balanced tool-calling model', descriptor: 'BALANCED', color: 'sage' },
@@ -869,6 +896,8 @@ function SettingsPage() {
   const qc = useQueryClient();
   const settingsQuery = useGetAssistantSettings();
   const updateSettings = useUpdateAssistantSettings();
+  const applyModel = useApplyAssistantModel();
+  const saveVault = useSaveAssistantProviderKeys();
   const [provider, setProvider] = useState<'openai' | 'deepseek' | 'gemini' | 'openrouter' | 'ollama'>('deepseek');
   const [modelId, setModelId] = useState('deepseek-chat');
   const [customModelId, setCustomModelId] = useState('');
@@ -881,6 +910,7 @@ function SettingsPage() {
   const [appPreviewsEnabled, setAppPreviewsEnabled] = useState(false);
   const [providerError, setProviderError] = useState('');
   const [providerSaved, setProviderSaved] = useState(false);
+  const [modelApplied, setModelApplied] = useState('');
   const [confirmBeforeActions, setConfirmBeforeActions] = useState(true);
   const [allowExternalResearch, setAllowExternalResearch] = useState(true);
   const [includeFiles, setIncludeFiles] = useState(true);
@@ -914,23 +944,50 @@ function SettingsPage() {
         : credentialStatus?.localSetupAllowed;
   const saveProviderSettings = () => {
     setProviderError('');
-    setProviderSaved(false);
-    const selectedModelId = customModelId.trim() ? customModelId.trim() : modelId;
-    const payload: AssistantSettingsInput = { provider, modelId: selectedModelId, codeRunnerEnabled, appPreviewsEnabled, ollamaBaseUrl };
-    if (provider === 'gemini') payload.fallbackModelId = fallbackModelId.trim();
-    if (apiKeys.openaiApiKey.trim()) payload.openaiApiKey = apiKeys.openaiApiKey.trim();
-    if (apiKeys.deepseekApiKey.trim()) payload.deepseekApiKey = apiKeys.deepseekApiKey.trim();
-    if (apiKeys.geminiApiKey.trim()) payload.geminiApiKey = apiKeys.geminiApiKey.trim();
-    if (apiKeys.openrouterApiKey.trim()) payload.openrouterApiKey = apiKeys.openrouterApiKey.trim();
+    if (!credentialStatus) return;
+    const payload: AssistantSettingsInput = { provider: credentialStatus.provider, modelId: credentialStatus.modelId, codeRunnerEnabled, appPreviewsEnabled };
     updateSettings.mutate({ data: payload }, {
       onSuccess: (result: AssistantSettings) => {
-        qc.setQueryData(getGetAssistantSettingsQueryKey(), result);
-        setModelId(selectedModelId);
+        syncSettings(result);
+        setSaved(true);
+      },
+      onError: (error) => setProviderError(settingsError(error)),
+    });
+  };
+  const syncSettings = (result: AssistantSettings) => {
+    qc.setQueryData(getGetAssistantSettingsQueryKey(), result);
+    void qc.invalidateQueries({ queryKey: getGetAssistantSettingsQueryKey() });
+  };
+  const settingsError = (error: unknown) => {
+    const detail = (error as { data?: { detail?: unknown } })?.data?.detail;
+    return typeof detail === 'string' ? detail : 'Settings could not be saved. Check the connection and try again.';
+  };
+  const saveKeys = () => {
+    setProviderError('');
+    setProviderSaved(false);
+    saveVault.mutate({ data: { ...Object.fromEntries(Object.entries(apiKeys).filter(([, value]) => value.trim()).map(([key, value]) => [key, value.trim()])), ollamaBaseUrl } }, {
+      onSuccess: (result) => {
+        syncSettings(result);
         setApiKeys({ openaiApiKey: '', deepseekApiKey: '', geminiApiKey: '', openrouterApiKey: '' });
         setOllamaBaseUrl(result.ollamaBaseUrl || ollamaBaseUrl);
         setProviderSaved(true);
+        toast({ title: 'API KEYS SAVED', description: 'Provider status refreshed. Existing blank keys were preserved.' });
       },
-      onError: () => setProviderError('Provider settings could not be saved. Check the connection and try again.'),
+      onError: (error) => setProviderError(settingsError(error)),
+    });
+  };
+  const applyWorkingModel = () => {
+    setProviderError('');
+    const selectedModelId = customModelId.trim() || modelId;
+    applyModel.mutate({ data: { provider, modelId: selectedModelId, ...(provider === 'gemini' ? { fallbackModelId: fallbackModelId.trim() } : {}) } }, {
+      onSuccess: (result) => {
+        syncSettings(result);
+        setModelId(result.modelId);
+        setModelApplied(result.modelId);
+        window.dispatchEvent(new Event('forge:model-applied'));
+        toast({ title: `ACTIVE MODEL SET: ${result.modelId}` });
+      },
+      onError: (error) => setProviderError(settingsError(error)),
     });
   };
   return <AppShell page="settings"><div className="content-page settings-page enter">
@@ -944,12 +1001,13 @@ function SettingsPage() {
         {Object.entries(models).map(([groupProvider, items]) => groupProvider === 'ollama' && !credentialStatus?.localSetupAllowed ? null : <optgroup key={groupProvider} label={groupProvider === 'gemini' ? 'Google Gemini' : groupProvider === 'openrouter' ? 'OpenRouter' : groupProvider === 'ollama' ? 'Local · Ollama' : groupProvider === 'openai' ? 'OpenAI' : 'DeepSeek'}>{items.map((item) => <option key={item.id} value={`${groupProvider}::${item.id}`}>{item.name}</option>)}<option value={`${groupProvider}::custom`}>Custom model name…</option></optgroup>)}
       </select></label>
       <label className="form-label custom-model-control">Custom Model Name <span className="optional-label">Optional; overrides the model selected above.</span><input type="text" autoComplete="off" spellCheck={false} value={customModelId} onChange={(event) => { setCustomModelId(event.target.value); setProviderSaved(false); }} placeholder={provider === 'gemini' ? 'e.g. gemini-3.1-pro-preview' : 'Enter a provider model ID'} data-testid="input-custom-model-id" /></label>
-      {provider === 'gemini' && <label className="form-label custom-model-control">Automatic fallback model <span className="optional-label">Optional; retry once after a Gemini 429 or 503. Leave blank to disable.</span><input type="text" autoComplete="off" spellCheck={false} value={fallbackModelId} onChange={(event) => { setFallbackModelId(event.target.value); setProviderSaved(false); }} placeholder="e.g. gemini-2.5-flash-lite" data-testid="input-gemini-fallback-model-id" /></label>}
+      {provider === 'gemini' && <label className="form-label custom-model-control">Automatic fallback model <span className="optional-label">Optional; retry once after a Gemini 429 or 503. Leave blank to disable.</span><input type="text" autoComplete="off" spellCheck={false} value={fallbackModelId} onChange={(event) => { setFallbackModelId(event.target.value); setProviderSaved(false); }} placeholder="e.g. gemini-3.5-flash-lite" data-testid="input-gemini-fallback-model-id" /></label>}
       <p className="settings-footnote"><LockKeyhole size={13} /> {provider === 'ollama' ? 'Local Ollama endpoint selected.' : configured ? 'Provider key configured.' : 'Add a provider key to run tasks.'} Keys are never sent back to the browser.</p>
+      <div className="settings-save-row model-apply-row"><span className="save-state" role="status">{modelApplied === (customModelId.trim() || modelId) && <><CheckCircle2 size={15} /> ACTIVE MODEL SET: {modelApplied}</>}</span><button type="button" className="button button-primary" disabled={!credentialStatus?.providerSettingsAllowed || applyModel.isPending || saveVault.isPending || updateSettings.isPending} onClick={applyWorkingModel} data-testid="button-apply-model">{applyModel.isPending ? <LoaderCircle className="spin" size={15} /> : <Zap size={15} />}{applyModel.isPending ? 'APPLYING…' : 'APPLY MODEL'}</button></div>
     </section>
     <section className="settings-section key-vault" data-testid="settings-api-keys-vault">
       <div className="settings-section-heading"><div className="section-symbol"><KeyRound size={17} /></div><div><h2>API KEYS VAULT</h2><p>Credentials stay local. Saved values are never shown or prefilled.</p></div><span className={`connection-state ${credentialStatus?.providerSettingsAllowed ? 'connected' : 'disconnected'}`} data-testid="status-provider-settings-access">{credentialStatus?.providerSettingsAllowed ? 'KEY STORAGE AVAILABLE' : 'KEY STORAGE RESTRICTED'}</span></div>
-      <form className="key-vault-form" onSubmit={(event) => { event.preventDefault(); saveProviderSettings(); }}><div className="key-vault-grid">
+      <form className="key-vault-form" onSubmit={(event) => { event.preventDefault(); saveKeys(); }}><div className="key-vault-grid">
         <label className="form-label">DeepSeek API key <span className={`key-status ${credentialStatus?.hasDeepseekKey ? 'active' : ''}`}>{credentialStatus?.hasDeepseekKey ? 'ACTIVE KEY' : 'NO KEY'}</span><span className="optional-label">{credentialStatus?.hasDeepseekKey ? 'Blank keeps existing key' : 'Optional · not configured'}</span><input type="password" autoComplete="new-password" value={apiKeys.deepseekApiKey} onChange={(event) => { setApiKeys({ ...apiKeys, deepseekApiKey: event.target.value }); setProviderSaved(false); }} placeholder="Enter sk-…" disabled={!credentialStatus?.providerSettingsAllowed} data-testid="input-deepseek-api-key" /></label>
         <label className="form-label">Gemini API key <span className={`key-status ${credentialStatus?.hasGeminiKey ? 'active' : ''}`}>{credentialStatus?.hasGeminiKey ? 'ACTIVE KEY' : 'NO KEY'}</span><span className="optional-label">{credentialStatus?.hasGeminiKey ? 'Blank keeps existing key' : 'Optional · not configured'}</span><input type="password" autoComplete="new-password" value={apiKeys.geminiApiKey} onChange={(event) => { setApiKeys({ ...apiKeys, geminiApiKey: event.target.value }); setProviderSaved(false); }} placeholder="Enter AIza…" disabled={!credentialStatus?.providerSettingsAllowed} data-testid="input-gemini-api-key" /></label>
         <label className="form-label">OpenAI API key <span className={`key-status ${credentialStatus?.hasOpenaiKey ? 'active' : ''}`}>{credentialStatus?.hasOpenaiKey ? 'ACTIVE KEY' : 'NO KEY'}</span><span className="optional-label">{credentialStatus?.hasOpenaiKey ? 'Blank keeps existing key' : 'Optional · not configured'}</span><input type="password" autoComplete="new-password" value={apiKeys.openaiApiKey} onChange={(event) => { setApiKeys({ ...apiKeys, openaiApiKey: event.target.value }); setProviderSaved(false); }} placeholder="Enter sk-…" disabled={!credentialStatus?.providerSettingsAllowed} data-testid="input-openai-api-key" /></label>
@@ -959,7 +1017,7 @@ function SettingsPage() {
       <p className="settings-footnote"><LockKeyhole size={13} /> Blank key fields mean “keep existing key”. Key values are never returned to this screen.</p>
       {providerError && <p className="field-error" role="alert" data-testid="status-provider-save-error">{providerError}</p>}
       {providerSaved && <p className="save-state" role="status" data-testid="status-provider-saved"><CheckCircle2 size={15} /> Provider settings saved. Key values remain hidden.</p>}
-      <div className="settings-save-row"><span className="settings-footnote">Provider, model, local URL, safety switches, and new keys save together.</span><button type="button" className="button button-primary" disabled={!credentialStatus?.providerSettingsAllowed || updateSettings.isPending} onClick={saveProviderSettings} data-testid="button-save-provider"><Check size={15} /> {updateSettings.isPending ? 'Saving…' : 'Save Keys'}</button></div>
+      <div className="settings-save-row"><span className="settings-footnote">Keys and local URL save independently. Use Apply Model to activate a model.</span><button type="button" className="button button-primary" disabled={!credentialStatus?.providerSettingsAllowed || saveVault.isPending || applyModel.isPending || updateSettings.isPending} onClick={saveKeys} data-testid="button-save-provider"><Check size={15} /> {saveVault.isPending ? 'Saving…' : 'Save Keys'}</button></div>
     </section>
     <section className="settings-section safety-section"><div className="settings-section-heading"><div className="section-symbol amber"><ShieldCheck size={18} /></div><div><h2>Local code runner</h2><p>Optional Python execution in the local workspace, disabled by default.</p></div></div>
       <div className="setting-row"><div className="setting-row-icon"><KeyRound size={16} /></div><div className="setting-copy"><strong>Allow safe workspace commands</strong><span>Local-only and off by default. Only read-only commands are supported, restricted to workspace files, and limited to 30 seconds.</span></div><button className={`switch ${codeRunnerEnabled ? 'on' : ''}`} role="switch" aria-checked={codeRunnerEnabled} disabled={!credentialStatus?.localSetupAllowed} onClick={() => { setCodeRunnerEnabled(!codeRunnerEnabled); setProviderSaved(false); }} aria-label="Allow safe workspace commands" data-testid="switch-local-code-runner"><span /></button></div>
@@ -972,7 +1030,7 @@ function SettingsPage() {
       <div className="setting-row"><div className="setting-row-icon"><Search size={16} /></div><div className="setting-copy"><strong>Allow external research</strong><span>Let the agent consult public sources when research needs it.</span></div><button className={`switch ${allowExternalResearch ? 'on' : ''}`} role="switch" aria-checked={allowExternalResearch} onClick={() => onSetting(setAllowExternalResearch, !allowExternalResearch)} aria-label="Allow external research" data-testid="switch-external-research"><span /></button></div>
       <div className="setting-row"><div className="setting-row-icon"><FileText size={16} /></div><div className="setting-copy"><strong>Use workspace files as context</strong><span>Allow saved documents and notes to inform relevant tasks.</span></div><button className={`switch ${includeFiles ? 'on' : ''}`} role="switch" aria-checked={includeFiles} onClick={() => onSetting(setIncludeFiles, !includeFiles)} aria-label="Use workspace files as context" data-testid="switch-workspace-context"><span /></button></div>
     </section>
-    <div className="settings-save-row"><div className="save-state">{saved && <><CheckCircle2 size={15} /> Preferences updated for this session.</>}</div><button className="button button-primary" disabled={!credentialStatus?.providerSettingsAllowed || updateSettings.isPending} onClick={() => { setSaved(true); saveProviderSettings(); }} data-testid="button-save-settings"><Check size={15} /> Save preferences</button></div>
+    <div className="settings-save-row"><div className="save-state">{saved && <><CheckCircle2 size={15} /> Preferences updated.</>}</div><button className="button button-primary" disabled={!credentialStatus?.providerSettingsAllowed || updateSettings.isPending || saveVault.isPending || applyModel.isPending} onClick={saveProviderSettings} data-testid="button-save-settings"><Check size={15} /> Save preferences</button></div>
     <div className="settings-note"><LockKeyhole size={15} /><div><strong>Your work stays yours.</strong><p>These controls guide the agent; it will never claim to have completed work until a task reports an outcome.</p></div></div>
     <TimersManager />
   </div></AppShell>;
@@ -1025,7 +1083,7 @@ function Router() {
 }
 
 function App() {
-  return <QueryClientProvider client={queryClient}><TooltipProvider><ReminderNotifications /><WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, '')}><Router /></WouterRouter><Toaster /></TooltipProvider></QueryClientProvider>;
+  return <QueryClientProvider client={queryClient}><TooltipProvider><ReminderNotifications /><WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, '')}><ConversationProvider><Router /></ConversationProvider></WouterRouter><Toaster /></TooltipProvider></QueryClientProvider>;
 }
 
 export default App;

@@ -29,6 +29,7 @@ export const GetAssistantDashboardResponse = zod.object({
   "recentTasks": zod.array(zod.object({
   "id": zod.string().uuid(),
   "objective": zod.string(),
+  "threadId": zod.string().nullish(),
   "status": zod.enum(['queued', 'running', 'awaiting_confirmation', 'awaiting_approval', 'completed', 'failed', 'cancelled']),
   "currentStep": zod.string().nullable(),
   "result": zod.string().nullable(),
@@ -57,12 +58,136 @@ export const GetAssistantDashboardResponse = zod.object({
 })
 
 
+export const ListConversationThreadsResponseItem = zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "pinned": zod.boolean(),
+  "activeTaskId": zod.string().nullable(),
+  "messageCount": zod.number().int(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+export const ListConversationThreadsResponse = zod.array(ListConversationThreadsResponseItem)
+
+
+export const createConversationThreadBodyTitleDefault = `New Chat`;
+export const createConversationThreadBodyTitleMax = 100;
+
+
+
+export const CreateConversationThreadBody = zod.object({
+  "title": zod.string().min(1).max(createConversationThreadBodyTitleMax).default(createConversationThreadBodyTitleDefault)
+})
+
+export const CreateConversationThreadResponse = zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "pinned": zod.boolean(),
+  "activeTaskId": zod.string().nullable(),
+  "messageCount": zod.number().int(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+export const GetConversationThreadParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const GetConversationThreadResponse = zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "pinned": zod.boolean(),
+  "activeTaskId": zod.string().nullable(),
+  "messageCount": zod.number().int(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+}).and(zod.object({
+  "messages": zod.array(zod.object({
+  "id": zod.string(),
+  "threadId": zod.string(),
+  "taskId": zod.string(),
+  "role": zod.enum(['user', 'assistant', 'tool']),
+  "content": zod.string(),
+  "thoughtSteps": zod.array(zod.object({
+  "id": zod.string(),
+  "kind": zod.enum(['plan', 'agent', 'tool', 'result', 'error', 'info', 'warning', 'success']),
+  "message": zod.string(),
+  "createdAt": zod.coerce.date()
+})),
+  "isToolCall": zod.boolean(),
+  "createdAt": zod.coerce.date()
+})),
+  "tasks": zod.array(zod.object({
+  "id": zod.string().uuid(),
+  "objective": zod.string(),
+  "threadId": zod.string().nullish(),
+  "status": zod.enum(['queued', 'running', 'awaiting_confirmation', 'awaiting_approval', 'completed', 'failed', 'cancelled']),
+  "currentStep": zod.string().nullable(),
+  "result": zod.string().nullable(),
+  "error": zod.string().nullable(),
+  "logs": zod.array(zod.object({
+  "id": zod.string(),
+  "kind": zod.enum(['plan', 'agent', 'tool', 'result', 'error', 'info', 'warning', 'success']),
+  "message": zod.string(),
+  "createdAt": zod.coerce.date()
+})),
+  "provider": zod.enum(['openai', 'deepseek', 'gemini', 'openrouter', 'ollama']),
+  "modelId": zod.string(),
+  "recommendationKind": zod.union([zod.literal('complexity'),zod.literal('fallback'),zod.literal(null)]).nullable(),
+  "recommendationReason": zod.string().nullable(),
+  "recommendedProvider": zod.union([zod.literal('openai'),zod.literal('deepseek'),zod.literal('gemini'),zod.literal('openrouter'),zod.literal('ollama'),zod.literal(null)]).nullable(),
+  "recommendedModelId": zod.string().nullable(),
+  "retryAvailable": zod.boolean(),
+  "requiresModelConfirmation": zod.boolean(),
+  "pendingApprovalId": zod.string().nullable(),
+  "pendingApprovalKind": zod.string().nullable(),
+  "approvalSummary": zod.string().nullable(),
+  "requiresApproval": zod.boolean(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+}))
+}))
+
+
+export const UpdateConversationThreadParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const updateConversationThreadBodyTitleMax = 100;
+
+
+
+export const UpdateConversationThreadBody = zod.object({
+  "title": zod.string().min(1).max(updateConversationThreadBodyTitleMax).optional(),
+  "pinned": zod.boolean().optional()
+})
+
+export const UpdateConversationThreadResponse = zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "pinned": zod.boolean(),
+  "activeTaskId": zod.string().nullable(),
+  "messageCount": zod.number().int(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+export const DeleteConversationThreadParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const DeleteConversationThreadResponse = zod.void()
+
+
 /**
  * @summary List recent assistant tasks
  */
 export const ListAssistantTasksResponseItem = zod.object({
   "id": zod.string().uuid(),
   "objective": zod.string(),
+  "threadId": zod.string().nullish(),
   "status": zod.enum(['queued', 'running', 'awaiting_confirmation', 'awaiting_approval', 'completed', 'failed', 'cancelled']),
   "currentStep": zod.string().nullable(),
   "result": zod.string().nullable(),
@@ -102,6 +227,7 @@ export const createAssistantTaskBodyModelIdMax = 120;
 
 export const CreateAssistantTaskBody = zod.object({
   "objective": zod.string().min(1).max(createAssistantTaskBodyObjectiveMax),
+  "threadId": zod.string().nullish(),
   "provider": zod.enum(['openai', 'deepseek', 'gemini', 'openrouter', 'ollama']).optional(),
   "modelId": zod.string().max(createAssistantTaskBodyModelIdMax).optional(),
   "fileIds": zod.array(zod.string().uuid()).optional()
@@ -110,6 +236,7 @@ export const CreateAssistantTaskBody = zod.object({
 export const CreateAssistantTaskResponse = zod.object({
   "id": zod.string().uuid(),
   "objective": zod.string(),
+  "threadId": zod.string().nullish(),
   "status": zod.enum(['queued', 'running', 'awaiting_confirmation', 'awaiting_approval', 'completed', 'failed', 'cancelled']),
   "currentStep": zod.string().nullable(),
   "result": zod.string().nullable(),
@@ -147,6 +274,7 @@ export const GetAssistantTaskParams = zod.object({
 export const GetAssistantTaskResponse = zod.object({
   "id": zod.string().uuid(),
   "objective": zod.string(),
+  "threadId": zod.string().nullish(),
   "status": zod.enum(['queued', 'running', 'awaiting_confirmation', 'awaiting_approval', 'completed', 'failed', 'cancelled']),
   "currentStep": zod.string().nullable(),
   "result": zod.string().nullable(),
@@ -184,6 +312,7 @@ export const AbortAssistantTaskParams = zod.object({
 export const AbortAssistantTaskResponse = zod.object({
   "id": zod.string().uuid(),
   "objective": zod.string(),
+  "threadId": zod.string().nullish(),
   "status": zod.enum(['queued', 'running', 'awaiting_confirmation', 'awaiting_approval', 'completed', 'failed', 'cancelled']),
   "currentStep": zod.string().nullable(),
   "result": zod.string().nullable(),
@@ -225,6 +354,7 @@ export const ChooseAssistantTaskModelBody = zod.object({
 export const ChooseAssistantTaskModelResponse = zod.object({
   "id": zod.string().uuid(),
   "objective": zod.string(),
+  "threadId": zod.string().nullish(),
   "status": zod.enum(['queued', 'running', 'awaiting_confirmation', 'awaiting_approval', 'completed', 'failed', 'cancelled']),
   "currentStep": zod.string().nullable(),
   "result": zod.string().nullable(),
@@ -266,6 +396,7 @@ export const RetryAssistantTaskStepBody = zod.object({
 export const RetryAssistantTaskStepResponse = zod.object({
   "id": zod.string().uuid(),
   "objective": zod.string(),
+  "threadId": zod.string().nullish(),
   "status": zod.enum(['queued', 'running', 'awaiting_confirmation', 'awaiting_approval', 'completed', 'failed', 'cancelled']),
   "currentStep": zod.string().nullable(),
   "result": zod.string().nullable(),
@@ -312,6 +443,7 @@ export const ChooseAssistantTaskApprovalBody = zod.object({
 export const ChooseAssistantTaskApprovalResponse = zod.object({
   "id": zod.string().uuid(),
   "objective": zod.string(),
+  "threadId": zod.string().nullish(),
   "status": zod.enum(['queued', 'running', 'awaiting_confirmation', 'awaiting_approval', 'completed', 'failed', 'cancelled']),
   "currentStep": zod.string().nullable(),
   "result": zod.string().nullable(),
@@ -533,6 +665,80 @@ export const UpdateAssistantSettingsBody = zod.object({
 })
 
 export const UpdateAssistantSettingsResponse = zod.object({
+  "provider": zod.enum(['openai', 'deepseek', 'gemini', 'openrouter', 'ollama']),
+  "modelId": zod.string(),
+  "fallbackModelId": zod.string(),
+  "ollamaBaseUrl": zod.string(),
+  "localSetupAllowed": zod.boolean(),
+  "providerSettingsAllowed": zod.boolean(),
+  "hasOpenaiKey": zod.boolean(),
+  "hasDeepseekKey": zod.boolean(),
+  "hasGeminiKey": zod.boolean(),
+  "hasOpenrouterKey": zod.boolean(),
+  "codeRunnerEnabled": zod.boolean(),
+  "appPreviewsEnabled": zod.boolean()
+})
+
+
+/**
+ * @summary Apply the working model without modifying keys or execution settings
+ */
+export const applyAssistantModelBodyModelIdMax = 120;
+
+
+export const applyAssistantModelBodyModelIdRegExp = new RegExp('^[A-Za-z0-9][A-Za-z0-9._:/-]{0,119}$');
+export const applyAssistantModelBodyFallbackModelIdMax = 120;
+
+
+export const applyAssistantModelBodyFallbackModelIdRegExp = new RegExp('^$|^[A-Za-z0-9][A-Za-z0-9._:/-]{0,119}$');
+
+
+export const ApplyAssistantModelBody = zod.object({
+  "provider": zod.enum(['openai', 'deepseek', 'gemini', 'openrouter', 'ollama']),
+  "modelId": zod.string().min(1).max(applyAssistantModelBodyModelIdMax).regex(applyAssistantModelBodyModelIdRegExp),
+  "fallbackModelId": zod.string().max(applyAssistantModelBodyFallbackModelIdMax).regex(applyAssistantModelBodyFallbackModelIdRegExp).optional()
+})
+
+export const ApplyAssistantModelResponse = zod.object({
+  "provider": zod.enum(['openai', 'deepseek', 'gemini', 'openrouter', 'ollama']),
+  "modelId": zod.string(),
+  "fallbackModelId": zod.string(),
+  "ollamaBaseUrl": zod.string(),
+  "localSetupAllowed": zod.boolean(),
+  "providerSettingsAllowed": zod.boolean(),
+  "hasOpenaiKey": zod.boolean(),
+  "hasDeepseekKey": zod.boolean(),
+  "hasGeminiKey": zod.boolean(),
+  "hasOpenrouterKey": zod.boolean(),
+  "codeRunnerEnabled": zod.boolean(),
+  "appPreviewsEnabled": zod.boolean()
+})
+
+
+/**
+ * @summary Save provider credentials without changing the working model
+ */
+export const saveAssistantProviderKeysBodyOpenaiApiKeyMax = 1000;
+
+export const saveAssistantProviderKeysBodyDeepseekApiKeyMax = 1000;
+
+export const saveAssistantProviderKeysBodyGeminiApiKeyMax = 1000;
+
+export const saveAssistantProviderKeysBodyOpenrouterApiKeyMax = 1000;
+
+export const saveAssistantProviderKeysBodyOllamaBaseUrlMax = 500;
+
+
+
+export const SaveAssistantProviderKeysBody = zod.object({
+  "openaiApiKey": zod.string().max(saveAssistantProviderKeysBodyOpenaiApiKeyMax).nullish(),
+  "deepseekApiKey": zod.string().max(saveAssistantProviderKeysBodyDeepseekApiKeyMax).nullish(),
+  "geminiApiKey": zod.string().max(saveAssistantProviderKeysBodyGeminiApiKeyMax).nullish(),
+  "openrouterApiKey": zod.string().max(saveAssistantProviderKeysBodyOpenrouterApiKeyMax).nullish(),
+  "ollamaBaseUrl": zod.string().max(saveAssistantProviderKeysBodyOllamaBaseUrlMax).optional()
+})
+
+export const SaveAssistantProviderKeysResponse = zod.object({
   "provider": zod.enum(['openai', 'deepseek', 'gemini', 'openrouter', 'ollama']),
   "modelId": zod.string(),
   "fallbackModelId": zod.string(),

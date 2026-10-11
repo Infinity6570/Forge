@@ -13,6 +13,8 @@ export interface TaskInput {
      * @maxLength 12000
      */
   objective: string;
+  /** @nullable */
+  threadId?: string | null;
   provider?: TaskInputProvider;
   /** @maxLength 120 */
   modelId?: string;

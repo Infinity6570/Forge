@@ -38,6 +38,57 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/DashboardSummary"
+  /assistant/threads:
+    get:
+      operationId: listConversationThreads
+      responses:
+        "200":
+          description: Chats ordered by pinned status and recent activity
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/ConversationThread" } }
+    post:
+      operationId: createConversationThread
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ThreadInput" }
+      responses:
+        "201":
+          description: New empty chat
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ConversationThread" }
+  /assistant/threads/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string } }
+    get:
+      operationId: getConversationThread
+      responses:
+        "200":
+          description: Complete chronological chat history and task activity
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ConversationThreadDetail" }
+    patch:
+      operationId: updateConversationThread
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ThreadUpdate" }
+      responses:
+        "200":
+          description: Renamed or pinned chat
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ConversationThread" }
+    delete:
+      operationId: deleteConversationThread
+      responses:
+        "204": { description: Chat deleted; Task Activity records retained }
+        "409": { description: Chat has an active task and cannot be deleted }
   /assistant/tasks:
     get:
       operationId: listAssistantTasks
@@ -351,6 +402,42 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AssistantSettings"
+  /assistant/settings/model:
+    patch:
+      operationId: applyAssistantModel
+      tags: [assistant]
+      summary: Apply the working model without modifying keys or execution settings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ModelSelectionInput"
+      responses:
+        "200":
+          description: Active working model saved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantSettings"
+  /assistant/settings/keys:
+    put:
+      operationId: saveAssistantProviderKeys
+      tags: [assistant]
+      summary: Save provider credentials without changing the working model
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProviderKeysInput"
+      responses:
+        "200":
+          description: Credential presence refreshed without exposing values
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantSettings"
   /assistant/workspace.zip:
     get:
       operationId: downloadAssistantWorkspace
@@ -516,12 +603,53 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/AssistantTask"
+    ConversationThread:
+      type: object
+      required: [id, title, pinned, createdAt, updatedAt, activeTaskId, messageCount]
+      properties:
+        id: { type: string }
+        title: { type: string }
+        pinned: { type: boolean }
+        activeTaskId: { type: ["string", "null"] }
+        messageCount: { type: integer }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    ConversationMessage:
+      type: object
+      required: [id, threadId, taskId, role, content, thoughtSteps, isToolCall, createdAt]
+      properties:
+        id: { type: string }
+        threadId: { type: string }
+        taskId: { type: string }
+        role: { type: string, enum: [user, assistant, tool] }
+        content: { type: string }
+        thoughtSteps: { type: array, items: { $ref: "#/components/schemas/TaskLog" } }
+        isToolCall: { type: boolean }
+        createdAt: { type: string, format: date-time }
+    ConversationThreadDetail:
+      allOf:
+        - { $ref: "#/components/schemas/ConversationThread" }
+        - type: object
+          required: [messages, tasks]
+          properties:
+            messages: { type: array, items: { $ref: "#/components/schemas/ConversationMessage" } }
+            tasks: { type: array, items: { $ref: "#/components/schemas/AssistantTask" } }
+    ThreadInput:
+      type: object
+      properties:
+        title: { type: string, minLength: 1, maxLength: 100, default: "New Chat" }
+    ThreadUpdate:
+      type: object
+      properties:
+        title: { type: string, minLength: 1, maxLength: 100 }
+        pinned: { type: boolean }
     AssistantTask:
       type: object
       required: [id, objective, status, currentStep, result, error, logs, provider, modelId, recommendationKind, recommendationReason, recommendedProvider, recommendedModelId, retryAvailable, requiresModelConfirmation, pendingApprovalId, pendingApprovalKind, approvalSummary, requiresApproval, createdAt, updatedAt]
       properties:
         id: { type: string, format: uuid }
         objective: { type: string }
+        threadId: { type: ["string", "null"] }
         status:
           type: string
           enum: [queued, running, awaiting_confirmation, awaiting_approval, completed, failed, cancelled]
@@ -561,6 +689,7 @@ components:
       required: [objective]
       properties:
         objective: { type: string, minLength: 1, maxLength: 12000 }
+        threadId: { type: ["string", "null"] }
         provider:
           type: string
           enum: [openai, deepseek, gemini, openrouter, ollama]
@@ -707,6 +836,21 @@ components:
         hasOpenrouterKey: { type: boolean }
         codeRunnerEnabled: { type: boolean }
         appPreviewsEnabled: { type: boolean }
+    ModelSelectionInput:
+      type: object
+      required: [provider, modelId]
+      properties:
+        provider: { type: string, enum: [openai, deepseek, gemini, openrouter, ollama] }
+        modelId: { type: string, minLength: 1, maxLength: 120, pattern: '^[A-Za-z0-9][A-Za-z0-9._:/-]{0,119}$' }
+        fallbackModelId: { type: string, maxLength: 120, pattern: '^$|^[A-Za-z0-9][A-Za-z0-9._:/-]{0,119}$' }
+    ProviderKeysInput:
+      type: object
+      properties:
+        openaiApiKey: { type: ["string", "null"], maxLength: 1000 }
+        deepseekApiKey: { type: ["string", "null"], maxLength: 1000 }
+        geminiApiKey: { type: ["string", "null"], maxLength: 1000 }
+        openrouterApiKey: { type: ["string", "null"], maxLength: 1000 }
+        ollamaBaseUrl: { type: string, maxLength: 500 }
     AssistantSettingsInput:
       type: object
       required: [provider, modelId]
