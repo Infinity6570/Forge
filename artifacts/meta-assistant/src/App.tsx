@@ -108,7 +108,7 @@ function CyberFxToggle() {
     window.dispatchEvent(new Event('morrow:cyber-fx'));
   };
   if (theme !== 'scifi') return null;
-  return <button type="button" className={`cyber-fx-toggle ${enabled ? 'is-on' : ''}`} role="switch" aria-checked={enabled} aria-label={`Cyber FX: ${enabled ? 'ON' : 'OFF'}`} aria-pressed={enabled} onClick={toggle} data-testid="toggle-cyber-fx"><Sparkles size={13} /><span>Cyber FX: {enabled ? 'ON' : 'OFF'}</span><i aria-hidden="true" /></button>;
+  return <button type="button" className={`cyber-fx-toggle ${enabled ? 'is-on' : ''}`} role="switch" aria-checked={enabled} aria-label={`Cyber FX: ${enabled ? 'ON' : 'OFF'}`} onClick={toggle} data-testid="toggle-cyber-fx"><Sparkles size={13} /><span>Cyber FX: {enabled ? 'ON' : 'OFF'}</span><i aria-hidden="true" /></button>;
 }
 
 function timeAgo(value?: string) {

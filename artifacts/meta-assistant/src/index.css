@@ -1481,7 +1481,10 @@ html[data-theme="scifi"][data-cyber-fx="off"] .page-heading h1,
 html[data-theme="scifi"][data-cyber-fx="off"] .welcome-row h1,
 html[data-theme="scifi"][data-cyber-fx="off"] .command-status,
 html[data-theme="scifi"][data-cyber-fx="off"] .status-pill,
-html[data-theme="scifi"][data-cyber-fx="off"] .nav-link.active {
+html[data-theme="scifi"][data-cyber-fx="off"] .nav-link.active,
+html[data-theme="scifi"][data-cyber-fx="off"] .terminal-prefix,
+html[data-theme="scifi"][data-cyber-fx="off"] .terminal-cursor,
+html[data-theme="scifi"][data-cyber-fx="off"] .command-status .online-pip.working {
   text-shadow:none!important;box-shadow:none!important;
 }
 html[data-theme="scifi"][data-cyber-fx="off"] .brand-mark,
@@ -1490,7 +1493,9 @@ html[data-theme="scifi"][data-cyber-fx="off"] .activity-panel,
 html[data-theme="scifi"][data-cyber-fx="off"] .composer-panel,
 html[data-theme="scifi"][data-cyber-fx="off"] .stat-card,
 html[data-theme="scifi"][data-cyber-fx="off"] .agent-card,
-html[data-theme="scifi"][data-cyber-fx="off"] .right-inspector {
+html[data-theme="scifi"][data-cyber-fx="off"] .right-inspector,
+html[data-theme="scifi"][data-cyber-fx="off"] .preview-holo-terminal,
+html[data-theme="scifi"][data-cyber-fx="off"] .terminal-input-row:focus-within {
   box-shadow:none!important;
 }
 @media(prefers-reduced-motion:reduce) {
