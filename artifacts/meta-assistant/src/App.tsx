@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/reac
 import { Link, Route, Router as WouterRouter, Switch, useLocation } from 'wouter';
 import {
   useAbortAssistantTask,
+  useChooseAssistantTaskModel,
   useCreateAssistantNote,
   useCreateAssistantTask,
   useCreateAssistantTimer,
@@ -18,6 +19,7 @@ import {
   useListAssistantTasks,
   useListAssistantTimers,
   useStopWorkspacePreviewApp,
+  useRetryAssistantTaskStep,
   getGetAssistantDashboardQueryKey,
   getGetAssistantTaskQueryKey,
   getGetWorkspacePreviewQueryKey,
@@ -70,14 +72,23 @@ function formatSize(bytes: number) {
 }
 
 function statusTone(status: string) {
-  if (status === 'running' || status === 'queued' || status === 'active') return 'live';
+  if (status === 'running' || status === 'queued' || status === 'awaiting_confirmation' || status === 'active') return 'live';
   if (status === 'completed' || status === 'fired') return 'done';
   if (status === 'failed' || status === 'cancelled') return 'issue';
   return 'neutral';
 }
 
 function StatusPill({ status }: { status: string }) {
-  return <span className={`status-pill ${statusTone(status)}`} data-testid={`status-${status}`}>{status}</span>;
+  const label = status === 'awaiting_confirmation' ? 'awaiting confirmation' : status;
+  return <span className={`status-pill ${statusTone(status)}`} data-testid={`status-${status}`}>{label}</span>;
+}
+
+function modelDisplayName(provider?: string | null, model?: string | null) {
+  if (provider === 'deepseek' && model === 'deepseek-reasoner') return 'DeepSeek Reasoner';
+  if (provider === 'gemini' && model === 'gemini-2.5-pro') return 'Gemini 2.5 Pro';
+  if (provider === 'openrouter' && model === 'anthropic/claude-3.7-sonnet') return 'Claude 3.7 Sonnet';
+  if (provider === 'openai' && model === 'gpt-4.1') return 'GPT-4.1';
+  return model || 'recommended model';
 }
 
 function Skeleton({ rows = 3 }: { rows?: number }) {
@@ -185,7 +196,7 @@ function ReminderNotifications() {
 
 function TaskStatusLine({ task, compact = false, onClick }: { task: AssistantTask; compact?: boolean; onClick?: () => void }) {
   return <button className={`task-row ${compact ? 'compact' : ''}`} onClick={onClick} data-testid={`button-task-${task.id}`}>
-    <span className={`task-symbol ${statusTone(task.status)}`}>{task.status === 'completed' ? <Check size={14} /> : task.status === 'failed' ? <AlertCircle size={14} /> : task.status === 'cancelled' ? <StopCircle size={14} /> : <span className="tiny-spinner" />}</span>
+    <span className={`task-symbol ${statusTone(task.status)}`}>{task.status === 'completed' ? <Check size={14} /> : task.status === 'failed' ? <AlertCircle size={14} /> : task.status === 'cancelled' ? <StopCircle size={14} /> : task.status === 'awaiting_confirmation' ? <CircleHelp size={14} /> : <span className="tiny-spinner" />}</span>
     <span className="task-row-main"><strong>{task.objective}</strong><span>{task.currentStep || task.result || task.error || (task.status === 'queued' ? 'Queued for the agent' : 'Task updated')} </span></span>
     <span className="task-row-side"><StatusPill status={task.status} /><time>{timeAgo(task.updatedAt)}</time></span>
     {!compact && <ArrowRight className="task-arrow" size={15} />}
@@ -250,9 +261,38 @@ function Dashboard() {
 }
 
 function TaskDetailDialog({ task, loading, error, retry, close, abort, aborting }: { task?: AssistantTask; loading: boolean; error: boolean; retry: () => void; close: () => void; abort: (id: string) => void; aborting: boolean }) {
+  const qc = useQueryClient();
+  const chooseModel = useChooseAssistantTaskModel();
+  const retryStep = useRetryAssistantTaskStep();
+  const [actionError, setActionError] = useState('');
+  const updateTask = (updated: AssistantTask) => {
+    qc.setQueryData(getGetAssistantTaskQueryKey(updated.id), updated);
+    qc.invalidateQueries({ queryKey: getGetAssistantDashboardQueryKey() });
+    qc.invalidateQueries({ queryKey: getListAssistantTasksQueryKey() });
+  };
+  const recommendedName = task ? modelDisplayName(task.recommendedProvider, task.recommendedModelId) : 'recommended model';
+  const choose = (switchToRecommendation: boolean) => {
+    if (!task) return;
+    setActionError('');
+    chooseModel.mutate({ id: task.id, data: { switchToRecommendation } }, {
+      onSuccess: updateTask,
+      onError: () => setActionError('Your model choice could not be saved. Please try again.'),
+    });
+  };
+  const retryFailedStep = (retry: boolean) => {
+    if (!task) return;
+    setActionError('');
+    retryStep.mutate({ id: task.id, data: { retry } }, {
+      onSuccess: updateTask,
+      onError: () => setActionError('The specialist retry could not be started. Please try again.'),
+    });
+  };
   return <Modal title="Task details" onClose={close}>{loading ? <Skeleton rows={5} /> : error || !task ? <QueryProblem retry={retry} /> : <div className="detail-content"><div className="detail-objective"><StatusPill status={task.status} /><h3>{task.objective}</h3><p>Started {formatDate(task.createdAt)} <span>·</span> Updated {timeAgo(task.updatedAt)}</p></div>
     <p className="settings-footnote">Model used: <strong>{task.modelId}</strong></p>
-    {task.currentStep && <div className="current-step"><span className="tiny-spinner" /><div><small>CURRENT STEP</small><strong>{task.currentStep}</strong></div></div>}
+    {task.requiresModelConfirmation && <section className="model-recommendation" aria-live="polite" data-testid="task-model-recommendation"><strong>💡 Recommendation</strong><p>This task involves {task.recommendationReason}. Running on a high-capability model like {recommendedName} may produce better results. Would you like to switch for this task?</p><div className="model-recommendation-actions"><button className="button button-primary" onClick={() => choose(true)} disabled={chooseModel.isPending} data-testid="button-switch-recommended-model">{chooseModel.isPending ? 'Saving choice…' : 'Switch to Recommended Model'}</button><button className="button button-quiet" onClick={() => choose(false)} disabled={chooseModel.isPending} data-testid="button-stay-current-model">Stay on Current Model</button></div></section>}
+    {task.recommendationKind === 'fallback' && task.retryAvailable && task.status !== 'running' && <section className="model-recommendation fallback-recommendation" aria-live="polite" data-testid="task-fallback-recommendation"><strong>⚠️ Retry suggestion</strong><p>Task encountered persistent errors on the current model. Would you like to retry this step with {recommendedName}?</p><div className="model-recommendation-actions"><button className="button button-primary" onClick={() => retryFailedStep(true)} disabled={retryStep.isPending} data-testid="button-retry-step-recommended">{retryStep.isPending ? 'Starting retry…' : 'Retry this step with Recommended Pro Model'}</button><button className="button button-quiet" onClick={() => retryFailedStep(false)} disabled={retryStep.isPending} data-testid="button-dismiss-retry-suggestion">Not now</button></div></section>}
+    {actionError && <p className="field-error" role="alert">{actionError}</p>}
+    {task.currentStep && <div className="current-step"><span>{task.status === 'awaiting_confirmation' ? <CircleHelp size={16} /> : <span className="tiny-spinner" />}</span><div><small>{task.status === 'awaiting_confirmation' ? 'WAITING FOR YOU' : 'CURRENT STEP'}</small><strong>{task.currentStep}</strong></div></div>}
     {task.result && <div className="outcome-box"><strong><CheckCircle2 size={16} /> Outcome</strong><p>{task.result}</p></div>}
     {task.error && <div className="error-box"><strong><AlertCircle size={16} /> What happened</strong><p>{task.error}</p></div>}
     <div className="log-heading"><strong>Execution log</strong><span>{task.logs?.length ?? 0} entries</span></div>
@@ -272,12 +312,12 @@ function TasksPage() {
   const abort = useAbortAssistantTask();
   const [filter, setFilter] = useState('all');
   const [search, setSearch] = useState('');
-  const options = ['all', 'running', 'queued', 'completed', 'failed', 'cancelled'];
+  const options = ['all', 'running', 'queued', 'awaiting_confirmation', 'completed', 'failed', 'cancelled'];
   const tasks = useMemo(() => (tasksQuery.data ?? []).filter((task) => (filter === 'all' || task.status === filter) && task.objective.toLowerCase().includes(search.toLowerCase())), [tasksQuery.data, filter, search]);
   return <AppShell page="tasks"><div className="content-page enter">
     <PageHeading eyebrow="EXECUTION LOG" title="Task activity" description="A clear view of every request, from first thought to finished result." right={<Link href="/" className="button button-primary" data-testid="link-new-task"><Plus size={16} /> New task</Link>} />
     <div className="task-overview-strip"><div><span className="strip-icon"><Activity size={17} /></span><div><strong>Every step, in view</strong><span>Open any task to follow its execution log.</span></div></div><span className="live-label"><span className="online-pip" />LIVE UPDATES</span></div>
-    <section className="panel tasks-table-panel"><div className="list-toolbar"><div className="filter-pills">{options.map((option) => <button key={option} onClick={() => setFilter(option)} className={`filter-pill ${filter === option ? 'selected' : ''}`} data-testid={`filter-task-${option}`}>{option === 'all' ? 'All tasks' : option}</button>)}</div><label className="search-box"><Search size={15} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search tasks" aria-label="Search tasks" data-testid="input-search-tasks" /></label></div>
+    <section className="panel tasks-table-panel"><div className="list-toolbar"><div className="filter-pills">{options.map((option) => <button key={option} onClick={() => setFilter(option)} className={`filter-pill ${filter === option ? 'selected' : ''}`} data-testid={`filter-task-${option}`}>{option === 'all' ? 'All tasks' : option === 'awaiting_confirmation' ? 'Awaiting confirmation' : option}</button>)}</div><label className="search-box"><Search size={15} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search tasks" aria-label="Search tasks" data-testid="input-search-tasks" /></label></div>
       {tasksQuery.isLoading ? <div className="table-loading"><Skeleton rows={7} /></div> : tasksQuery.isError ? <QueryProblem retry={() => tasksQuery.refetch()} /> : tasks.length ? <div className="full-task-list">{tasks.map((task) => <TaskStatusLine key={task.id} task={task} onClick={() => setSelected(task.id)} />)}</div> : <div className="empty-state"><div className="empty-mark"><Activity size={20} /></div><strong>{search || filter !== 'all' ? 'No matching tasks' : 'Nothing in the queue'}</strong><p>{search || filter !== 'all' ? 'Try another search or status filter.' : 'Send your first request and watch the work unfold here.'}</p>{!search && filter === 'all' && <Link href="/" className="button button-primary button-small" data-testid="link-first-task"><Plus size={14} /> Create a task</Link>}</div>}
     </section>
     {selected && <TaskDetailDialog task={detail.data} loading={detail.isLoading} error={detail.isError} retry={() => detail.refetch()} close={() => setSelected(undefined)} abort={(id) => abort.mutate({ id }, { onSuccess: () => { qc.invalidateQueries({ queryKey: getListAssistantTasksQueryKey() }); qc.invalidateQueries({ queryKey: getGetAssistantDashboardQueryKey() }); } })} aborting={abort.isPending} />}

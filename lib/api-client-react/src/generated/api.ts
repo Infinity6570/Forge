@@ -30,7 +30,9 @@ import type {
   FileUploadInput,
   HealthStatus,
   NoteInput,
+  TaskFallbackChoiceInput,
   TaskInput,
+  TaskModelChoiceInput,
   TimerInput,
   WorkspacePreviewStatus,
   WorkspacePreviewStopInput
@@ -532,6 +534,184 @@ export const useAbortAssistantTask = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getAbortAssistantTaskMutationOptions(options));
+    }
+
+export const getChooseAssistantTaskModelUrl = (id: string,) => {
+
+
+
+
+  return `/api/assistant/tasks/${id}/model-choice`
+}
+
+/**
+ * @summary Confirm whether to use the recommended high-capability model for this task
+ */
+export const chooseAssistantTaskModel = async (id: string,
+    taskModelChoiceInput: TaskModelChoiceInput, options?: Parameters<typeof customFetch>[1]): Promise<AssistantTask> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<AssistantTask>(getChooseAssistantTaskModelUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(taskModelChoiceInput)
+  }
+);}
+
+
+
+
+
+export const getChooseAssistantTaskModelMutationKey = () => ['chooseAssistantTaskModel'] as const;
+
+export const getChooseAssistantTaskModelMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof chooseAssistantTaskModel>>, TError,ChooseAssistantTaskModelMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof chooseAssistantTaskModel>>, TError,ChooseAssistantTaskModelMutationVariables, TContext> => {
+
+const mutationKey = getChooseAssistantTaskModelMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof chooseAssistantTaskModel>>, ChooseAssistantTaskModelMutationVariables> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  chooseAssistantTaskModel(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ChooseAssistantTaskModelMutationResult = NonNullable<Awaited<ReturnType<typeof chooseAssistantTaskModel>>>
+    export type ChooseAssistantTaskModelMutationBody = BodyType<TaskModelChoiceInput>
+    export type ChooseAssistantTaskModelMutationError = ErrorType<void>
+    export type ChooseAssistantTaskModelMutationVariables = {id: string;data: BodyType<TaskModelChoiceInput>}
+
+    /**
+ * @summary Confirm whether to use the recommended high-capability model for this task
+ */
+export const useChooseAssistantTaskModel = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof chooseAssistantTaskModel>>, TError,ChooseAssistantTaskModelMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof chooseAssistantTaskModel>>,
+        TError,
+        ChooseAssistantTaskModelMutationVariables,
+        TContext
+      > => {
+      return useMutation(getChooseAssistantTaskModelMutationOptions(options));
+    }
+
+export const getRetryAssistantTaskStepUrl = (id: string,) => {
+
+
+
+
+  return `/api/assistant/tasks/${id}/fallback-choice`
+}
+
+/**
+ * @summary Retry a failed specialist step with its recommended model
+ */
+export const retryAssistantTaskStep = async (id: string,
+    taskFallbackChoiceInput: TaskFallbackChoiceInput, options?: Parameters<typeof customFetch>[1]): Promise<AssistantTask> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<AssistantTask>(getRetryAssistantTaskStepUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(taskFallbackChoiceInput)
+  }
+);}
+
+
+
+
+
+export const getRetryAssistantTaskStepMutationKey = () => ['retryAssistantTaskStep'] as const;
+
+export const getRetryAssistantTaskStepMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof retryAssistantTaskStep>>, TError,RetryAssistantTaskStepMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof retryAssistantTaskStep>>, TError,RetryAssistantTaskStepMutationVariables, TContext> => {
+
+const mutationKey = getRetryAssistantTaskStepMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof retryAssistantTaskStep>>, RetryAssistantTaskStepMutationVariables> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  retryAssistantTaskStep(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RetryAssistantTaskStepMutationResult = NonNullable<Awaited<ReturnType<typeof retryAssistantTaskStep>>>
+    export type RetryAssistantTaskStepMutationBody = BodyType<TaskFallbackChoiceInput>
+    export type RetryAssistantTaskStepMutationError = ErrorType<void>
+    export type RetryAssistantTaskStepMutationVariables = {id: string;data: BodyType<TaskFallbackChoiceInput>}
+
+    /**
+ * @summary Retry a failed specialist step with its recommended model
+ */
+export const useRetryAssistantTaskStep = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof retryAssistantTaskStep>>, TError,RetryAssistantTaskStepMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof retryAssistantTaskStep>>,
+        TError,
+        RetryAssistantTaskStepMutationVariables,
+        TContext
+      > => {
+      return useMutation(getRetryAssistantTaskStepMutationOptions(options));
     }
 
 export const getListAssistantTimersUrl = () => {

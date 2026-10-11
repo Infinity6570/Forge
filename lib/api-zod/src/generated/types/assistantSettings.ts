@@ -14,6 +14,7 @@ export interface AssistantSettings {
   localSetupAllowed: boolean;
   providerSettingsAllowed: boolean;
   hasOpenaiKey: boolean;
+  hasDeepseekKey: boolean;
   hasGeminiKey: boolean;
   hasOpenrouterKey: boolean;
   codeRunnerEnabled: boolean;

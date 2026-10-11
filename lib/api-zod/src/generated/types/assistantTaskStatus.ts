@@ -12,6 +12,7 @@ export type AssistantTaskStatus = typeof AssistantTaskStatus[keyof typeof Assist
 export const AssistantTaskStatus = {
   queued: 'queued',
   running: 'running',
+  awaiting_confirmation: 'awaiting_confirmation',
   completed: 'completed',
   failed: 'failed',
   cancelled: 'cancelled',

@@ -11,6 +11,7 @@ export type AssistantSettingsInputProvider = typeof AssistantSettingsInputProvid
 
 export const AssistantSettingsInputProvider = {
   openai: 'openai',
+  deepseek: 'deepseek',
   gemini: 'gemini',
   openrouter: 'openrouter',
 } as const;

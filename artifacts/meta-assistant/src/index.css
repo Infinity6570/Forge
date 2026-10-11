@@ -697,4 +697,39 @@ body { min-width: 320px; }
   @media (prefers-reduced-motion: reduce) {
     .reminder-toast { animation: none; }
   }
+
+  .model-recommendation {
+    padding: 13px 14px;
+    margin: 12px 0;
+    border: 1px solid #d8d7bd;
+    border-radius: 9px;
+    background: linear-gradient(135deg, #f5f4e9, #faf8f0);
+    color: #43564e;
+  }
+  .model-recommendation > strong {
+    display: block;
+    margin-bottom: 6px;
+    color: #43564e;
+    font-size: 11px;
+  }
+  .model-recommendation > p {
+    margin: 0;
+    color: #64726b;
+    font-size: 11px;
+    line-height: 1.6;
+  }
+  .model-recommendation-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 12px;
+  }
+  .fallback-recommendation {
+    border-color: #ead6b9;
+    background: #fff8ed;
+  }
+  @media (max-width: 520px) {
+    .model-recommendation-actions { flex-direction: column; }
+    .model-recommendation-actions .button { width: 100%; justify-content: center; }
+  }
 }

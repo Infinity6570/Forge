@@ -11,6 +11,7 @@ export type TaskInputProvider = typeof TaskInputProvider[keyof typeof TaskInputP
 
 export const TaskInputProvider = {
   openai: 'openai',
+  deepseek: 'deepseek',
   gemini: 'gemini',
   openrouter: 'openrouter',
 } as const;

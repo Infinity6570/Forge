@@ -29,6 +29,11 @@ export interface AssistantSettingsInput {
      * @maxLength 1000
      * @nullable
      */
+  deepseekApiKey?: string | null;
+  /**
+     * @maxLength 1000
+     * @nullable
+     */
   geminiApiKey?: string | null;
   /**
      * @maxLength 1000

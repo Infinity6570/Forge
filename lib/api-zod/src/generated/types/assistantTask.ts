@@ -6,6 +6,8 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { AssistantTaskProvider } from './assistantTaskProvider';
+import type { AssistantTaskRecommendationKind } from './assistantTaskRecommendationKind';
+import type { AssistantTaskRecommendedProvider } from './assistantTaskRecommendedProvider';
 import type { AssistantTaskStatus } from './assistantTaskStatus';
 import type { TaskLog } from './taskLog';
 
@@ -22,6 +24,16 @@ export interface AssistantTask {
   logs: TaskLog[];
   provider: AssistantTaskProvider;
   modelId: string;
+  /** @nullable */
+  recommendationKind: AssistantTaskRecommendationKind;
+  /** @nullable */
+  recommendationReason: string | null;
+  /** @nullable */
+  recommendedProvider: AssistantTaskRecommendedProvider;
+  /** @nullable */
+  recommendedModelId: string | null;
+  retryAvailable: boolean;
+  requiresModelConfirmation: boolean;
   createdAt: Date;
   updatedAt: Date;
 }

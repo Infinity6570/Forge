@@ -400,7 +400,21 @@ def recommended_model_for(provider: str) -> tuple[str, str, str]:
     return "openai", "gpt-4.1", "GPT-4.1"
 
 
-def save_fallback_recommendation(task_id: str, retry_prompt: str, provider: str, reason: str) -> None:
+def is_budget_model(provider: str, model: str) -> bool:
+    budget_models = {
+        "openai": {"gpt-4.1-mini", "gpt-4.1-nano"},
+        "deepseek": {"deepseek-chat"},
+        "gemini": {"gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-3.5-flash-lite"},
+        "openrouter": {"deepseek/deepseek-chat", "anthropic/claude-haiku-5.5"},
+    }
+    return model in budget_models.get(provider, set())
+
+
+def save_fallback_recommendation(
+    task_id: str, retry_prompt: str, provider: str, model: str, reason: str
+) -> None:
+    if not retry_prompt.strip() or not is_budget_model(provider, model):
+        return
     recommended_provider, recommended_model, display_name = recommended_model_for(provider)
     safe_reason = redact_provider_keys(reason)[:500]
     db_run(
@@ -1010,6 +1024,7 @@ async def run_agent_task(task_id: str, selected_file_ids: list[str]) -> None:
                             task_id,
                             str(args.get("task", "")),
                             provider,
+                        model_state["model"],
                             redact_provider_keys(str(tool_error)),
                         )
                 if call.function.name == "delegate_to_specialist" and persistent_specialist_failure(output):
@@ -1017,6 +1032,7 @@ async def run_agent_task(task_id: str, selected_file_ids: list[str]) -> None:
                         task_id,
                         str(args.get("task", "")),
                         provider,
+                        model_state["model"],
                         output,
                     )
                 messages.append({"role": "tool", "tool_call_id": call.id, "content": output[:16_000]})
@@ -1291,7 +1307,7 @@ async def health_check() -> dict[str, bool]:
 async def dashboard() -> dict[str, Any]:
     tasks = [task_dict(row) for row in db_all("SELECT * FROM tasks ORDER BY created_at DESC LIMIT 8")]
     return {
-        "activeTasks": len(db_all("SELECT id FROM tasks WHERE status IN ('queued','running')")),
+        "activeTasks": len(db_all("SELECT id FROM tasks WHERE status IN ('queued','running','awaiting_confirmation')")),
         "completedTasks": len(db_all("SELECT id FROM tasks WHERE status='completed'")),
         "activeTimers": len(db_all("SELECT id FROM timers WHERE status='active'")),
         "notesCount": len(db_all("SELECT id FROM notes")),

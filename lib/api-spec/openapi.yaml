@@ -481,7 +481,7 @@ components:
             $ref: "#/components/schemas/AssistantTask"
     AssistantTask:
       type: object
-      required: [id, objective, status, currentStep, result, error, logs, provider, modelId, recommendationKind, recommendationReason, recommendedProvider, recommendedModelId, retryAvailable, createdAt, updatedAt]
+      required: [id, objective, status, currentStep, result, error, logs, provider, modelId, recommendationKind, recommendationReason, recommendedProvider, recommendedModelId, retryAvailable, requiresModelConfirmation, createdAt, updatedAt]
       properties:
         id: { type: string, format: uuid }
         objective: { type: string }
@@ -502,6 +502,7 @@ components:
         recommendedProvider: { type: ["string", "null"], enum: [openai, deepseek, gemini, openrouter, null] }
         recommendedModelId: { type: ["string", "null"] }
         retryAvailable: { type: boolean }
+        requiresModelConfirmation: { type: boolean }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
     TaskLog:

@@ -11,6 +11,7 @@ export type AssistantSettingsProvider = typeof AssistantSettingsProvider[keyof t
 
 export const AssistantSettingsProvider = {
   openai: 'openai',
+  deepseek: 'deepseek',
   gemini: 'gemini',
   openrouter: 'openrouter',
 } as const;

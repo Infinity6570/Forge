@@ -15,6 +15,7 @@ export type AssistantTaskStatus = typeof AssistantTaskStatus[keyof typeof Assist
 export const AssistantTaskStatus = {
   queued: 'queued',
   running: 'running',
+  awaiting_confirmation: 'awaiting_confirmation',
   completed: 'completed',
   failed: 'failed',
   cancelled: 'cancelled',
@@ -45,6 +46,31 @@ export type AssistantTaskProvider = typeof AssistantTaskProvider[keyof typeof As
 
 export const AssistantTaskProvider = {
   openai: 'openai',
+  deepseek: 'deepseek',
+  gemini: 'gemini',
+  openrouter: 'openrouter',
+} as const;
+
+/**
+ * @nullable
+ */
+export type AssistantTaskRecommendationKind = typeof AssistantTaskRecommendationKind[keyof typeof AssistantTaskRecommendationKind] | null;
+
+
+export const AssistantTaskRecommendationKind = {
+  complexity: 'complexity',
+  fallback: 'fallback',
+} as const;
+
+/**
+ * @nullable
+ */
+export type AssistantTaskRecommendedProvider = typeof AssistantTaskRecommendedProvider[keyof typeof AssistantTaskRecommendedProvider] | null;
+
+
+export const AssistantTaskRecommendedProvider = {
+  openai: 'openai',
+  deepseek: 'deepseek',
   gemini: 'gemini',
   openrouter: 'openrouter',
 } as const;
@@ -62,6 +88,16 @@ export interface AssistantTask {
   logs: TaskLog[];
   provider: AssistantTaskProvider;
   modelId: string;
+  /** @nullable */
+  recommendationKind: AssistantTaskRecommendationKind;
+  /** @nullable */
+  recommendationReason: string | null;
+  /** @nullable */
+  recommendedProvider: AssistantTaskRecommendedProvider;
+  /** @nullable */
+  recommendedModelId: string | null;
+  retryAvailable: boolean;
+  requiresModelConfirmation: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -80,6 +116,7 @@ export type TaskInputProvider = typeof TaskInputProvider[keyof typeof TaskInputP
 
 export const TaskInputProvider = {
   openai: 'openai',
+  deepseek: 'deepseek',
   gemini: 'gemini',
   openrouter: 'openrouter',
 } as const;
@@ -94,6 +131,14 @@ export interface TaskInput {
   /** @maxLength 120 */
   modelId?: string;
   fileIds?: string[];
+}
+
+export interface TaskModelChoiceInput {
+  switchToRecommendation: boolean;
+}
+
+export interface TaskFallbackChoiceInput {
+  retry: boolean;
 }
 
 export type AssistantTimerKind = typeof AssistantTimerKind[keyof typeof AssistantTimerKind];
@@ -231,6 +276,7 @@ export type AssistantSettingsProvider = typeof AssistantSettingsProvider[keyof t
 
 export const AssistantSettingsProvider = {
   openai: 'openai',
+  deepseek: 'deepseek',
   gemini: 'gemini',
   openrouter: 'openrouter',
 } as const;
@@ -242,6 +288,7 @@ export interface AssistantSettings {
   localSetupAllowed: boolean;
   providerSettingsAllowed: boolean;
   hasOpenaiKey: boolean;
+  hasDeepseekKey: boolean;
   hasGeminiKey: boolean;
   hasOpenrouterKey: boolean;
   codeRunnerEnabled: boolean;
@@ -252,6 +299,7 @@ export type AssistantSettingsInputProvider = typeof AssistantSettingsInputProvid
 
 export const AssistantSettingsInputProvider = {
   openai: 'openai',
+  deepseek: 'deepseek',
   gemini: 'gemini',
   openrouter: 'openrouter',
 } as const;
@@ -274,6 +322,11 @@ export interface AssistantSettingsInput {
      * @nullable
      */
   openaiApiKey?: string | null;
+  /**
+     * @maxLength 1000
+     * @nullable
+     */
+  deepseekApiKey?: string | null;
   /**
      * @maxLength 1000
      * @nullable
