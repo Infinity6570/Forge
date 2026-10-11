@@ -1,0 +1,46 @@
+Please execute a complete, root-level CSS and component audit to fix all theme discrepancies, hardcoded colors, broken loading states, and API connection handling across ALL sub-pages (/tasks, /workspace, /alarms, /settings):
+
+1. Root Cause Resolution — Enforce Dynamic Theme Tokens (No Hardcoded Colors):
+   - Replace all hardcoded utility classes (e.g. `bg-white`, `bg-yellow-50`, `bg-amber-100`, `text-slate-900`, `border-gray-200`, `rounded-full`) inside page components with CSS variables tied to `[data-theme]`.
+   - In `[data-theme="scifi"]`, define and strictly enforce:
+     * `--bg-main: #02040a;`
+     * `--bg-panel: #050a17;`
+     * `--bg-card: #081126;`
+     * `--border-primary: rgba(0, 240, 255, 0.28);`
+     * `--border-active: #00f0ff;`
+     * `--text-primary: #e2f7ff;`
+     * `--text-muted: #4e7696;`
+     * `--accent-cyan: #00f0ff;`
+     * `--alert-warn-bg: rgba(255, 180, 0, 0.08);`
+     * `--alert-warn-border: rgba(255, 180, 0, 0.4);`
+     * `--alert-error-bg: rgba(255, 0, 85, 0.08);`
+     * `--alert-error-border: rgba(255, 0, 85, 0.4);`
+
+2. Fix Task Activity (`/tasks`) — The "Random Lines" Issue:
+   - Those stacked yellow lines are skeleton loading placeholders that get stuck when the tasks API is empty or disconnected.
+   - If loading: Style skeleton bars as faint, sleek dark pulses with cyan edge scans (`background: rgba(0, 240, 255, 0.05); border: 1px solid rgba(0, 240, 255, 0.15);`).
+   - If empty/zero tasks: Do NOT show raw loading bars forever. Show an authentic HUD empty state:
+     * Card: Dark recessed background, chamfered corners, subtle grid lines.
+     * Title: 'ORBITRON' font: "[ QUEUE_EMPTY // 0 ACTIVE_OPERATIONS ]"
+     * Subtext: 'Share Tech Mono' font: "Awaiting task dispatch from command center."
+     * Action button: HUD styled "[ + DISPATCH_TASK ]"
+
+3. Fix Connection Error Banners & Banners in `/workspace` & `/alarms`:
+   - Kill all pastel yellow/beige banner boxes ("A little context goes a long way", "Something interrupted the connection").
+   - Restyle warning/error alert containers:
+     * Background: Dark translucent red/amber tint (`rgba(255, 60, 60, 0.08)` or `rgba(0, 240, 255, 0.06)`).
+     * Border: Sharp 1px stroke matching the alert intent (Red `#ff0055` for connection loss, Amber for warning, Cyan for tips).
+     * Typography: Strict monospace (`Share Tech Mono`), high contrast text, no serif fonts.
+     * Buttons ("RETRY", "+ ADD REMINDER", "+ NEW NOTE", "DOWNLOAD ZIP"): Tactical HUD buttons with 2px corners, sharp borders, and hover glow.
+
+4. Fix Preferences (`/settings`) & Model Cards:
+   - Remove the white/cream background from the `deepseek-chat` and `deepseek-reasoner` selectable cards.
+   - Restyle to: Dark HUD cards (`background: #081126`), 1px cyan border, glowing radio tick indicator, and full monospace/Orbitron typography.
+   - Replace the "Configure provider" popup button with direct, inline API Key fields on this page (API Keys Vault) as previously requested.
+
+5. Global Font & Border-Radius Uniformity:
+   - Ensure every sub-page inherits:
+     * Headers/Titles: 'Orbitron', uppercase, tracking-wider.
+     * Body/Labels/Inputs/Code: 'Share Tech Mono' or monospace.
+   - Strip all large rounded pill radii (`rounded-xl`, `rounded-full`) in Sci-Fi mode; force sharp or subtly chamfered edges (`border-radius: 2px` or CSS clip-paths).
+   - Ensure "Minimalist Dark" and "Minimalist Light" themes remain clean and properly balanced using their respective variable palettes.

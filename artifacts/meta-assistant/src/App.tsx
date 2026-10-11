@@ -9,27 +9,32 @@ import {
   useCreateAssistantNote,
   useCreateAssistantTask,
   useCreateAssistantTimer,
+  useDownloadAssistantWorkspace,
   useDeleteAssistantFile,
   useDeleteAssistantNote,
   useDeleteAssistantTimer,
   useGetAssistantDashboard,
   useGetAssistantTask,
+  useGetAssistantSettings,
   useGetWorkspacePreview,
   useListAssistantFiles,
   useListAssistantNotes,
   useListAssistantTasks,
   useListAssistantTimers,
+  useUpdateAssistantSettings,
   useStopWorkspacePreviewApp,
   useRetryAssistantTaskStep,
   getGetAssistantDashboardQueryKey,
   getGetAssistantTaskQueryKey,
+  getGetAssistantSettingsQueryKey,
   getGetWorkspacePreviewQueryKey,
+  getDownloadAssistantWorkspaceQueryKey,
   getListAssistantFilesQueryKey,
   getListAssistantNotesQueryKey,
   getListAssistantTasksQueryKey,
   getListAssistantTimersQueryKey,
 } from '@workspace/api-client-react';
-import type { AssistantFile, AssistantNote, AssistantTask, AssistantTimer, WorkspacePreviewApp } from '@workspace/api-client-react';
+import type { AssistantFile, AssistantNote, AssistantSettings, AssistantSettingsInput, AssistantTask, AssistantTimer, WorkspacePreviewApp } from '@workspace/api-client-react';
 import {
   Activity, AlertCircle, ArrowDownToLine, ArrowRight, Bell, BookOpen, Check, CheckCircle2,
   ChevronDown, ChevronRight, CircleHelp, Clock3, Copy, ExternalLink, FileText, FolderOpen, Gauge, HardDrive, Layers3, Moon, Sun,
@@ -224,25 +229,11 @@ function AppShell({ children, page }: { children: ReactNode; page: Page }) {
 
 function QuickSidebarStatus() {
   const { data, isLoading, isError } = useGetAssistantDashboard();
+  const settings = useGetAssistantSettings();
   const files = useListAssistantFiles();
   const timers = useListAssistantTimers();
-  const [activeModel, setActiveModel] = useState('Loading model…');
+  const activeModel = settings.isLoading ? 'Loading model…' : settings.isError ? 'Unavailable' : modelDisplayName(settings.data?.provider, settings.data?.modelId);
   const storage = (files.data ?? []).reduce((total, file) => total + file.sizeBytes, 0);
-  useEffect(() => {
-    let active = true;
-    fetch('/api/assistant/settings')
-      .then(async (response) => {
-        if (!response.ok) throw new Error('Could not load the active model.');
-        return response.json() as Promise<{ provider?: string; modelId?: string }>;
-      })
-      .then((settings) => {
-        if (active) setActiveModel(modelDisplayName(settings.provider, settings.modelId));
-      })
-      .catch(() => {
-        if (active) setActiveModel('Unavailable');
-      });
-    return () => { active = false; };
-  }, []);
   const runningCount = data?.activeTasks ?? 0;
   const systemState = isLoading ? 'Online' : isError ? 'Offline' : runningCount ? `Running · ${runningCount}` : 'Idle';
   return <div className="quick-status">
@@ -589,7 +580,7 @@ function TasksPage() {
     <PageHeading eyebrow="EXECUTION LOG" title="Task activity" description="A clear view of every request, from first thought to finished result." right={<Link href="/" className="button button-primary" data-testid="link-new-task"><Plus size={16} /> New task</Link>} />
     <div className="task-overview-strip"><div><span className="strip-icon"><Activity size={17} /></span><div><strong>Every step, in view</strong><span>Open any task to follow its execution log.</span></div></div><span className="live-label"><span className="online-pip" />LIVE UPDATES</span></div>
       <section className="panel tasks-table-panel"><div className="list-toolbar"><div className="filter-pills">{options.map((option) => <button key={option} onClick={() => setFilter(option)} className={`filter-pill ${filter === option ? 'selected' : ''}`} data-testid={`filter-task-${option}`}>{option === 'all' ? 'All tasks' : option === 'awaiting_confirmation' ? 'Awaiting confirmation' : option === 'awaiting_approval' ? 'Approval needed' : option}</button>)}</div><label className="search-box"><Search size={15} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search tasks" aria-label="Search tasks" data-testid="input-search-tasks" /></label></div>
-      {tasksQuery.isLoading ? <div className="table-loading"><Skeleton rows={7} /></div> : tasksQuery.isError ? <QueryProblem retry={() => tasksQuery.refetch()} /> : tasks.length ? <div className="full-task-list">{tasks.map((task) => <TaskStatusLine key={task.id} task={task} onClick={() => setSelected(task.id)} />)}</div> : <div className="empty-state"><div className="empty-mark"><Activity size={20} /></div><strong>{search || filter !== 'all' ? 'No matching tasks' : 'Nothing in the queue'}</strong><p>{search || filter !== 'all' ? 'Try another search or status filter.' : 'Send your first request and watch the work unfold here.'}</p>{!search && filter === 'all' && <Link href="/" className="button button-primary button-small" data-testid="link-first-task"><Plus size={14} /> Create a task</Link>}</div>}
+      {tasksQuery.isLoading ? <div className="table-loading"><Skeleton rows={7} /></div> : tasksQuery.isError ? <QueryProblem retry={() => tasksQuery.refetch()} /> : tasks.length ? <div className="full-task-list">{tasks.map((task) => <TaskStatusLine key={task.id} task={task} onClick={() => setSelected(task.id)} />)}</div> : <div className={`empty-state task-queue-empty ${search || filter !== 'all' ? 'no-match' : 'queue-empty'}`} data-testid="status-task-list-empty"><div className="empty-mark"><Activity size={20} /></div><strong>{search || filter !== 'all' ? 'No matching tasks' : '[ QUEUE_EMPTY // 0 ACTIVE_OPERATIONS ]'}</strong><p>{search || filter !== 'all' ? 'Try another search or status filter.' : 'Awaiting task dispatch from command center.'}</p>{!search && filter === 'all' && <Link href="/" className="button button-primary button-small" data-testid="link-first-task"><Plus size={14} /> [ + DISPATCH_TASK ]</Link>}</div>}
     </section>
     {selected && <TaskDetailDialog task={detail.data} loading={detail.isLoading} error={detail.isError} retry={() => detail.refetch()} close={() => setSelected(undefined)} abort={(id) => abort.mutate({ id }, { onSuccess: () => { qc.invalidateQueries({ queryKey: getListAssistantTasksQueryKey() }); qc.invalidateQueries({ queryKey: getGetAssistantDashboardQueryKey() }); } })} aborting={abort.isPending} />}
   </div></AppShell>;
@@ -761,6 +752,7 @@ function WorkspacePage() {
   const qc = useQueryClient();
   const notesQuery = useListAssistantNotes();
   const filesQuery = useListAssistantFiles();
+  const downloadWorkspace = useDownloadAssistantWorkspace({ query: { enabled: false, queryKey: getDownloadAssistantWorkspaceQueryKey() } });
   const createNote = useCreateAssistantNote();
   const deleteNote = useDeleteAssistantNote();
   const deleteFile = useDeleteAssistantFile();
@@ -772,6 +764,7 @@ function WorkspacePage() {
   const [noteError, setNoteError] = useState('');
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState('');
+  const [downloadError, setDownloadError] = useState('');
   const [selectedFile, setSelectedFile] = useState<AssistantFile>();
   const [search, setSearch] = useState('');
   const filteredNotes = (notesQuery.data ?? []).filter((n) => `${n.title} ${n.content} ${n.tags.join(' ')}`.toLowerCase().includes(search.toLowerCase()));
@@ -790,6 +783,20 @@ function WorkspacePage() {
       setUploadError('This file could not be uploaded. Check the file and try again.');
     } finally { setUploading(false); }
   };
+  const onDownload = async () => {
+    setDownloadError('');
+    const result = await downloadWorkspace.refetch();
+    if (result.isError || !result.data) {
+      setDownloadError('Workspace archive is unavailable. Check the connection and retry.');
+      return;
+    }
+    const url = URL.createObjectURL(result.data);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = 'forge-workspace.zip';
+    anchor.click();
+    URL.revokeObjectURL(url);
+  };
   const saveNote = (event: FormEvent) => {
     event.preventDefault(); setNoteError('');
     if (!noteTitle.trim()) { setNoteError('Give your note a title before saving.'); return; }
@@ -801,9 +808,10 @@ function WorkspacePage() {
   const removeNote = (note: AssistantNote) => { if (window.confirm(`Delete “${note.title}”? This cannot be undone.`)) deleteNote.mutate({ id: note.id }, { onSuccess: () => { qc.invalidateQueries({ queryKey: getListAssistantNotesQueryKey() }); qc.invalidateQueries({ queryKey: getGetAssistantDashboardQueryKey() }); } }); };
   const removeFile = (file: AssistantFile) => { if (window.confirm(`Delete “${file.name}”? This cannot be undone.`)) deleteFile.mutate({ id: file.id }, { onSuccess: () => { qc.invalidateQueries({ queryKey: getListAssistantFilesQueryKey() }); qc.invalidateQueries({ queryKey: getGetAssistantDashboardQueryKey() }); } }); };
   return <AppShell page="workspace"><div className="content-page enter">
-    <PageHeading eyebrow="REFERENCE LIBRARY" title="Workspace" description="Files and notes your agent can draw on when the context matters." right={<><a className="button button-quiet" href="/api/assistant/workspace.zip" download data-testid="button-download-workspace"><ArrowDownToLine size={15} /> Download ZIP</a><label className={`button button-quiet ${uploading ? 'disabled' : ''}`} htmlFor="workspace-upload" data-testid="button-upload-file"><Upload size={15} />{uploading ? 'Uploading…' : 'Upload file'}<input id="workspace-upload" type="file" hidden disabled={uploading} onChange={(e) => { void onUpload(e.currentTarget.files?.[0]); e.currentTarget.value = ''; }} /></label><button className="button button-primary" onClick={() => setNoteOpen(true)} data-testid="button-new-note"><Plus size={16} /> New note</button></>} />
-    <div className="library-intro"><div className="library-graphic"><div className="graphic-file"><FileText size={22} /></div><div className="graphic-note"><BookOpen size={19} /></div><div className="graphic-orbit" /></div><div><strong>A little context goes a long way.</strong><p>Keep source material and useful details close. Your agent can reference uploaded files and saved notes in future work.</p></div></div>
+    <PageHeading eyebrow="REFERENCE LIBRARY" title="Workspace" description="Files and notes your agent can draw on when the context matters." right={<><button className="button button-quiet" onClick={() => void onDownload()} disabled={downloadWorkspace.isFetching} data-testid="button-download-workspace"><ArrowDownToLine size={15} /> {downloadWorkspace.isFetching ? 'Preparing ZIP…' : 'Download ZIP'}</button><label className={`button button-quiet ${uploading ? 'disabled' : ''}`} htmlFor="workspace-upload" data-testid="button-upload-file"><Upload size={15} />{uploading ? 'Uploading…' : 'Upload file'}<input id="workspace-upload" type="file" hidden disabled={uploading} onChange={(e) => { void onUpload(e.currentTarget.files?.[0]); e.currentTarget.value = ''; }} /></label><button className="button button-primary" onClick={() => setNoteOpen(true)} data-testid="button-new-note"><Plus size={16} /> New note</button></>} />
+    <div className="library-intro info-banner" role="note" data-testid="status-workspace-context-tip"><div className="library-graphic"><div className="graphic-file"><FileText size={22} /></div><div className="graphic-note"><BookOpen size={19} /></div><div className="graphic-orbit" /></div><div><strong>A little context goes a long way.</strong><p>Keep source material and useful details close. Your agent can reference uploaded files and saved notes in future work.</p></div></div>
     {uploadError && <div className="inline-error"><AlertCircle size={15} />{uploadError}<button onClick={() => setUploadError('')} aria-label="Dismiss upload error"><X size={14} /></button></div>}
+    {downloadError && <div className="inline-error" role="alert" data-testid="status-download-error"><AlertCircle size={15} />{downloadError}<button onClick={() => setDownloadError('')} aria-label="Dismiss download error"><X size={14} /></button></div>}
     <section className="panel library-panel"><div className="library-toolbar"><div className="library-tabs"><button onClick={() => setTab('files')} className={tab === 'files' ? 'active' : ''} data-testid="tab-files"><FileText size={15} /> Files <span>{filesQuery.data?.length ?? 0}</span></button><button onClick={() => setTab('notes')} className={tab === 'notes' ? 'active' : ''} data-testid="tab-notes"><BookOpen size={15} /> Notes <span>{notesQuery.data?.length ?? 0}</span></button><button onClick={() => { setTab('preview'); window.dispatchEvent(new Event('morrow:open-preview-inspector')); }} className={tab === 'preview' ? 'active' : ''} data-testid="tab-live-preview"><Layers3 size={15} /> Live Preview</button></div>{tab !== 'preview' && <label className="search-box"><Search size={15} /><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={`Search ${tab}`} aria-label={`Search ${tab}`} data-testid="input-search-library" /></label>}</div>
       {tab === 'preview' ? <div className="preview-in-inspector"><div className="preview-state-icon"><Layers3 size={20} /></div><strong>Live preview is open in the inspector</strong><p>Refresh, navigate, and stop preview apps from the right-side workspace panel.</p><button className="button button-primary button-small" onClick={() => window.dispatchEvent(new Event('morrow:open-preview-inspector'))} data-testid="button-open-preview-inspector"><PanelRight size={14} /> Show inspector</button></div> : <>
       {tab === 'files' ? filesQuery.isLoading ? <div className="library-loading"><Skeleton rows={4} /></div> : filesQuery.isError ? <QueryProblem retry={() => filesQuery.refetch()} /> : filteredFiles.length ? <div className="file-list">{filteredFiles.map((file) => <div className="file-row" key={file.id}><span className="file-type-icon"><FileText size={18} /></span><div className="file-main"><strong>{file.name}</strong><span>{file.mimeType || 'Document'} <i /> {formatSize(file.sizeBytes)}</span></div><span className="file-added">{timeAgo(file.createdAt)}</span><div className="row-actions"><button onClick={() => setSelectedFile(file)} className="icon-button" aria-label={`Preview ${file.name}`} data-testid={`button-preview-file-${file.id}`}><ArrowDownToLine size={16} /></button><button onClick={() => removeFile(file)} className="icon-button danger-hover" aria-label={`Delete ${file.name}`} data-testid={`button-delete-file-${file.id}`}><Trash2 size={16} /></button></div></div>)}</div> : <div className="empty-state"><div className="empty-mark"><Upload size={19} /></div><strong>{search ? 'No files found' : 'Start with a source file'}</strong><p>{search ? 'Try a different name.' : 'Upload a document, PDF, or text file to give your agent context.'}</p>{!search && <label htmlFor="workspace-upload" className="button button-primary button-small"><Upload size={14} /> Upload your first file</label>}</div>
@@ -825,27 +833,18 @@ const GEMINI_MODEL_IDS = new Set([
 const DEEPSEEK_MODEL_IDS = new Set(['deepseek-chat', 'deepseek-reasoner']);
 
 function SettingsPage() {
+  const qc = useQueryClient();
+  const settingsQuery = useGetAssistantSettings();
+  const updateSettings = useUpdateAssistantSettings();
   const [provider, setProvider] = useState<'openai' | 'deepseek' | 'gemini' | 'openrouter'>('deepseek');
   const [modelId, setModelId] = useState('deepseek-chat');
   const [customModelId, setCustomModelId] = useState('');
   const [fallbackModelId, setFallbackModelId] = useState('');
-  const [credentialStatus, setCredentialStatus] = useState<{
-    provider: 'openai' | 'deepseek' | 'gemini' | 'openrouter';
-    modelId: string;
-    localSetupAllowed: boolean;
-    providerSettingsAllowed: boolean;
-    hasOpenaiKey: boolean;
-    hasDeepseekKey: boolean;
-    hasGeminiKey: boolean;
-    hasOpenrouterKey: boolean;
-    codeRunnerEnabled: boolean;
-    appPreviewsEnabled: boolean;
-  }>();
-  const [providerModalOpen, setProviderModalOpen] = useState(false);
+  const initialized = useRef(false);
+  const credentialStatus = settingsQuery.data;
   const [apiKeys, setApiKeys] = useState({ openaiApiKey: '', deepseekApiKey: '', geminiApiKey: '', openrouterApiKey: '' });
   const [codeRunnerEnabled, setCodeRunnerEnabled] = useState(false);
   const [appPreviewsEnabled, setAppPreviewsEnabled] = useState(false);
-  const [providerSaving, setProviderSaving] = useState(false);
   const [providerError, setProviderError] = useState('');
   const [providerSaved, setProviderSaved] = useState(false);
   const [confirmBeforeActions, setConfirmBeforeActions] = useState(true);
@@ -879,33 +878,22 @@ function SettingsPage() {
     ],
   };
   useEffect(() => {
-    let active = true;
-    fetch('/api/assistant/settings')
-      .then(async (response) => {
-        if (!response.ok) throw new Error('Could not load provider settings.');
-        return response.json();
-      })
-      .then((data) => {
-        if (!active) return;
-        setCredentialStatus(data);
-        setProvider(data.provider);
-        setModelId(data.modelId);
-        setFallbackModelId(data.fallbackModelId ?? '');
-        setCustomModelId(
-          data.provider === 'gemini' && !GEMINI_MODEL_IDS.has(data.modelId)
-            ? data.modelId
-            : data.provider === 'deepseek' && !DEEPSEEK_MODEL_IDS.has(data.modelId)
-              ? data.modelId
-              : '',
-        );
-        setCodeRunnerEnabled(data.codeRunnerEnabled);
-        setAppPreviewsEnabled(data.appPreviewsEnabled);
-      })
-      .catch(() => {
-        if (active) setProviderError('Provider settings could not be loaded.');
-      });
-    return () => { active = false; };
-  }, []);
+    const data = settingsQuery.data;
+    if (!data || initialized.current) return;
+    initialized.current = true;
+    setProvider(data.provider);
+    setModelId(data.modelId);
+    setFallbackModelId(data.fallbackModelId ?? '');
+    setCustomModelId(
+      data.provider === 'gemini' && !GEMINI_MODEL_IDS.has(data.modelId)
+        ? data.modelId
+        : data.provider === 'deepseek' && !DEEPSEEK_MODEL_IDS.has(data.modelId)
+          ? data.modelId
+          : '',
+    );
+    setCodeRunnerEnabled(data.codeRunnerEnabled);
+    setAppPreviewsEnabled(data.appPreviewsEnabled);
+  }, [settingsQuery.data]);
   const activeModels = models[provider];
   const configured = provider === 'openai'
     ? credentialStatus?.hasOpenaiKey
@@ -914,43 +902,50 @@ function SettingsPage() {
     : provider === 'gemini'
       ? credentialStatus?.hasGeminiKey
       : credentialStatus?.hasOpenrouterKey;
-  const saveProviderSettings = async () => {
-    setProviderSaving(true);
+  const saveProviderSettings = () => {
     setProviderError('');
     setProviderSaved(false);
     const selectedModelId = (provider === 'gemini' || provider === 'deepseek') && customModelId.trim() ? customModelId.trim() : modelId;
-    const payload: Record<string, unknown> = { provider, modelId: selectedModelId, codeRunnerEnabled, appPreviewsEnabled };
+    const payload: AssistantSettingsInput = { provider, modelId: selectedModelId, codeRunnerEnabled, appPreviewsEnabled };
     if (provider === 'gemini') payload.fallbackModelId = fallbackModelId.trim();
-    for (const [field, value] of Object.entries(apiKeys)) {
-      if (value.trim()) payload[field] = value.trim();
-    }
-    try {
-      const response = await fetch('/api/assistant/settings', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify(payload),
-      });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.detail || 'Settings could not be saved.');
-      setCredentialStatus(result);
-      setModelId(selectedModelId);
-       setApiKeys({ openaiApiKey: '', deepseekApiKey: '', geminiApiKey: '', openrouterApiKey: '' });
-      setProviderSaved(true);
-    } catch (error) {
-      setProviderError(error instanceof Error ? error.message : 'Settings could not be saved.');
-    } finally {
-      setProviderSaving(false);
-    }
+    if (apiKeys.openaiApiKey.trim()) payload.openaiApiKey = apiKeys.openaiApiKey.trim();
+    if (apiKeys.deepseekApiKey.trim()) payload.deepseekApiKey = apiKeys.deepseekApiKey.trim();
+    if (apiKeys.geminiApiKey.trim()) payload.geminiApiKey = apiKeys.geminiApiKey.trim();
+    if (apiKeys.openrouterApiKey.trim()) payload.openrouterApiKey = apiKeys.openrouterApiKey.trim();
+    updateSettings.mutate({ data: payload }, {
+      onSuccess: (result: AssistantSettings) => {
+        qc.setQueryData(getGetAssistantSettingsQueryKey(), result);
+        setModelId(selectedModelId);
+        setApiKeys({ openaiApiKey: '', deepseekApiKey: '', geminiApiKey: '', openrouterApiKey: '' });
+        setProviderSaved(true);
+      },
+      onError: () => setProviderError('Provider settings could not be saved. Check the connection and try again.'),
+    });
   };
   return <AppShell page="settings"><div className="content-page settings-page enter">
     <section className="settings-section theme-settings"><div className="settings-section-heading"><div><h2>Appearance</h2><p>Choose the command center color system.</p></div><ThemeChooser /></div></section>
     <PageHeading eyebrow="AGENT CONFIGURATION" title="Preferences" description="Choose how your agent works and where it should pause for your approval." />
-    <section className="settings-section model-section"><div className="settings-section-heading"><div className="section-symbol"><Zap size={17} /></div><div><h2>Model selection</h2><p>Choose a provider and working model for new tasks.</p></div><button className="button button-quiet button-small" onClick={() => { setProviderError(''); setProviderModalOpen(true); }} data-testid="button-configure-provider"><KeyRound size={14} /> Configure provider</button></div>
-      <label className="form-label provider-select-label">Provider<select value={provider} onChange={(event) => { const next = event.target.value as typeof provider; setProvider(next); setModelId(models[next][0].id); setCustomModelId(''); }} data-testid="select-model-provider"><option value="openai">OpenAI</option><option value="deepseek">DeepSeek</option><option value="gemini">Google Gemini</option><option value="openrouter">OpenRouter</option></select></label>
-      <div className="model-options">{activeModels.map((item) => <button className={`model-option ${modelId === item.id && !customModelId ? 'chosen' : ''}`} key={item.id} onClick={() => { setModelId(item.id); setCustomModelId(''); setSaved(false); }} data-testid={`button-model-${item.id}`}><span className={`model-mark ${item.color}`}>{item.descriptor === 'QUICK' ? <Zap size={17} /> : item.descriptor === 'DEEP FOCUS' ? <Search size={17} /> : <Layers3 size={17} />}</span><span className="model-copy"><strong>{item.name} {item.descriptor === 'BALANCED' && <span className="recommended">BALANCED</span>}</strong><span>{item.detail}</span></span><span className="model-descriptor">{item.descriptor}</span><span className={`radio-mark ${modelId === item.id && !customModelId ? 'checked' : ''}`}>{modelId === item.id && !customModelId && <Check size={12} />}</span></button>)}</div>
-      {(provider === 'gemini' || provider === 'deepseek') && customModelId && <p className="settings-footnote">Custom {provider === 'deepseek' ? 'DeepSeek' : 'Gemini'} model active: <strong>{customModelId}</strong></p>}
+    {settingsQuery.isLoading && <div className="settings-section" aria-label="Loading provider preferences" data-testid="status-settings-loading"><Skeleton rows={3} /></div>}
+    {settingsQuery.isError && <div data-testid="status-settings-connection-error"><QueryProblem retry={() => { void settingsQuery.refetch(); }} message="Provider preferences are disconnected. Your saved configuration remains untouched." /></div>}
+    <section className="settings-section model-section"><div className="settings-section-heading"><div className="section-symbol"><Zap size={17} /></div><div><h2>Model selection</h2><p>Choose a provider and working model for new tasks.</p></div></div>
+      <label className="form-label provider-select-label">Provider<select value={provider} onChange={(event) => { const next = event.target.value as typeof provider; setProvider(next); setModelId(models[next][0].id); setCustomModelId(''); setProviderSaved(false); }} data-testid="select-model-provider"><option value="openai">OpenAI</option><option value="deepseek">DeepSeek</option><option value="gemini">Google Gemini</option><option value="openrouter">OpenRouter</option></select></label>
+      <div className="model-options">{activeModels.map((item) => <button className={`model-option ${modelId === item.id && !customModelId ? 'chosen' : ''}`} key={item.id} onClick={() => { setModelId(item.id); setCustomModelId(''); setSaved(false); setProviderSaved(false); }} data-testid={`button-model-${item.id}`}><span className={`model-mark ${item.color}`}>{item.descriptor === 'QUICK' ? <Zap size={17} /> : item.descriptor === 'DEEP FOCUS' ? <Search size={17} /> : <Layers3 size={17} />}</span><span className="model-copy"><strong>{item.name} {item.descriptor === 'BALANCED' && <span className="recommended">BALANCED</span>}</strong><span>{item.detail}</span></span><span className="model-descriptor">{item.descriptor}</span><span className={`radio-mark ${modelId === item.id && !customModelId ? 'checked' : ''}`}>{modelId === item.id && !customModelId && <Check size={12} />}</span></button>)}</div>
+      {(provider === 'gemini' || provider === 'deepseek') && <label className="form-label custom-model-control">Custom {provider === 'deepseek' ? 'DeepSeek' : 'Gemini'} model ID <span className="optional-label">Optional; overrides the selected model.</span><input type="text" autoComplete="off" spellCheck={false} value={customModelId} onChange={(event) => { setCustomModelId(event.target.value); setProviderSaved(false); }} placeholder={provider === 'deepseek' ? 'e.g. deepseek-v4-flash' : 'e.g. gemini-3.1-pro-preview'} data-testid="input-custom-model-id" /></label>}
+      {provider === 'gemini' && <label className="form-label custom-model-control">Automatic fallback model <span className="optional-label">Optional; retry once after a Gemini 429 or 503. Leave blank to disable.</span><input type="text" autoComplete="off" spellCheck={false} value={fallbackModelId} onChange={(event) => { setFallbackModelId(event.target.value); setProviderSaved(false); }} placeholder="e.g. gemini-2.5-flash-lite" data-testid="input-gemini-fallback-model-id" /></label>}
       <p className="settings-footnote"><LockKeyhole size={13} /> {configured ? 'Provider key configured.' : 'Add a provider key to run tasks.'} Keys are never sent back to the browser.</p>
+    </section>
+    <section className="settings-section key-vault" data-testid="settings-api-keys-vault">
+      <div className="settings-section-heading"><div className="section-symbol"><KeyRound size={17} /></div><div><h2>API Keys Vault</h2><p>Credentials stay local. Saved values are never shown or prefilled.</p></div><span className={`connection-state ${credentialStatus?.providerSettingsAllowed ? 'connected' : 'disconnected'}`} data-testid="status-provider-settings-access">{credentialStatus?.providerSettingsAllowed ? 'KEY STORAGE AVAILABLE' : 'KEY STORAGE RESTRICTED'}</span></div>
+      <div className="key-vault-grid">
+        <label className="form-label">OpenAI API key <span className="optional-label">{credentialStatus?.hasOpenaiKey ? 'Configured · blank keeps existing' : 'Optional · not configured'}</span><input type="password" autoComplete="new-password" value={apiKeys.openaiApiKey} onChange={(event) => { setApiKeys({ ...apiKeys, openaiApiKey: event.target.value }); setProviderSaved(false); }} placeholder="Enter a new OpenAI key" disabled={!credentialStatus?.providerSettingsAllowed} data-testid="input-openai-api-key" /></label>
+        <label className="form-label">DeepSeek API key <span className="optional-label">{credentialStatus?.hasDeepseekKey ? 'Configured · blank keeps existing' : 'Optional · not configured'}</span><input type="password" autoComplete="new-password" value={apiKeys.deepseekApiKey} onChange={(event) => { setApiKeys({ ...apiKeys, deepseekApiKey: event.target.value }); setProviderSaved(false); }} placeholder="Enter a new DeepSeek key" disabled={!credentialStatus?.providerSettingsAllowed} data-testid="input-deepseek-api-key" /></label>
+        <label className="form-label">Gemini API key <span className="optional-label">{credentialStatus?.hasGeminiKey ? 'Configured · blank keeps existing' : 'Optional · not configured'}</span><input type="password" autoComplete="new-password" value={apiKeys.geminiApiKey} onChange={(event) => { setApiKeys({ ...apiKeys, geminiApiKey: event.target.value }); setProviderSaved(false); }} placeholder="Enter a new Gemini key" disabled={!credentialStatus?.providerSettingsAllowed} data-testid="input-gemini-api-key" /></label>
+        <label className="form-label">OpenRouter API key <span className="optional-label">{credentialStatus?.hasOpenrouterKey ? 'Configured · blank keeps existing' : 'Optional · not configured'}</span><input type="password" autoComplete="new-password" value={apiKeys.openrouterApiKey} onChange={(event) => { setApiKeys({ ...apiKeys, openrouterApiKey: event.target.value }); setProviderSaved(false); }} placeholder="Enter a new OpenRouter key" disabled={!credentialStatus?.providerSettingsAllowed} data-testid="input-openrouter-api-key" /></label>
+      </div>
+      <p className="settings-footnote"><LockKeyhole size={13} /> Blank key fields mean “keep existing key”. Key values are never returned to this screen.</p>
+      {providerError && <p className="field-error" role="alert" data-testid="status-provider-save-error">{providerError}</p>}
+      {providerSaved && <p className="save-state" role="status" data-testid="status-provider-saved"><CheckCircle2 size={15} /> Provider settings saved. Key values remain hidden.</p>}
+      <div className="settings-save-row"><span className="settings-footnote">Provider, model, safety switches, and new keys save together.</span><button className="button button-primary" disabled={!credentialStatus?.providerSettingsAllowed || updateSettings.isPending} onClick={saveProviderSettings} data-testid="button-save-provider"><Check size={15} /> {updateSettings.isPending ? 'Saving settings…' : 'Save provider settings'}</button></div>
     </section>
     <section className="settings-section safety-section"><div className="settings-section-heading"><div className="section-symbol amber"><ShieldCheck size={18} /></div><div><h2>Local code runner</h2><p>Optional Python execution in the local workspace, disabled by default.</p></div></div>
       <div className="setting-row"><div className="setting-row-icon"><KeyRound size={16} /></div><div className="setting-copy"><strong>Allow safe workspace commands</strong><span>Local-only and off by default. Only read-only commands are supported, restricted to workspace files, and limited to 30 seconds.</span></div><button className={`switch ${codeRunnerEnabled ? 'on' : ''}`} role="switch" aria-checked={codeRunnerEnabled} disabled={!credentialStatus?.localSetupAllowed} onClick={() => { setCodeRunnerEnabled(!codeRunnerEnabled); setProviderSaved(false); }} aria-label="Allow safe workspace commands" data-testid="switch-local-code-runner"><span /></button></div>
@@ -963,23 +958,9 @@ function SettingsPage() {
       <div className="setting-row"><div className="setting-row-icon"><Search size={16} /></div><div className="setting-copy"><strong>Allow external research</strong><span>Let the agent consult public sources when research needs it.</span></div><button className={`switch ${allowExternalResearch ? 'on' : ''}`} role="switch" aria-checked={allowExternalResearch} onClick={() => onSetting(setAllowExternalResearch, !allowExternalResearch)} aria-label="Allow external research" data-testid="switch-external-research"><span /></button></div>
       <div className="setting-row"><div className="setting-row-icon"><FileText size={16} /></div><div className="setting-copy"><strong>Use workspace files as context</strong><span>Allow saved documents and notes to inform relevant tasks.</span></div><button className={`switch ${includeFiles ? 'on' : ''}`} role="switch" aria-checked={includeFiles} onClick={() => onSetting(setIncludeFiles, !includeFiles)} aria-label="Use workspace files as context" data-testid="switch-workspace-context"><span /></button></div>
     </section>
-    <div className="settings-save-row"><div className="save-state">{saved && <><CheckCircle2 size={15} /> Preferences updated for this session.</>}{providerSaved && <><CheckCircle2 size={15} /> Provider settings saved.</>}</div><button className="button button-primary" disabled={!credentialStatus?.providerSettingsAllowed || providerSaving} onClick={() => { setSaved(true); void saveProviderSettings(); }} data-testid="button-save-settings"><Check size={15} /> Save preferences</button></div>
+    <div className="settings-save-row"><div className="save-state">{saved && <><CheckCircle2 size={15} /> Preferences updated for this session.</>}</div><button className="button button-primary" disabled={!credentialStatus?.providerSettingsAllowed || updateSettings.isPending} onClick={() => { setSaved(true); saveProviderSettings(); }} data-testid="button-save-settings"><Check size={15} /> Save preferences</button></div>
     <div className="settings-note"><LockKeyhole size={15} /><div><strong>Your work stays yours.</strong><p>These controls guide the agent; it will never claim to have completed work until a task reports an outcome.</p></div></div>
     <TimersManager />
-    {providerModalOpen && <Modal title="Connect an AI provider" onClose={() => setProviderModalOpen(false)}><form className="form-stack" onSubmit={(event) => { event.preventDefault(); void saveProviderSettings(); }}>
-      <p className="modal-description">Keys are saved to the .env file for the environment running this app and are never returned to the browser. In Replit they stay in this workspace; in a local copy they stay on your PC.</p>
-      <label className="form-label">Default provider<select value={provider} onChange={(event) => { const next = event.target.value as typeof provider; setProvider(next); setModelId(models[next][0].id); setCustomModelId(''); }} data-testid="select-settings-provider"><option value="openai">OpenAI</option><option value="deepseek">DeepSeek</option><option value="gemini">Google Gemini</option><option value="openrouter">OpenRouter</option></select></label>
-      <label className="form-label">Default model<select value={customModelId.trim() || modelId} onChange={(event) => { setModelId(event.target.value); setCustomModelId(''); }} data-testid="select-settings-model">{customModelId.trim() && !models[provider].some((item) => item.id === customModelId.trim()) && <option value={customModelId.trim()}>{customModelId.trim()} (custom)</option>}{models[provider].map((item) => <option key={item.id} value={item.id}>{item.id} — {item.detail}</option>)}</select></label>
-      {(provider === 'gemini' || provider === 'deepseek') && <label className="form-label">Custom Model ID <span className="optional-label">Optional; overrides the selected model.</span><input type="text" autoComplete="off" spellCheck={false} value={customModelId} onChange={(event) => { setCustomModelId(event.target.value); setProviderSaved(false); }} placeholder={provider === 'deepseek' ? 'e.g. deepseek-v4-flash' : 'e.g. gemini-3.1-pro-preview'} data-testid="input-custom-model-id" /></label>}
-      {provider === 'gemini' && <label className="form-label">Automatic fallback model <span className="optional-label">Optional; retry once after a Gemini 429 or 503. Leave blank to disable.</span><input type="text" autoComplete="off" spellCheck={false} value={fallbackModelId} onChange={(event) => { setFallbackModelId(event.target.value); setProviderSaved(false); }} placeholder="e.g. gemini-2.5-flash-lite" data-testid="input-gemini-fallback-model-id" /></label>}
-      <label className="form-label">OpenAI API key <span className="optional-label">{credentialStatus?.hasOpenaiKey ? 'configured — leave blank to keep' : 'optional'}</span><input type="password" autoComplete="new-password" value={apiKeys.openaiApiKey} onChange={(event) => setApiKeys({ ...apiKeys, openaiApiKey: event.target.value })} placeholder="sk-…" disabled={!credentialStatus?.providerSettingsAllowed} data-testid="input-openai-api-key" /></label>
-      <label className="form-label">DeepSeek API key <span className="optional-label">{credentialStatus?.hasDeepseekKey ? 'configured — leave blank to keep' : 'optional'}</span><input type="password" autoComplete="new-password" value={apiKeys.deepseekApiKey} onChange={(event) => setApiKeys({ ...apiKeys, deepseekApiKey: event.target.value })} placeholder="Enter your DeepSeek key" disabled={!credentialStatus?.providerSettingsAllowed} data-testid="input-deepseek-api-key" /></label>
-      <label className="form-label">Gemini API key <span className="optional-label">{credentialStatus?.hasGeminiKey ? 'configured — leave blank to keep' : 'optional'}</span><input type="password" autoComplete="new-password" value={apiKeys.geminiApiKey} onChange={(event) => setApiKeys({ ...apiKeys, geminiApiKey: event.target.value })} placeholder="Enter your Gemini key" disabled={!credentialStatus?.providerSettingsAllowed} data-testid="input-gemini-api-key" /></label>
-      <label className="form-label">OpenRouter API key <span className="optional-label">{credentialStatus?.hasOpenrouterKey ? 'configured — leave blank to keep' : 'optional'}</span><input type="password" autoComplete="new-password" value={apiKeys.openrouterApiKey} onChange={(event) => setApiKeys({ ...apiKeys, openrouterApiKey: event.target.value })} placeholder="sk-or-…" disabled={!credentialStatus?.providerSettingsAllowed} data-testid="input-openrouter-api-key" /></label>
-      {providerError && <p className="field-error" role="alert">{providerError}</p>}
-      {providerSaved && <p className="save-state"><CheckCircle2 size={15} /> Saved to the current .env file. Key values are not shown again.</p>}
-      <div className="modal-actions"><button type="button" className="button button-quiet" onClick={() => setProviderModalOpen(false)}>Close</button><button type="submit" className="button button-primary" disabled={providerSaving || !credentialStatus?.providerSettingsAllowed} data-testid="button-save-provider">{providerSaving ? 'Saving…' : 'Save provider settings'}</button></div>
-    </form></Modal>}
   </div></AppShell>;
 }
 
@@ -1004,6 +985,7 @@ function TimersManager() {
   };
   const timers = timerQuery.data ?? [];
   return <section className="settings-section reminders-section"><div className="settings-section-heading"><div className="section-symbol amber"><Bell size={17} /></div><div><h2>Reminders</h2><p>Keep a time-sensitive nudge where you can see it.</p></div><button className="button button-quiet button-small" onClick={() => setOpen(true)} data-testid="button-add-reminder"><Plus size={14} /> Add reminder</button></div>
+    {deleteTimer.isError && <div className="inline-error" role="alert" data-testid="status-delete-reminder-error"><AlertCircle size={15} />Reminder could not be dismissed. Check the connection and retry.</div>}
     {timerQuery.isLoading ? <Skeleton rows={2} /> : timerQuery.isError ? <QueryProblem retry={() => timerQuery.refetch()} /> : timers.length ? <div className="reminder-list">{timers.map((timer: AssistantTimer) => <div className="reminder-row" key={timer.id}><span className={`reminder-icon ${timer.kind}`}><Clock3 size={16} /></span><div className="reminder-copy"><strong>{timer.label}</strong><span>{timer.kind} <i /> {formatDate(timer.scheduledFor)}</span></div><StatusPill status={timer.status} />{timer.status !== 'dismissed' && <button className="icon-button danger-hover" aria-label={`Dismiss ${timer.label}`} onClick={() => deleteTimer.mutate({ id: timer.id }, { onSuccess: () => { qc.invalidateQueries({ queryKey: getListAssistantTimersQueryKey() }); qc.invalidateQueries({ queryKey: getGetAssistantDashboardQueryKey() }); } })} data-testid={`button-delete-timer-${timer.id}`}><X size={16} /></button>}</div>)}</div> : <div className="empty-inline"><Clock3 size={16} /><span>No reminders set. Add one when a task needs a nudge.</span></div>}
     {open && <Modal title="Add a reminder" onClose={() => setOpen(false)}><form className="form-stack" onSubmit={onCreate}><label className="form-label">What should you remember?<input value={label} onChange={(e) => setLabel(e.target.value)} maxLength={200} placeholder="Follow up on the proposal" autoFocus data-testid="input-reminder-label" /></label><div className="form-label">Reminder type<div className="segmented-control"><button type="button" className={kind === 'countdown' ? 'selected' : ''} onClick={() => setKind('countdown')} data-testid="button-kind-countdown"><Clock3 size={14} /> Countdown</button><button type="button" className={kind === 'alarm' ? 'selected' : ''} onClick={() => setKind('alarm')} data-testid="button-kind-alarm"><Bell size={14} /> Scheduled</button></div></div><label className="form-label">When<input type="datetime-local" value={when} onChange={(e) => setWhen(e.target.value)} data-testid="input-reminder-time" /></label><label className="form-label">Repeat<select value={recurrence} onChange={(e) => setRecurrence(e.target.value as typeof recurrence)} data-testid="select-reminder-recurrence"><option value="none">Does not repeat</option><option value="daily">Daily</option><option value="weekly">Weekly</option></select></label>{error && <p className="field-error">{error}</p>}<div className="modal-actions"><button type="button" className="button button-quiet" onClick={() => setOpen(false)}>Cancel</button><button className="button button-primary" disabled={createTimer.isPending} data-testid="button-save-reminder">{createTimer.isPending ? 'Setting…' : <><Bell size={14} /> Set reminder</>}</button></div></form></Modal>}
   </section>;
