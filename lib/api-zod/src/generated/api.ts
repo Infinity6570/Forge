@@ -35,7 +35,7 @@ export const GetAssistantDashboardResponse = zod.object({
   "error": zod.string().nullable(),
   "logs": zod.array(zod.object({
   "id": zod.string(),
-  "kind": zod.enum(['plan', 'agent', 'tool', 'result', 'error', 'info', 'warning']),
+  "kind": zod.enum(['plan', 'agent', 'tool', 'result', 'error', 'info', 'warning', 'success']),
   "message": zod.string(),
   "createdAt": zod.coerce.date()
 })),
@@ -65,7 +65,7 @@ export const ListAssistantTasksResponseItem = zod.object({
   "error": zod.string().nullable(),
   "logs": zod.array(zod.object({
   "id": zod.string(),
-  "kind": zod.enum(['plan', 'agent', 'tool', 'result', 'error', 'info', 'warning']),
+  "kind": zod.enum(['plan', 'agent', 'tool', 'result', 'error', 'info', 'warning', 'success']),
   "message": zod.string(),
   "createdAt": zod.coerce.date()
 })),
@@ -108,7 +108,7 @@ export const CreateAssistantTaskResponse = zod.object({
   "error": zod.string().nullable(),
   "logs": zod.array(zod.object({
   "id": zod.string(),
-  "kind": zod.enum(['plan', 'agent', 'tool', 'result', 'error', 'info', 'warning']),
+  "kind": zod.enum(['plan', 'agent', 'tool', 'result', 'error', 'info', 'warning', 'success']),
   "message": zod.string(),
   "createdAt": zod.coerce.date()
 })),
@@ -141,7 +141,7 @@ export const GetAssistantTaskResponse = zod.object({
   "error": zod.string().nullable(),
   "logs": zod.array(zod.object({
   "id": zod.string(),
-  "kind": zod.enum(['plan', 'agent', 'tool', 'result', 'error', 'info', 'warning']),
+  "kind": zod.enum(['plan', 'agent', 'tool', 'result', 'error', 'info', 'warning', 'success']),
   "message": zod.string(),
   "createdAt": zod.coerce.date()
 })),
@@ -174,7 +174,7 @@ export const AbortAssistantTaskResponse = zod.object({
   "error": zod.string().nullable(),
   "logs": zod.array(zod.object({
   "id": zod.string(),
-  "kind": zod.enum(['plan', 'agent', 'tool', 'result', 'error', 'info', 'warning']),
+  "kind": zod.enum(['plan', 'agent', 'tool', 'result', 'error', 'info', 'warning', 'success']),
   "message": zod.string(),
   "createdAt": zod.coerce.date()
 })),
@@ -211,7 +211,7 @@ export const ChooseAssistantTaskModelResponse = zod.object({
   "error": zod.string().nullable(),
   "logs": zod.array(zod.object({
   "id": zod.string(),
-  "kind": zod.enum(['plan', 'agent', 'tool', 'result', 'error', 'info', 'warning']),
+  "kind": zod.enum(['plan', 'agent', 'tool', 'result', 'error', 'info', 'warning', 'success']),
   "message": zod.string(),
   "createdAt": zod.coerce.date()
 })),
@@ -248,7 +248,7 @@ export const RetryAssistantTaskStepResponse = zod.object({
   "error": zod.string().nullable(),
   "logs": zod.array(zod.object({
   "id": zod.string(),
-  "kind": zod.enum(['plan', 'agent', 'tool', 'result', 'error', 'info', 'warning']),
+  "kind": zod.enum(['plan', 'agent', 'tool', 'result', 'error', 'info', 'warning', 'success']),
   "message": zod.string(),
   "createdAt": zod.coerce.date()
 })),

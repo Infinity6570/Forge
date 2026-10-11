@@ -512,7 +512,7 @@ components:
         id: { type: string }
         kind:
           type: string
-          enum: [plan, agent, tool, result, error, info, warning]
+          enum: [plan, agent, tool, result, error, info, warning, success]
         message: { type: string }
         createdAt: { type: string, format: date-time }
     TaskInput:

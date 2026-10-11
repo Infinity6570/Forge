@@ -32,6 +32,7 @@ export const TaskLogKind = {
   error: 'error',
   info: 'info',
   warning: 'warning',
+  success: 'success',
 } as const;
 
 export interface TaskLog {
