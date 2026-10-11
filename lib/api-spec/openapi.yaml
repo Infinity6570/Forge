@@ -506,7 +506,7 @@ components:
             $ref: "#/components/schemas/AssistantTask"
     AssistantTask:
       type: object
-      required: [id, objective, status, currentStep, result, error, logs, provider, modelId, recommendationKind, recommendationReason, recommendedProvider, recommendedModelId, retryAvailable, requiresModelConfirmation, pendingApprovalId, approvalSummary, requiresApproval, createdAt, updatedAt]
+      required: [id, objective, status, currentStep, result, error, logs, provider, modelId, recommendationKind, recommendationReason, recommendedProvider, recommendedModelId, retryAvailable, requiresModelConfirmation, pendingApprovalId, pendingApprovalKind, approvalSummary, requiresApproval, createdAt, updatedAt]
       properties:
         id: { type: string, format: uuid }
         objective: { type: string }
@@ -529,6 +529,7 @@ components:
         retryAvailable: { type: boolean }
         requiresModelConfirmation: { type: boolean }
         pendingApprovalId: { type: ["string", "null"] }
+        pendingApprovalKind: { type: ["string", "null"] }
         approvalSummary: { type: ["string", "null"] }
         requiresApproval: { type: boolean }
         createdAt: { type: string, format: date-time }

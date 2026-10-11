@@ -53,6 +53,7 @@ Thumbs.db
 .env.*
 !.env.example
 /workspace/
+/logs/
 __pycache__/
 *.py[cod]
 .pythonlibs/

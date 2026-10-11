@@ -6,4 +6,5 @@
 .env
 .env.*
 workspace
+logs
 .pythonlibs

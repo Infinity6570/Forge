@@ -43,6 +43,7 @@ from workspace_preview import (
     resolve_workspace_path,
     write_workspace_asset,
 )
+from tools.elevated_runner import execute_elevated_command, validate_elevated_command
 
 ROOT = Path(__file__).resolve().parent
 ENV_FILE = ROOT / ".env"
@@ -336,7 +337,7 @@ def init_db() -> None:
                   recommendation_kind TEXT, recommendation_reason TEXT,
                   recommended_provider TEXT, recommended_model_id TEXT, retry_prompt TEXT,
                   file_ids_json TEXT NOT NULL DEFAULT '[]', messages_json TEXT NOT NULL DEFAULT '[]',
-                  pending_approval_id TEXT, approval_summary TEXT,
+                  pending_approval_id TEXT, pending_approval_kind TEXT, approval_summary TEXT,
                   created_at TEXT NOT NULL, updated_at TEXT NOT NULL
                 );
                 CREATE TABLE IF NOT EXISTS timers (
@@ -376,6 +377,7 @@ def init_db() -> None:
                 ("file_ids_json", "TEXT NOT NULL DEFAULT '[]'"),
                 ("messages_json", "TEXT NOT NULL DEFAULT '[]'"),
                 ("pending_approval_id", "TEXT"),
+                ("pending_approval_kind", "TEXT"),
                 ("approval_summary", "TEXT"),
             ):
                 if name not in columns:
@@ -435,6 +437,7 @@ def task_dict(row: sqlite3.Row) -> dict[str, Any]:
         "retryAvailable": bool(row["retry_prompt"]),
         "requiresModelConfirmation": row["status"] == "awaiting_confirmation" and row["recommendation_kind"] == "complexity",
         "pendingApprovalId": row["pending_approval_id"],
+        "pendingApprovalKind": row["pending_approval_kind"],
         "approvalSummary": row["approval_summary"],
         "requiresApproval": row["status"] == "awaiting_approval" and bool(row["pending_approval_id"]),
         "createdAt": row["created_at"],
@@ -1036,6 +1039,15 @@ def workspace_action_requiring_approval(
     tool_name: str,
     arguments: dict[str, Any],
 ) -> tuple[str, dict[str, Any], str] | None:
+    if tool_name == "execute_elevated_command":
+        if is_replit_runtime():
+            raise PermissionError("Administrative execution is available only from a local exported copy.")
+        command = validate_elevated_command(str(arguments.get("command", "")))
+        return (
+            "elevated_command",
+            {"command": command},
+            command,
+        )
     if tool_name == "delete_workspace_file":
         relative_path = str(arguments.get("path", ""))
         path = safe_workspace_path(relative_path)
@@ -1064,6 +1076,10 @@ def workspace_action_requiring_approval(
 
 
 def apply_approved_workspace_action(action: str, payload: dict[str, Any]) -> str:
+    if action == "elevated_command":
+        command = validate_elevated_command(str(payload.get("command", "")))
+        result = execute_elevated_command(command)
+        return json.dumps(result, ensure_ascii=False)
     relative_path = str(payload.get("path", ""))
     target = safe_workspace_path(relative_path, allow_missing=action == "write")
     canonical = target.relative_to(BASE_DIR).as_posix()
@@ -1099,17 +1115,23 @@ def create_pending_approval(
     )
     db_run(
         "UPDATE tasks SET status='awaiting_approval',current_step=?,pending_approval_id=?,"
-        "approval_summary=?,messages_json=?,updated_at=? WHERE id=?",
+        "pending_approval_kind=?,approval_summary=?,messages_json=?,updated_at=? WHERE id=?",
         (
             "Waiting for your approval",
             approval_id,
+            action,
             summary,
             json.dumps(messages, ensure_ascii=False),
             utc_now(),
             task_id,
         ),
     )
-    log_task(task_id, f"Waiting for approval: {summary}", "warning")
+    log_message = (
+        "Waiting for explicit administrative approval."
+        if action == "elevated_command"
+        else f"Waiting for approval: {summary}"
+    )
+    log_task(task_id, log_message, "warning")
     return approval_id
 
 
@@ -1197,6 +1219,12 @@ async def execute_tool(
         except (PermissionError, OSError) as error:
             return json.dumps({"error": str(error)[:500]}, ensure_ascii=False)
         return json.dumps({"error": "Workspace deletion requires explicit approval in the task details UI."})
+    if name == "execute_elevated_command":
+        try:
+            validate_elevated_command(str(arguments.get("command", "")))
+        except PermissionError as error:
+            return json.dumps({"error": str(error)[:500]}, ensure_ascii=False)
+        return json.dumps({"error": "Elevated commands must pause for explicit task-details approval."})
     if name == "launch_workspace_app":
         try:
             return json.dumps(
@@ -1257,6 +1285,7 @@ TOOLS = [
     {"type": "function", "function": {"name": "read_workspace_file", "description": "Read a UTF-8 text file inside workspace/. Parent paths, absolute paths, hidden files, and private assistant folders are blocked.", "parameters": {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]}}},
     {"type": "function", "function": {"name": "write_workspace_preview_file", "description": "When the user explicitly requests a static website, write UTF-8 HTML, CSS, JavaScript, JSON, SVG, or font/image assets inside workspace/. Keep linked assets relative and use index.html as the entry point. Never overwrite an existing file directly: it will pause for explicit approval in the task details UI. Do not write private data, executables, or files outside workspace/.", "parameters": {"type": "object", "properties": {"path": {"type": "string", "description": "Workspace-relative web asset path, such as index.html or assets/site.css."}, "content": {"type": "string", "maxLength": 2097152}, "overwrite": {"type": "boolean", "default": False}}, "required": ["path", "content"]}}},
     {"type": "function", "function": {"name": "delete_workspace_file", "description": "Request deletion of a regular user workspace file. This always pauses until the user confirms in the task details UI.", "parameters": {"type": "object", "properties": {"path": {"type": "string", "description": "Workspace-relative path to one regular file."}}, "required": ["path"]}}},
+    {"type": "function", "function": {"name": "execute_elevated_command", "description": "Request one single-line administrative command for a local exported copy. This tool never executes immediately: it pauses the task and displays the exact command for explicit approval in the task details UI. Do not combine hidden commands or request elevation unless the user's task actually requires it.", "parameters": {"type": "object", "properties": {"command": {"type": "string", "maxLength": 4000, "description": "The exact single-line command that will be shown for approval."}}, "required": ["command"]}}},
     {"type": "function", "function": {"name": "launch_workspace_app", "description": "Serve an existing HTML file from workspace/ as a static preview. Python app processes are disabled because portable subprocesses cannot be reliably confined to the workspace.", "parameters": {"type": "object", "properties": {"framework": {"type": "string", "enum": ["static"]}, "entryPath": {"type": "string", "description": "HTML file path relative to workspace/."}}, "required": ["framework", "entryPath"]}}},
     {"type": "function", "function": {"name": "stop_workspace_app", "description": "Stop a Flask or Streamlit app started by this assistant using its registered preview ID.", "parameters": {"type": "object", "properties": {"appId": {"type": "string"}}, "required": ["appId"]}}},
     {"type": "function", "function": {"name": "delegate_to_specialist", "description": "Ask a focused child worker to complete an independent subtask, then return its result.", "parameters": {"type": "object", "properties": {"task": {"type": "string"}}, "required": ["task"]}}},
@@ -1291,6 +1320,9 @@ async def run_agent_task(
                 "and provide a concise, evidence-based final result. You may use at most 10 tool rounds. "
                 "Never claim that an operation succeeded unless its tool result confirms it. Do not perform deletion or overwrite "
                 "operations without the approval tool flow; those actions pause for an explicit user decision in the task details UI. "
+                "Never execute an administrative command directly. If a user task genuinely requires administrator privileges, "
+                "request exactly one single-line command with execute_elevated_command; the backend pauses for explicit UI approval. "
+                "Never hide, encode, or combine extra commands in an elevation request. "
                 "When the user explicitly requests a website or web app, create only requested safe assets under workspace/. "
                 "Static sites should use workspace/index.html with relative asset links. Python app processes are disabled. Do not run arbitrary code: run_command "
                 "supports only safe, read-only workspace commands. Do not expose environment variables, keys, or private machine data. "
@@ -1806,6 +1838,56 @@ async def choose_task_fallback(task_id: str, body: TaskFallbackChoiceInput) -> d
     return task_dict(db_one("SELECT * FROM tasks WHERE id=?", (task_id,)))  # type: ignore[arg-type]
 
 
+async def complete_approved_elevation(
+    task_id: str,
+    approval_id: str,
+    tool_call_id: str,
+    command: str,
+    messages: list[dict[str, Any]],
+    file_ids: list[str],
+) -> None:
+    try:
+        raw_result = await asyncio.to_thread(
+            apply_approved_workspace_action,
+            "elevated_command",
+            {"command": command},
+        )
+        result = parse_json(raw_result, {})
+        return_code = result.get("returnCode")
+        resolution = "approved" if return_code == 0 else "failed"
+        tool_output = {
+            "approved": True,
+            "returnCode": return_code,
+            "status": result.get("status"),
+            "stdout": redact_provider_keys(str(result.get("stdout", "")))[-8000:],
+            "stderr": redact_provider_keys(str(result.get("stderr", "")))[-4000:],
+        }
+    except Exception as error:
+        resolution = "failed"
+        tool_output = {"approved": True, "error": redact_provider_keys(str(error))[:1000]}
+        log_task(task_id, "The approved elevated command could not be completed.", "error")
+
+    for message in messages:
+        if message.get("role") == "tool" and message.get("tool_call_id") == tool_call_id:
+            message["content"] = json.dumps(tool_output, ensure_ascii=False)[:16_000]
+            break
+    db_run(
+        "UPDATE pending_approvals SET status=?,resolved_at=? WHERE id=? AND status='processing'",
+        (resolution, utc_now(), approval_id),
+    )
+    db_run(
+        "UPDATE tasks SET status='queued',current_step=?,pending_approval_id=NULL,"
+        "pending_approval_kind=NULL,approval_summary=NULL,messages_json=?,updated_at=? WHERE id=?",
+        (
+            "Resuming after the elevated command finished",
+            json.dumps(messages, ensure_ascii=False),
+            utc_now(),
+            task_id,
+        ),
+    )
+    await run_agent_task(task_id, file_ids, messages)
+
+
 @app.post("/api/assistant/tasks/{task_id}/approval-choice")
 async def choose_task_approval(task_id: str, body: TaskApprovalInput) -> dict[str, Any]:
     task = db_one("SELECT * FROM tasks WHERE id=?", (task_id,))
@@ -1835,6 +1917,30 @@ async def choose_task_approval(task_id: str, body: TaskApprovalInput) -> dict[st
     if claimed != 1:
         raise HTTPException(status_code=409, detail="This approval request is already being handled.")
 
+    if body.approve and approval["action"] == "elevated_command":
+        payload = parse_json(approval["payload_json"], {})
+        command = validate_elevated_command(str(payload.get("command", "")))
+        db_run(
+            "UPDATE tasks SET status='running',current_step=?,pending_approval_id=NULL,"
+            "pending_approval_kind=NULL,approval_summary=NULL,updated_at=? WHERE id=?",
+            ("Running approved command; waiting for operating-system elevation", utc_now(), task_id),
+        )
+        log_task(task_id, "User approved the administrative command; requesting operating-system elevation.", "warning")
+        file_ids = parse_json(task["file_ids_json"], [])
+        running = asyncio.create_task(
+            complete_approved_elevation(
+                task_id,
+                body.approvalId,
+                approval["tool_call_id"],
+                command,
+                messages,
+                file_ids,
+            )
+        )
+        ACTIVE_TASKS[task_id] = running
+        running.add_done_callback(lambda _: ACTIVE_TASKS.pop(task_id, None))
+        return task_dict(db_one("SELECT * FROM tasks WHERE id=?", (task_id,)))  # type: ignore[arg-type]
+
     if body.approve:
         try:
             tool_result = apply_approved_workspace_action(
@@ -1862,7 +1968,7 @@ async def choose_task_approval(task_id: str, body: TaskApprovalInput) -> dict[st
     )
     db_run(
         "UPDATE tasks SET status='queued',current_step=?,pending_approval_id=NULL,approval_summary=NULL,"
-        "messages_json=?,updated_at=? WHERE id=?",
+        "pending_approval_kind=NULL,messages_json=?,updated_at=? WHERE id=?",
         ("Resuming after approval decision", json.dumps(messages, ensure_ascii=False), utc_now(), task_id),
     )
     file_ids = parse_json(task["file_ids_json"], [])
