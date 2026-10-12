@@ -12,4 +12,5 @@ export type VaultKeyStatusesFinnhubApiKey = typeof VaultKeyStatusesFinnhubApiKey
 export const VaultKeyStatusesFinnhubApiKey = {
   configured: 'configured',
   not_set: 'not_set',
+  unavailable: 'unavailable',
 } as const;

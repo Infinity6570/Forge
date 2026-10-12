@@ -2638,7 +2638,7 @@ export const getGetVaultKeysUrl = () => {
 }
 
 /**
- * @summary Read API-key presence without returning any key values
+ * @summary Read API-key presence and vault lock status without returning key values
  */
 export const getVaultKeys = async ( options?: Parameters<typeof customFetch>[1]): Promise<VaultKeyStatuses> => {
 
@@ -2685,7 +2685,7 @@ export type GetVaultKeysQueryError = ErrorType<unknown>
 
 
 /**
- * @summary Read API-key presence without returning any key values
+ * @summary Read API-key presence and vault lock status without returning key values
  */
 
 export function useGetVaultKeys<TData = Awaited<ReturnType<typeof getVaultKeys>>, TError = ErrorType<unknown>>(

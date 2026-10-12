@@ -12,4 +12,5 @@ export type VaultKeyStatusesKiteApiKey = typeof VaultKeyStatusesKiteApiKey[keyof
 export const VaultKeyStatusesKiteApiKey = {
   configured: 'configured',
   not_set: 'not_set',
+  unavailable: 'unavailable',
 } as const;

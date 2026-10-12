@@ -7,6 +7,7 @@
  */
 
 export interface VaultKeysInput {
+  recoverLockedVault?: boolean;
   /**
      * @maxLength 1000
      * @nullable
@@ -72,4 +73,19 @@ export interface VaultKeysInput {
      * @nullable
      */
   finnhubApiKey?: string | null;
+  /**
+     * @maxLength 1000
+     * @nullable
+     */
+  goldapiIoKey?: string | null;
+  /**
+     * @maxLength 1000
+     * @nullable
+     */
+  oilpriceapiKey?: string | null;
+  /**
+     * @maxLength 1000
+     * @nullable
+     */
+  commodityApiKey?: string | null;
 }

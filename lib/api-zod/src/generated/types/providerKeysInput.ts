@@ -69,4 +69,19 @@ export interface ProviderKeysInput {
      * @nullable
      */
   finnhubApiKey?: string | null;
+  /**
+     * @maxLength 1000
+     * @nullable
+     */
+  goldapiIoKey?: string | null;
+  /**
+     * @maxLength 1000
+     * @nullable
+     */
+  oilpriceapiKey?: string | null;
+  /**
+     * @maxLength 1000
+     * @nullable
+     */
+  commodityApiKey?: string | null;
 }

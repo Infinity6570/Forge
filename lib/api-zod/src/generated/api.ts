@@ -848,6 +848,12 @@ export const saveAssistantProviderKeysBodyAlphaVantageApiKeyMax = 1000;
 
 export const saveAssistantProviderKeysBodyFinnhubApiKeyMax = 1000;
 
+export const saveAssistantProviderKeysBodyGoldapiIoKeyMax = 1000;
+
+export const saveAssistantProviderKeysBodyOilpriceapiKeyMax = 1000;
+
+export const saveAssistantProviderKeysBodyCommodityApiKeyMax = 1000;
+
 
 
 export const SaveAssistantProviderKeysBody = zod.object({
@@ -863,7 +869,10 @@ export const SaveAssistantProviderKeysBody = zod.object({
   "kiteApiSecret": zod.string().max(saveAssistantProviderKeysBodyKiteApiSecretMax).nullish(),
   "kiteAccessToken": zod.string().max(saveAssistantProviderKeysBodyKiteAccessTokenMax).nullish(),
   "alphaVantageApiKey": zod.string().max(saveAssistantProviderKeysBodyAlphaVantageApiKeyMax).nullish(),
-  "finnhubApiKey": zod.string().max(saveAssistantProviderKeysBodyFinnhubApiKeyMax).nullish()
+  "finnhubApiKey": zod.string().max(saveAssistantProviderKeysBodyFinnhubApiKeyMax).nullish(),
+  "goldapiIoKey": zod.string().max(saveAssistantProviderKeysBodyGoldapiIoKeyMax).nullish(),
+  "oilpriceapiKey": zod.string().max(saveAssistantProviderKeysBodyOilpriceapiKeyMax).nullish(),
+  "commodityApiKey": zod.string().max(saveAssistantProviderKeysBodyCommodityApiKeyMax).nullish()
 })
 
 export const SaveAssistantProviderKeysResponse = zod.object({
@@ -890,27 +899,32 @@ export const SaveAssistantProviderKeysResponse = zod.object({
 
 
 /**
- * @summary Read API-key presence without returning any key values
+ * @summary Read API-key presence and vault lock status without returning key values
  */
 export const GetVaultKeysResponse = zod.object({
-  "openai_api_key": zod.enum(['configured', 'not_set']),
-  "deepseek_api_key": zod.enum(['configured', 'not_set']),
-  "gemini_api_key": zod.enum(['configured', 'not_set']),
-  "openrouter_api_key": zod.enum(['configured', 'not_set']),
-  "tavily_api_key": zod.enum(['configured', 'not_set']),
-  "serper_api_key": zod.enum(['configured', 'not_set']),
-  "brave_search_api_key": zod.enum(['configured', 'not_set']),
-  "kite_api_key": zod.enum(['configured', 'not_set']),
-  "kite_api_secret": zod.enum(['configured', 'not_set']),
-  "kite_access_token": zod.enum(['configured', 'not_set']),
-  "alpha_vantage_api_key": zod.enum(['configured', 'not_set']),
-  "finnhub_api_key": zod.enum(['configured', 'not_set'])
+  "vault_status": zod.enum(['ready', 'locked']),
+  "openai_api_key": zod.enum(['configured', 'not_set', 'unavailable']),
+  "deepseek_api_key": zod.enum(['configured', 'not_set', 'unavailable']),
+  "gemini_api_key": zod.enum(['configured', 'not_set', 'unavailable']),
+  "openrouter_api_key": zod.enum(['configured', 'not_set', 'unavailable']),
+  "tavily_api_key": zod.enum(['configured', 'not_set', 'unavailable']),
+  "serper_api_key": zod.enum(['configured', 'not_set', 'unavailable']),
+  "brave_search_api_key": zod.enum(['configured', 'not_set', 'unavailable']),
+  "kite_api_key": zod.enum(['configured', 'not_set', 'unavailable']),
+  "kite_api_secret": zod.enum(['configured', 'not_set', 'unavailable']),
+  "kite_access_token": zod.enum(['configured', 'not_set', 'unavailable']),
+  "alpha_vantage_api_key": zod.enum(['configured', 'not_set', 'unavailable']),
+  "finnhub_api_key": zod.enum(['configured', 'not_set', 'unavailable']),
+  "goldapi_io_key": zod.enum(['configured', 'not_set', 'unavailable']),
+  "oilpriceapi_key": zod.enum(['configured', 'not_set', 'unavailable']),
+  "commodity_api_key": zod.enum(['configured', 'not_set', 'unavailable'])
 })
 
 
 /**
  * @summary Encrypt and save local API keys in SQLite
  */
+export const saveVaultKeysBodyRecoverLockedVaultDefault = false;
 export const saveVaultKeysBodyOpenaiApiKeyMax = 1000;
 
 export const saveVaultKeysBodyDeepseekApiKeyMax = 1000;
@@ -937,9 +951,16 @@ export const saveVaultKeysBodyAlphaVantageApiKeyMax = 1000;
 
 export const saveVaultKeysBodyFinnhubApiKeyMax = 1000;
 
+export const saveVaultKeysBodyGoldapiIoKeyMax = 1000;
+
+export const saveVaultKeysBodyOilpriceapiKeyMax = 1000;
+
+export const saveVaultKeysBodyCommodityApiKeyMax = 1000;
+
 
 
 export const SaveVaultKeysBody = zod.object({
+  "recoverLockedVault": zod.boolean().default(saveVaultKeysBodyRecoverLockedVaultDefault),
   "openaiApiKey": zod.string().max(saveVaultKeysBodyOpenaiApiKeyMax).nullish(),
   "deepseekApiKey": zod.string().max(saveVaultKeysBodyDeepseekApiKeyMax).nullish(),
   "geminiApiKey": zod.string().max(saveVaultKeysBodyGeminiApiKeyMax).nullish(),
@@ -952,22 +973,29 @@ export const SaveVaultKeysBody = zod.object({
   "kiteApiSecret": zod.string().max(saveVaultKeysBodyKiteApiSecretMax).nullish(),
   "kiteAccessToken": zod.string().max(saveVaultKeysBodyKiteAccessTokenMax).nullish(),
   "alphaVantageApiKey": zod.string().max(saveVaultKeysBodyAlphaVantageApiKeyMax).nullish(),
-  "finnhubApiKey": zod.string().max(saveVaultKeysBodyFinnhubApiKeyMax).nullish()
+  "finnhubApiKey": zod.string().max(saveVaultKeysBodyFinnhubApiKeyMax).nullish(),
+  "goldapiIoKey": zod.string().max(saveVaultKeysBodyGoldapiIoKeyMax).nullish(),
+  "oilpriceapiKey": zod.string().max(saveVaultKeysBodyOilpriceapiKeyMax).nullish(),
+  "commodityApiKey": zod.string().max(saveVaultKeysBodyCommodityApiKeyMax).nullish()
 })
 
 export const SaveVaultKeysResponse = zod.object({
-  "openai_api_key": zod.enum(['configured', 'not_set']),
-  "deepseek_api_key": zod.enum(['configured', 'not_set']),
-  "gemini_api_key": zod.enum(['configured', 'not_set']),
-  "openrouter_api_key": zod.enum(['configured', 'not_set']),
-  "tavily_api_key": zod.enum(['configured', 'not_set']),
-  "serper_api_key": zod.enum(['configured', 'not_set']),
-  "brave_search_api_key": zod.enum(['configured', 'not_set']),
-  "kite_api_key": zod.enum(['configured', 'not_set']),
-  "kite_api_secret": zod.enum(['configured', 'not_set']),
-  "kite_access_token": zod.enum(['configured', 'not_set']),
-  "alpha_vantage_api_key": zod.enum(['configured', 'not_set']),
-  "finnhub_api_key": zod.enum(['configured', 'not_set'])
+  "vault_status": zod.enum(['ready', 'locked']),
+  "openai_api_key": zod.enum(['configured', 'not_set', 'unavailable']),
+  "deepseek_api_key": zod.enum(['configured', 'not_set', 'unavailable']),
+  "gemini_api_key": zod.enum(['configured', 'not_set', 'unavailable']),
+  "openrouter_api_key": zod.enum(['configured', 'not_set', 'unavailable']),
+  "tavily_api_key": zod.enum(['configured', 'not_set', 'unavailable']),
+  "serper_api_key": zod.enum(['configured', 'not_set', 'unavailable']),
+  "brave_search_api_key": zod.enum(['configured', 'not_set', 'unavailable']),
+  "kite_api_key": zod.enum(['configured', 'not_set', 'unavailable']),
+  "kite_api_secret": zod.enum(['configured', 'not_set', 'unavailable']),
+  "kite_access_token": zod.enum(['configured', 'not_set', 'unavailable']),
+  "alpha_vantage_api_key": zod.enum(['configured', 'not_set', 'unavailable']),
+  "finnhub_api_key": zod.enum(['configured', 'not_set', 'unavailable']),
+  "goldapi_io_key": zod.enum(['configured', 'not_set', 'unavailable']),
+  "oilpriceapi_key": zod.enum(['configured', 'not_set', 'unavailable']),
+  "commodity_api_key": zod.enum(['configured', 'not_set', 'unavailable'])
 })
 
 

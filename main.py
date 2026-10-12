@@ -124,6 +124,9 @@ VAULT_KEY_CATEGORIES = {
     "KITE_ACCESS_TOKEN": "broker",
     "ALPHA_VANTAGE_API_KEY": "market",
     "FINNHUB_API_KEY": "market",
+    "GOLDAPI_IO_KEY": "market",
+    "OILPRICEAPI_KEY": "market",
+    "COMMODITY_API_KEY": "market",
 }
 VAULT_FORM_TO_ENV = {
     "openaiApiKey": "OPENAI_API_KEY",
@@ -138,6 +141,9 @@ VAULT_FORM_TO_ENV = {
     "kiteAccessToken": "KITE_ACCESS_TOKEN",
     "alphaVantageApiKey": "ALPHA_VANTAGE_API_KEY",
     "finnhubApiKey": "FINNHUB_API_KEY",
+    "goldapiIoKey": "GOLDAPI_IO_KEY",
+    "oilpriceapiKey": "OILPRICEAPI_KEY",
+    "commodityApiKey": "COMMODITY_API_KEY",
 }
 DEFAULT_MODELS = {
     "openai": "gpt-4o-mini",
@@ -487,9 +493,24 @@ def db_run(sql: str, values: tuple[Any, ...] = ()) -> int:
             connection.close()
 
 
-def _vault_fernet() -> Fernet:
+class VaultLockedError(RuntimeError):
+    """Raised when encrypted entries exist but the local encryption key cannot unlock them."""
+
+
+def _vault_rows() -> list[sqlite3.Row]:
+    try:
+        return db_all("SELECT key_name,key_value FROM vault_secrets")
+    except sqlite3.OperationalError as error:
+        if "no such table: vault_secrets" not in str(error).lower():
+            raise
+        return []
+
+
+def _vault_fernet(create_if_missing: bool = False) -> Fernet:
     key = os.getenv("VAULT_ENCRYPTION_KEY", "").strip()
     if not key:
+        if not create_if_missing:
+            raise VaultLockedError("The local vault encryption key is unavailable.")
         key = Fernet.generate_key().decode("ascii")
         set_key(str(ENV_FILE), "VAULT_ENCRYPTION_KEY", key, quote_mode="never")
         os.environ["VAULT_ENCRYPTION_KEY"] = key
@@ -497,7 +518,26 @@ def _vault_fernet() -> Fernet:
     try:
         return Fernet(key.encode("ascii"))
     except (ValueError, UnicodeEncodeError) as error:
-        raise RuntimeError("The local vault encryption key is invalid; restore VAULT_ENCRYPTION_KEY before reading saved keys.") from error
+        if create_if_missing and not _vault_rows():
+            key = Fernet.generate_key().decode("ascii")
+            set_key(str(ENV_FILE), "VAULT_ENCRYPTION_KEY", key, quote_mode="never")
+            os.environ["VAULT_ENCRYPTION_KEY"] = key
+            os.chmod(ENV_FILE, 0o600)
+            return Fernet(key.encode("ascii"))
+        raise VaultLockedError("The local vault encryption key is invalid.") from error
+
+
+def vault_is_locked() -> bool:
+    rows = _vault_rows()
+    if not rows:
+        return False
+    try:
+        cipher = _vault_fernet()
+        for row in rows:
+            cipher.decrypt(row["key_value"].encode("ascii")).decode("utf-8")
+    except (VaultLockedError, InvalidToken, UnicodeDecodeError, UnicodeEncodeError):
+        return True
+    return False
 
 
 def get_vault_values(key_names: list[str] | tuple[str, ...]) -> dict[str, str | None]:
@@ -522,7 +562,7 @@ def get_vault_values(key_names: list[str] | tuple[str, ...]) -> dict[str, str | 
             try:
                 decrypted[key_name] = cipher.decrypt(stored_value.encode("ascii")).decode("utf-8")
             except (InvalidToken, UnicodeDecodeError, UnicodeEncodeError) as error:
-                raise RuntimeError(
+                raise VaultLockedError(
                     "A saved vault value could not be decrypted; restore the original VAULT_ENCRYPTION_KEY."
                 ) from error
     return {
@@ -543,7 +583,9 @@ def save_vault_values(values: dict[str, str | None]) -> None:
     }
     if not clean_values:
         return
-    cipher = _vault_fernet()
+    if vault_is_locked():
+        raise VaultLockedError("Restore the original local vault key or explicitly reset the locked vault.")
+    cipher = _vault_fernet(create_if_missing=True)
     updated_at = utc_now()
     rows = [
         (
@@ -586,11 +628,54 @@ def save_vault_values(values: dict[str, str | None]) -> None:
 
 
 def vault_key_statuses() -> dict[str, str]:
+    rows = _vault_rows()
+    locked = vault_is_locked()
+    stored_names = {row["key_name"] for row in rows}
+    if locked:
+        return {
+            **{
+                key_name.lower(): (
+                    "configured" if os.getenv(key_name, "").strip()
+                    else "unavailable" if key_name in stored_names
+                    else "not_set"
+                )
+                for key_name in VAULT_KEY_CATEGORIES
+            },
+            "vault_status": "locked",
+        }
     values = get_vault_values(tuple(VAULT_KEY_CATEGORIES))
     return {
-        key_name.lower(): "configured" if values.get(key_name) else "not_set"
-        for key_name in VAULT_KEY_CATEGORIES
+        **{
+            key_name.lower(): "configured" if values.get(key_name) else "not_set"
+            for key_name in VAULT_KEY_CATEGORIES
+        },
+        "vault_status": "ready",
     }
+
+
+def reset_locked_vault(values: dict[str, str | None]) -> None:
+    clean_values = {
+        key_name: value.strip()
+        for key_name, value in values.items()
+        if key_name in VAULT_KEY_CATEGORIES and isinstance(value, str) and value.strip()
+    }
+    if not clean_values:
+        raise ValueError("Enter at least one replacement credential before resetting the locked vault.")
+    if not vault_is_locked():
+        raise ValueError("The vault is available; a locked-vault reset is not needed.")
+
+    new_key = Fernet.generate_key().decode("ascii")
+    set_key(str(ENV_FILE), "VAULT_ENCRYPTION_KEY", new_key, quote_mode="never")
+    os.environ["VAULT_ENCRYPTION_KEY"] = new_key
+    os.chmod(ENV_FILE, 0o600)
+    with DB_LOCK:
+        connection = connect_db()
+        try:
+            connection.execute("DELETE FROM vault_secrets")
+            connection.commit()
+        finally:
+            connection.close()
+    save_vault_values(clean_values)
 
 
 def parse_json(value: str | None, fallback: Any) -> Any:
@@ -793,7 +878,11 @@ def get_settings(local_allowed: bool, provider_settings_allowed: bool) -> dict[s
     model = os.getenv("AGENT_MODEL", DEFAULT_MODELS[provider])
     if not MODEL_ID_PATTERN.fullmatch(model):
         model = DEFAULT_MODELS[provider]
-    vault_values = get_vault_values(tuple(VAULT_KEY_CATEGORIES))
+    try:
+        vault_values = get_vault_values(tuple(VAULT_KEY_CATEGORIES))
+    except VaultLockedError:
+        # Keep the settings screen available so the user can restore or reset the vault.
+        vault_values = {}
     secret_from_vault = lambda name: vault_values.get(name) or os.getenv(name)
     return {
         "provider": provider,
@@ -971,10 +1060,13 @@ class ProviderKeysInput(BaseModel):
     kiteAccessToken: str | None = Field(default=None, max_length=1000)
     alphaVantageApiKey: str | None = Field(default=None, max_length=1000)
     finnhubApiKey: str | None = Field(default=None, max_length=1000)
+    goldapiIoKey: str | None = Field(default=None, max_length=1000)
+    oilpriceapiKey: str | None = Field(default=None, max_length=1000)
+    commodityApiKey: str | None = Field(default=None, max_length=1000)
 
 
 class VaultKeysInput(ProviderKeysInput):
-    pass
+    recoverLockedVault: bool = False
 
 
 class SearchSettingsInput(BaseModel):
@@ -1241,6 +1333,210 @@ async def get_market_quote(symbol: str) -> str:
     except Exception:
         return json.dumps({"symbol": normalized, "error": "Yahoo Finance could not return a complete quote; try again shortly."})
     return json.dumps(result, ensure_ascii=False)
+
+
+async def _fetch_market_json(
+    url: str,
+    *,
+    params: dict[str, str] | None = None,
+    headers: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        response = await client.get(url, params=params, headers=headers)
+        response.raise_for_status()
+        data = response.json()
+    if not isinstance(data, dict):
+        raise ValueError("Market quote endpoint returned an invalid response.")
+    return data
+
+
+def _positive_market_price(value: Any) -> float | None:
+    price = _market_quote_number(value)
+    return price if price is not None and price > 0 else None
+
+
+def _market_quote_from_yahoo(symbol: str, asset: str, unit: str) -> dict[str, Any]:
+    quote = market_quote_sync(symbol)
+    price = _positive_market_price(quote.get("current_price"))
+    if price is None:
+        raise ValueError("Yahoo Finance returned an invalid price.")
+    return {
+        "asset": asset,
+        "price": price,
+        "unit": unit,
+        "symbol": quote["symbol"],
+        "latency": "[15-Min Delayed CME Contract]",
+        "data_source": "Yahoo Finance",
+    }
+
+
+async def get_realtime_gold_quote() -> str:
+    try:
+        payload = await _fetch_market_json("https://api.gold-api.com/price/XAU")
+        price = _positive_market_price(payload.get("price"))
+        if price is not None:
+            return json.dumps(
+                {
+                    "price": price,
+                    "unit": "USD/oz",
+                    "symbol": "XAU/USD",
+                    "latency": "0s Real-time",
+                },
+                ensure_ascii=False,
+            )
+    except Exception:
+        pass
+
+    try:
+        goldapi_key = get_vault_secret("GOLDAPI_IO_KEY")
+    except VaultLockedError:
+        goldapi_key = None
+    if goldapi_key:
+        try:
+            payload = await _fetch_market_json(
+                "https://www.goldapi.io/api/XAU/USD",
+                headers={"x-access-token": goldapi_key},
+            )
+            price = _positive_market_price(payload.get("price"))
+            if price is not None:
+                return json.dumps(
+                    {
+                        "price": price,
+                        "unit": "USD/oz",
+                        "symbol": "XAU/USD",
+                        "latency": "0s Real-time",
+                    },
+                    ensure_ascii=False,
+                )
+        except Exception:
+            pass
+
+    try:
+        yahoo_quote = await asyncio.wait_for(
+            asyncio.to_thread(_market_quote_from_yahoo, "GC=F", "Gold", "USD/oz"),
+            timeout=20,
+        )
+    except Exception:
+        return json.dumps(
+            {
+                "symbol": "XAU/USD",
+                "error": "Real-time gold feeds and the delayed Yahoo fallback are unavailable.",
+            },
+            ensure_ascii=False,
+        )
+    return json.dumps(yahoo_quote, ensure_ascii=False)
+
+
+async def get_realtime_energy_quote(asset: str) -> str:
+    normalized = re.sub(r"[\s-]+", "_", asset.strip().upper())
+    if normalized in {"OIL", "CRUDE", "CRUDE_OIL", "WTI_CRUDE"}:
+        normalized = "WTI"
+    elif normalized in {"GAS", "NATGAS", "NATURALGAS"}:
+        normalized = "NATURAL_GAS"
+
+    assets = {
+        "WTI": {
+            "code": "WTI_USD",
+            "yahoo_symbol": "CL=F",
+            "unit": "USD/barrel",
+            "symbol": "WTI/USD",
+        },
+        "NATURAL_GAS": {
+            "code": "NATURAL_GAS_USD",
+            "yahoo_symbol": "NG=F",
+            "unit": "USD/MMBtu",
+            "symbol": "NATURAL_GAS/USD",
+        },
+    }
+    quote_spec = assets.get(normalized)
+    if quote_spec is None:
+        return json.dumps(
+            {"error": "Choose WTI or NATURAL_GAS for an energy quote."},
+            ensure_ascii=False,
+        )
+
+    api_key = None
+    for key_name in ("OILPRICEAPI_KEY", "COMMODITY_API_KEY"):
+        try:
+            api_key = get_vault_secret(key_name)
+        except VaultLockedError:
+            api_key = None
+        if api_key:
+            break
+
+    if api_key:
+        try:
+            payload = await _fetch_market_json(
+                "https://api.oilpriceapi.com/v1/prices/latest",
+                params={"by_code": quote_spec["code"]},
+                headers={"Authorization": f"Token {api_key}"},
+            )
+            data = payload.get("data")
+            if (
+                payload.get("status") == "success"
+                and isinstance(data, dict)
+                and data.get("code") == quote_spec["code"]
+            ):
+                price = _positive_market_price(data.get("price"))
+                if price is not None:
+                    freshness = data.get("freshness")
+                    stale = data.get("stale")
+                    if not isinstance(stale, bool):
+                        freshness_status = (
+                            freshness.get("status") if isinstance(freshness, dict) else None
+                        )
+                        if data.get("data_status") == "stale" or freshness_status == "stale":
+                            stale = True
+                        elif data.get("data_status") in {"fresh", "current"} or freshness_status in {
+                            "fresh",
+                            "current",
+                        }:
+                            stale = False
+                        else:
+                            stale = "unknown"
+                    latency = (
+                        "0s Real-time"
+                        if stale is False
+                        else "Source timestamped · stale"
+                        if stale is True
+                        else "Source freshness unknown"
+                    )
+                    return json.dumps(
+                        {
+                            "asset": normalized,
+                            "price": price,
+                            "unit": quote_spec["unit"],
+                            "symbol": quote_spec["symbol"],
+                            "latency": latency,
+                            "source_as_of": data.get("as_of") or "unknown",
+                            "stale": stale,
+                        },
+                        ensure_ascii=False,
+                    )
+        except Exception:
+            pass
+
+    try:
+        yahoo_quote = await asyncio.wait_for(
+            asyncio.to_thread(
+                _market_quote_from_yahoo,
+                quote_spec["yahoo_symbol"],
+                normalized,
+                quote_spec["unit"],
+            ),
+            timeout=20,
+        )
+    except Exception:
+        return json.dumps(
+            {
+                "asset": normalized,
+                "symbol": quote_spec["symbol"],
+                "error": "The live energy feed and the delayed Yahoo fallback are unavailable.",
+            },
+            ensure_ascii=False,
+        )
+    yahoo_quote["symbol"] = quote_spec["symbol"]
+    return json.dumps(yahoo_quote, ensure_ascii=False)
 
 
 def validate_public_url(url: str) -> str:
@@ -1572,6 +1868,10 @@ async def execute_tool(
         return await web_search(str(arguments.get("query", "")), provider, model_state["model"], task_id)
     if name == "get_market_quote":
         return await get_market_quote(str(arguments.get("symbol", "")))
+    if name == "get_realtime_gold_quote":
+        return await get_realtime_gold_quote()
+    if name == "get_realtime_energy_quote":
+        return await get_realtime_energy_quote(str(arguments.get("asset", "")))
     if name == "fetch_webpage":
         if search_settings(get_vault_secret)["searchMode"] == "chromium":
             return json.dumps(await BrowserRunner(validate_public_url).fetch(str(arguments.get("url", ""))), ensure_ascii=False)
@@ -1725,6 +2025,8 @@ async def execute_tool(
 TOOLS = [
     {"type": "function", "function": {"name": "web_search", "description": "Search public web pages and return source titles, URLs, and snippets.", "parameters": {"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]}}},
     {"type": "function", "function": {"name": "get_market_quote", "description": "Get the latest available Yahoo Finance quote and previous close for a market symbol, such as GC=F, SI=F, CL=F, GOLDBEES.NS, SILVERBEES.NS, RELIANCE.NS, or ^NSEI. Returns current price, previous close, daily percentage change, and currency. Data can be delayed; this is not a broker execution quote.", "parameters": {"type": "object", "properties": {"symbol": {"type": "string", "description": "Yahoo Finance ticker symbol, for example GC=F or RELIANCE.NS."}}, "required": ["symbol"]}}},
+    {"type": "function", "function": {"name": "get_realtime_gold_quote", "description": "Get the live XAU/USD spot price in USD per troy ounce. Uses the keyless Gold API feed first, then optional GoldAPI.io, and labels the 15-minute delayed Yahoo fallback explicitly.", "parameters": {"type": "object", "properties": {}}}},
+    {"type": "function", "function": {"name": "get_realtime_energy_quote", "description": "Get the latest WTI crude oil or natural gas quote. Uses OilPriceAPI when a saved key is available and otherwise falls back to Yahoo Finance with an explicit 15-minute delay warning. Returns USD/barrel for WTI or USD/MMBtu for natural gas.", "parameters": {"type": "object", "properties": {"asset": {"type": "string", "enum": ["WTI", "NATURAL_GAS"]}}, "required": ["asset"]}}},
     {"type": "function", "function": {"name": "fetch_webpage", "description": "Extract readable text from one public HTTPS web page.", "parameters": {"type": "object", "properties": {"url": {"type": "string"}}, "required": ["url"]}}},
     {"type": "function", "function": {"name": "search_workspace", "description": "Find matching excerpts in uploaded files and saved notes.", "parameters": {"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]}}},
     {"type": "function", "function": {"name": "read_document", "description": "Read extracted text from an uploaded file by its file ID.", "parameters": {"type": "object", "properties": {"fileId": {"type": "string"}}, "required": ["fileId"]}}},
@@ -1784,8 +2086,10 @@ async def run_agent_task(
                 "Never execute an administrative command directly. If a user task genuinely requires administrator privileges, "
                 "request exactly one single-line command with execute_elevated_command; the backend pauses for explicit UI approval. "
                 "Never hide, encode, or combine extra commands in an elevation request; the backend also blocks shell chaining, redirection, inline scripts, and known destructive commands. "
-                "For questions about current market prices, gold or silver performance, or market index changes, use get_market_quote for relevant symbols before answering. "
-                "Quote values come from Yahoo Finance and may be delayed; never call them guaranteed real-time or broker execution prices. "
+                "You have access to real-time, non-delayed market feeds via get_realtime_gold_quote and get_realtime_energy_quote. "
+                "Whenever the user asks for the price of Gold, Crude Oil, or Natural Gas, always use these tools to return live quotes in USD per troy ounce ($/oz) or USD per barrel ($/bbl) without relying on delayed Yahoo scrapers. "
+                "Natural gas quotes are in USD/MMBtu. Disclose stale or unknown source freshness, and if a tool result labels its Yahoo fallback as delayed, do not describe it as real-time. "
+                "For silver prices or other market symbols, use get_market_quote; Yahoo quotes may be delayed and are not broker execution prices. "
                 "When the user explicitly requests a website or web app, create only requested safe assets under workspace/. "
                 "Static sites should use workspace/index.html with relative asset links. " + python_preview_guidance + "Do not run arbitrary code: run_command "
                 "supports only safe, read-only workspace commands. Do not expose environment variables, keys, or private machine data. "
@@ -2828,7 +3132,20 @@ async def write_vault_keys(body: VaultKeysInput, request: Request) -> dict[str, 
         env_name: getattr(body, form_name)
         for form_name, env_name in VAULT_FORM_TO_ENV.items()
     }
-    save_vault_values(values)
+    try:
+        if vault_is_locked():
+            if not body.recoverLockedVault:
+                raise HTTPException(
+                    status_code=409,
+                    detail="The local key vault is locked. Restore the original VAULT_ENCRYPTION_KEY, or explicitly reset the vault and re-enter credentials.",
+                )
+            reset_locked_vault(values)
+        else:
+            save_vault_values(values)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    except VaultLockedError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
     if base_url is not None:
         set_key(str(ENV_FILE), "OLLAMA_BASE_URL", base_url, quote_mode="always")
         os.chmod(ENV_FILE, 0o600)

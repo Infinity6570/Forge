@@ -897,17 +897,18 @@ function WorkspaceInspector() {
 
 function MarketRadar() {
   const symbols = [
-    { label: 'MCX Gold', symbol: 'MCX:GOLD1!' },
-    { label: 'MCX Silver', symbol: 'MCX:SILVER1!' },
-    { label: 'Nifty 50', symbol: 'NSE:NIFTY' },
-    { label: 'Crude Oil', symbol: 'MCX:CRUDEOIL1!' },
+    { id: 'comex-gold', label: 'COMEX GOLD ($/oz)', symbol: 'TVC:GOLD' },
+    { id: 'wti-crude', label: 'WTI CRUDE ($/bbl)', symbol: 'TVC:USOIL' },
+    { id: 'natural-gas', label: 'NATURAL GAS', symbol: 'TVC:NATGAS' },
+    { id: 'mcx-gold-inr', label: 'MCX GOLD (INR)', symbol: 'MCX:GOLD1!' },
+    { id: 'nifty-50', label: 'NIFTY 50', symbol: 'NSE:NIFTY' },
   ];
   const [symbol, setSymbol] = useState(symbols[0].symbol);
   return <section className="telemetry-section market-radar" data-testid="section-market-radar">
     <div className="telemetry-section-head"><span className="telemetry-section-mark"><CandlestickChart size={14} /></span><div><span className="telemetry-kicker">MARKET RADAR</span><h3>Live market chart</h3></div><span className="telemetry-live-tag">TV WIDGET</span></div>
     <div className="market-radar-symbol"><span>INSTRUMENT</span><strong data-testid="text-market-symbol">{symbol}</strong></div>
     <div className="market-radar-switches" role="group" aria-label="Quick market symbols">
-      {symbols.map((item) => <button type="button" key={item.symbol} className={symbol === item.symbol ? 'selected' : ''} aria-pressed={symbol === item.symbol} onClick={() => setSymbol(item.symbol)} data-testid={`button-market-${item.label.toLowerCase().replaceAll(' ', '-')}`}>{item.label}</button>)}
+      {symbols.map((item) => <button type="button" key={item.symbol} className={symbol === item.symbol ? 'selected' : ''} aria-pressed={symbol === item.symbol} onClick={() => setSymbol(item.symbol)} data-testid={`button-market-${item.id}`}>{item.label}</button>)}
     </div>
     <TradingViewChart symbol={symbol} />
     <p className="market-radar-note">External TradingView chart · no quote data stored by Forge.</p>
@@ -1139,10 +1140,12 @@ function VaultSecretField({ name, label, placeholder, statusName, value, disable
   loading: boolean;
 }) {
   const [visible, setVisible] = useState(false);
-  const configured = statuses?.[statusName] === 'configured';
+  const fieldStatus = statuses?.[statusName];
+  const configured = fieldStatus === 'configured';
+  const unavailable = fieldStatus === 'unavailable';
   return <div className="vault-field">
     <label className="form-label" htmlFor={`vault-${name}`}>{label}</label>
-    <div className="vault-field-meta"><span className={`key-status ${configured ? 'active' : ''}`} role="status" data-testid={`status-vault-${name}`}>{loading ? 'CHECKING' : configured ? 'CONFIGURED' : 'NOT SET'}</span><span className="optional-label">{configured ? 'Blank keeps existing key' : 'Optional · not configured'}</span></div>
+    <div className="vault-field-meta"><span className={`key-status ${configured ? 'active' : ''}`} role="status" data-testid={`status-vault-${name}`}>{loading ? 'CHECKING' : unavailable ? 'UNAVAILABLE' : configured ? 'CONFIGURED' : 'NOT SET'}</span><span className="optional-label">{unavailable ? 'Re-enter to restore access' : configured ? 'Blank keeps existing key' : 'Optional · not configured'}</span></div>
     <div className="vault-input-wrap">
       <input id={`vault-${name}`} type={visible ? 'text' : 'password'} autoComplete="new-password" spellCheck={false} value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} disabled={disabled} data-testid={`input-${name}`} />
       <button className="vault-visibility" type="button" aria-label={`${visible ? 'Hide' : 'Show'} ${label}`} aria-pressed={visible} onClick={() => setVisible((current) => !current)} disabled={disabled} data-testid={`button-toggle-${name}-visibility`}>{visible ? <EyeOff size={14} /> : <Eye size={14} />}</button>
@@ -1157,16 +1160,19 @@ function SettingsPage() {
   const applyModel = useApplyAssistantModel();
   const vaultStatusQuery = useGetVaultKeys({ query: { queryKey: getGetVaultKeysQueryKey() } });
   const saveVault = useSaveVaultKeys();
+  const [confirmVaultReset, setConfirmVaultReset] = useState(false);
   const [provider, setProvider] = useState<'openai' | 'deepseek' | 'gemini' | 'openrouter' | 'ollama'>('deepseek');
   const [modelId, setModelId] = useState('deepseek-chat');
   const [customModelId, setCustomModelId] = useState('');
   const [fallbackModelId, setFallbackModelId] = useState('');
   const initialized = useRef(false);
   const credentialStatus = settingsQuery.data;
+  const vaultLocked = vaultStatusQuery.data?.vault_status === 'locked';
   const [apiKeys, setApiKeys] = useState<VaultKeysInput>({
     openaiApiKey: '', deepseekApiKey: '', geminiApiKey: '', openrouterApiKey: '',
     tavilyApiKey: '', serperApiKey: '', braveApiKey: '', kiteApiKey: '',
     kiteApiSecret: '', kiteAccessToken: '', alphaVantageApiKey: '', finnhubApiKey: '',
+    goldapiIoKey: '', oilpriceapiKey: '', commodityApiKey: '',
   });
   const [ollamaBaseUrl, setOllamaBaseUrl] = useState('http://localhost:11434/v1');
   const [codeRunnerEnabled, setCodeRunnerEnabled] = useState(false);
@@ -1197,6 +1203,10 @@ function SettingsPage() {
     setCodeRunnerEnabled(data.codeRunnerEnabled);
     setAppPreviewsEnabled(data.appPreviewsEnabled);
   }, [settingsQuery.data]);
+  useEffect(() => {
+    if (vaultLocked) setVaultExpanded({ core: true, search: true, market: true });
+    else setConfirmVaultReset(false);
+  }, [vaultLocked]);
   const configured = provider === 'openai'
     ? credentialStatus?.hasOpenaiKey
     : provider === 'deepseek'
@@ -1233,6 +1243,7 @@ function SettingsPage() {
       ...Object.entries(apiKeys).filter(([, value]) => typeof value === 'string' && value.trim()).map(([key, value]) => [key, value.trim()]),
       ['ollamaBaseUrl', ollamaBaseUrl.trim()],
     ]) as VaultKeysInput;
+    if (vaultLocked && confirmVaultReset) payload.recoverLockedVault = true;
     saveVault.mutate({ data: payload }, {
       onSuccess: () => {
         void qc.invalidateQueries({ queryKey: getGetVaultKeysQueryKey() });
@@ -1241,7 +1252,9 @@ function SettingsPage() {
           openaiApiKey: '', deepseekApiKey: '', geminiApiKey: '', openrouterApiKey: '',
           tavilyApiKey: '', serperApiKey: '', braveApiKey: '', kiteApiKey: '',
           kiteApiSecret: '', kiteAccessToken: '', alphaVantageApiKey: '', finnhubApiKey: '',
+          goldapiIoKey: '', oilpriceapiKey: '', commodityApiKey: '',
         });
+        setConfirmVaultReset(false);
         setProviderSaved(true);
       },
       onError: () => setProviderError('Vault settings could not be saved. Check the connection and try again.'),
@@ -1284,6 +1297,9 @@ function SettingsPage() {
       ['kiteAccessToken', 'kite_access_token', 'Kite access token', 'Enter access token'],
       ['alphaVantageApiKey', 'alpha_vantage_api_key', 'Alpha Vantage API key', 'Enter API key'],
       ['finnhubApiKey', 'finnhub_api_key', 'Finnhub API key', 'Enter API key'],
+      ['goldapiIoKey', 'goldapi_io_key', 'GoldAPI.io backup key', 'Optional metals API key'],
+      ['oilpriceapiKey', 'oilpriceapi_key', 'OilPriceAPI key', 'Optional real-time energy API key'],
+      ['commodityApiKey', 'commodity_api_key', 'Commodity API key', 'Optional alternate energy API key'],
     ] },
   ] as const;
   return <AppShell page="settings"><div className="content-page settings-page enter">
@@ -1302,8 +1318,12 @@ function SettingsPage() {
       <div className="settings-save-row model-apply-row"><span className="save-state" role="status">{modelApplied === (customModelId.trim() || modelId) && <><CheckCircle2 size={15} /> ACTIVE MODEL SET: {modelApplied}</>}</span><button type="button" className="button button-primary" disabled={!credentialStatus?.providerSettingsAllowed || applyModel.isPending || saveVault.isPending || updateSettings.isPending} onClick={applyWorkingModel} data-testid="button-apply-model">{applyModel.isPending ? <LoaderCircle className="spin" size={15} /> : <Zap size={15} />}{applyModel.isPending ? 'APPLYING…' : 'APPLY MODEL'}</button></div>
     </section>
     <section className="settings-section key-vault" data-testid="settings-api-keys-vault">
-      <div className="settings-section-heading"><div className="section-symbol"><KeyRound size={17} /></div><div><h2>API KEYS VAULT</h2><p>Credentials stay local. Saved values are never shown or prefilled.</p></div><span className={`connection-state ${credentialStatus?.providerSettingsAllowed ? 'connected' : 'disconnected'}`} data-testid="status-provider-settings-access">{credentialStatus?.providerSettingsAllowed ? 'KEY STORAGE AVAILABLE' : 'KEY STORAGE RESTRICTED'}</span></div>
+      <div className="settings-section-heading"><div className="section-symbol"><KeyRound size={17} /></div><div><h2>API KEYS VAULT</h2><p>Credentials stay local. Saved values are never shown or prefilled.</p></div><span className={`connection-state ${credentialStatus?.providerSettingsAllowed && !vaultLocked ? 'connected' : 'disconnected'}`} data-testid="status-provider-settings-access">{vaultLocked ? 'VAULT LOCKED' : credentialStatus?.providerSettingsAllowed ? 'KEY STORAGE AVAILABLE' : 'KEY STORAGE RESTRICTED'}</span></div>
       {vaultStatusQuery.isError && <QueryProblem retry={() => { void vaultStatusQuery.refetch(); }} message="Key status is unavailable. Saved keys remain untouched." />}
+      {vaultLocked && <div className="field-error" role="alert" data-testid="status-vault-locked">
+        <strong>Saved credentials could not be unlocked.</strong>
+        <p>Restore the original <code>VAULT_ENCRYPTION_KEY</code> in this copy’s local environment file to recover existing entries. If you no longer have it, re-enter the credentials you still need below, confirm the reset, and save. This permanently removes the inaccessible encrypted entries; only the credentials you re-enter will be kept. Key values are never shown or returned.</p>
+      </div>}
       <form className="key-vault-form" onSubmit={(event) => { event.preventDefault(); saveKeys(); }}>
         {vaultGroups.map((group) => <details className="vault-group" key={group.id} open={vaultExpanded[group.id]} data-testid={`group-vault-${group.id}`}>
           <summary aria-expanded={vaultExpanded[group.id]} onClick={(event) => { event.preventDefault(); setVaultExpanded((current) => ({ ...current, [group.id]: !current[group.id] })); }} data-testid={`toggle-vault-${group.id}`}><span>{group.title}</span><ChevronDown size={15} /></summary>
@@ -1315,9 +1335,13 @@ function SettingsPage() {
           <input className="settings-input" type="url" value={ollamaBaseUrl} onChange={(event) => { setOllamaBaseUrl(event.target.value); setProviderSaved(false); }} placeholder="http://localhost:11434/v1" disabled={!credentialStatus?.providerSettingsAllowed || !credentialStatus?.localSetupAllowed} data-testid="input-ollama-base-url" />
         </div>
         <p className="settings-footnote"><LockKeyhole size={13} /> Blank key fields mean “keep existing key”. Saved key values are never returned to this screen.</p>
+        {vaultLocked && <label className="setting-row" data-testid="confirm-vault-reset-row">
+          <input type="checkbox" checked={confirmVaultReset} onChange={(event) => setConfirmVaultReset(event.target.checked)} data-testid="checkbox-confirm-vault-reset" />
+          <span className="setting-copy"><strong>Reset inaccessible saved credentials</strong><span>I understand old encrypted entries will be permanently discarded. I have entered at least one replacement credential above.</span></span>
+        </label>}
         {providerError && <p className="field-error" role="alert" data-testid="status-provider-save-error">{providerError}</p>}
         {providerSaved && <p className="save-state" role="status" data-testid="status-provider-saved"><CheckCircle2 size={15} /> Vault settings saved. Key values remain hidden.</p>}
-        <div className="settings-save-row"><span className="settings-footnote">Keys and local URL save independently. Use Apply Model to activate a model.</span><button type="submit" className="button button-primary" disabled={!credentialStatus?.providerSettingsAllowed || saveVault.isPending || applyModel.isPending || updateSettings.isPending || vaultStatusQuery.isLoading} data-testid="button-save-provider">{saveVault.isPending ? <LoaderCircle className="spin" size={15} /> : <Check size={15} />} {saveVault.isPending ? 'Saving…' : 'Save Vault'}</button></div>
+        <div className="settings-save-row"><span className="settings-footnote">Keys and local URL save independently. Use Apply Model to activate a model.</span><button type="submit" className="button button-primary" disabled={!credentialStatus?.providerSettingsAllowed || saveVault.isPending || applyModel.isPending || updateSettings.isPending || vaultStatusQuery.isLoading || (vaultLocked && (!confirmVaultReset || !Object.entries(apiKeys).some(([, value]) => typeof value === 'string' && value.trim())))} data-testid="button-save-provider">{saveVault.isPending ? <LoaderCircle className="spin" size={15} /> : <Check size={15} />} {saveVault.isPending ? 'Saving…' : vaultLocked ? 'Reset & Save New Keys' : 'Save Vault'}</button></div>
       </form>
     </section>
     <SearchSettingsPanel settings={credentialStatus} loading={settingsQuery.isLoading} />

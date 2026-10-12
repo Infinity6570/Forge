@@ -12,4 +12,5 @@ export type VaultKeyStatusesGeminiApiKey = typeof VaultKeyStatusesGeminiApiKey[k
 export const VaultKeyStatusesGeminiApiKey = {
   configured: 'configured',
   not_set: 'not_set',
+  unavailable: 'unavailable',
 } as const;

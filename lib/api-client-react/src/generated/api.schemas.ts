@@ -523,9 +523,25 @@ export interface ProviderKeysInput {
      * @nullable
      */
   finnhubApiKey?: string | null;
+  /**
+     * @maxLength 1000
+     * @nullable
+     */
+  goldapiIoKey?: string | null;
+  /**
+     * @maxLength 1000
+     * @nullable
+     */
+  oilpriceapiKey?: string | null;
+  /**
+     * @maxLength 1000
+     * @nullable
+     */
+  commodityApiKey?: string | null;
 }
 
 export interface VaultKeysInput {
+  recoverLockedVault?: boolean;
   /**
      * @maxLength 1000
      * @nullable
@@ -591,7 +607,30 @@ export interface VaultKeysInput {
      * @nullable
      */
   finnhubApiKey?: string | null;
+  /**
+     * @maxLength 1000
+     * @nullable
+     */
+  goldapiIoKey?: string | null;
+  /**
+     * @maxLength 1000
+     * @nullable
+     */
+  oilpriceapiKey?: string | null;
+  /**
+     * @maxLength 1000
+     * @nullable
+     */
+  commodityApiKey?: string | null;
 }
+
+export type VaultKeyStatusesVaultStatus = typeof VaultKeyStatusesVaultStatus[keyof typeof VaultKeyStatusesVaultStatus];
+
+
+export const VaultKeyStatusesVaultStatus = {
+  ready: 'ready',
+  locked: 'locked',
+} as const;
 
 export type VaultKeyStatusesOpenaiApiKey = typeof VaultKeyStatusesOpenaiApiKey[keyof typeof VaultKeyStatusesOpenaiApiKey];
 
@@ -599,6 +638,7 @@ export type VaultKeyStatusesOpenaiApiKey = typeof VaultKeyStatusesOpenaiApiKey[k
 export const VaultKeyStatusesOpenaiApiKey = {
   configured: 'configured',
   not_set: 'not_set',
+  unavailable: 'unavailable',
 } as const;
 
 export type VaultKeyStatusesDeepseekApiKey = typeof VaultKeyStatusesDeepseekApiKey[keyof typeof VaultKeyStatusesDeepseekApiKey];
@@ -607,6 +647,7 @@ export type VaultKeyStatusesDeepseekApiKey = typeof VaultKeyStatusesDeepseekApiK
 export const VaultKeyStatusesDeepseekApiKey = {
   configured: 'configured',
   not_set: 'not_set',
+  unavailable: 'unavailable',
 } as const;
 
 export type VaultKeyStatusesGeminiApiKey = typeof VaultKeyStatusesGeminiApiKey[keyof typeof VaultKeyStatusesGeminiApiKey];
@@ -615,6 +656,7 @@ export type VaultKeyStatusesGeminiApiKey = typeof VaultKeyStatusesGeminiApiKey[k
 export const VaultKeyStatusesGeminiApiKey = {
   configured: 'configured',
   not_set: 'not_set',
+  unavailable: 'unavailable',
 } as const;
 
 export type VaultKeyStatusesOpenrouterApiKey = typeof VaultKeyStatusesOpenrouterApiKey[keyof typeof VaultKeyStatusesOpenrouterApiKey];
@@ -623,6 +665,7 @@ export type VaultKeyStatusesOpenrouterApiKey = typeof VaultKeyStatusesOpenrouter
 export const VaultKeyStatusesOpenrouterApiKey = {
   configured: 'configured',
   not_set: 'not_set',
+  unavailable: 'unavailable',
 } as const;
 
 export type VaultKeyStatusesTavilyApiKey = typeof VaultKeyStatusesTavilyApiKey[keyof typeof VaultKeyStatusesTavilyApiKey];
@@ -631,6 +674,7 @@ export type VaultKeyStatusesTavilyApiKey = typeof VaultKeyStatusesTavilyApiKey[k
 export const VaultKeyStatusesTavilyApiKey = {
   configured: 'configured',
   not_set: 'not_set',
+  unavailable: 'unavailable',
 } as const;
 
 export type VaultKeyStatusesSerperApiKey = typeof VaultKeyStatusesSerperApiKey[keyof typeof VaultKeyStatusesSerperApiKey];
@@ -639,6 +683,7 @@ export type VaultKeyStatusesSerperApiKey = typeof VaultKeyStatusesSerperApiKey[k
 export const VaultKeyStatusesSerperApiKey = {
   configured: 'configured',
   not_set: 'not_set',
+  unavailable: 'unavailable',
 } as const;
 
 export type VaultKeyStatusesBraveSearchApiKey = typeof VaultKeyStatusesBraveSearchApiKey[keyof typeof VaultKeyStatusesBraveSearchApiKey];
@@ -647,6 +692,7 @@ export type VaultKeyStatusesBraveSearchApiKey = typeof VaultKeyStatusesBraveSear
 export const VaultKeyStatusesBraveSearchApiKey = {
   configured: 'configured',
   not_set: 'not_set',
+  unavailable: 'unavailable',
 } as const;
 
 export type VaultKeyStatusesKiteApiKey = typeof VaultKeyStatusesKiteApiKey[keyof typeof VaultKeyStatusesKiteApiKey];
@@ -655,6 +701,7 @@ export type VaultKeyStatusesKiteApiKey = typeof VaultKeyStatusesKiteApiKey[keyof
 export const VaultKeyStatusesKiteApiKey = {
   configured: 'configured',
   not_set: 'not_set',
+  unavailable: 'unavailable',
 } as const;
 
 export type VaultKeyStatusesKiteApiSecret = typeof VaultKeyStatusesKiteApiSecret[keyof typeof VaultKeyStatusesKiteApiSecret];
@@ -663,6 +710,7 @@ export type VaultKeyStatusesKiteApiSecret = typeof VaultKeyStatusesKiteApiSecret
 export const VaultKeyStatusesKiteApiSecret = {
   configured: 'configured',
   not_set: 'not_set',
+  unavailable: 'unavailable',
 } as const;
 
 export type VaultKeyStatusesKiteAccessToken = typeof VaultKeyStatusesKiteAccessToken[keyof typeof VaultKeyStatusesKiteAccessToken];
@@ -671,6 +719,7 @@ export type VaultKeyStatusesKiteAccessToken = typeof VaultKeyStatusesKiteAccessT
 export const VaultKeyStatusesKiteAccessToken = {
   configured: 'configured',
   not_set: 'not_set',
+  unavailable: 'unavailable',
 } as const;
 
 export type VaultKeyStatusesAlphaVantageApiKey = typeof VaultKeyStatusesAlphaVantageApiKey[keyof typeof VaultKeyStatusesAlphaVantageApiKey];
@@ -679,6 +728,7 @@ export type VaultKeyStatusesAlphaVantageApiKey = typeof VaultKeyStatusesAlphaVan
 export const VaultKeyStatusesAlphaVantageApiKey = {
   configured: 'configured',
   not_set: 'not_set',
+  unavailable: 'unavailable',
 } as const;
 
 export type VaultKeyStatusesFinnhubApiKey = typeof VaultKeyStatusesFinnhubApiKey[keyof typeof VaultKeyStatusesFinnhubApiKey];
@@ -687,9 +737,38 @@ export type VaultKeyStatusesFinnhubApiKey = typeof VaultKeyStatusesFinnhubApiKey
 export const VaultKeyStatusesFinnhubApiKey = {
   configured: 'configured',
   not_set: 'not_set',
+  unavailable: 'unavailable',
+} as const;
+
+export type VaultKeyStatusesGoldapiIoKey = typeof VaultKeyStatusesGoldapiIoKey[keyof typeof VaultKeyStatusesGoldapiIoKey];
+
+
+export const VaultKeyStatusesGoldapiIoKey = {
+  configured: 'configured',
+  not_set: 'not_set',
+  unavailable: 'unavailable',
+} as const;
+
+export type VaultKeyStatusesOilpriceapiKey = typeof VaultKeyStatusesOilpriceapiKey[keyof typeof VaultKeyStatusesOilpriceapiKey];
+
+
+export const VaultKeyStatusesOilpriceapiKey = {
+  configured: 'configured',
+  not_set: 'not_set',
+  unavailable: 'unavailable',
+} as const;
+
+export type VaultKeyStatusesCommodityApiKey = typeof VaultKeyStatusesCommodityApiKey[keyof typeof VaultKeyStatusesCommodityApiKey];
+
+
+export const VaultKeyStatusesCommodityApiKey = {
+  configured: 'configured',
+  not_set: 'not_set',
+  unavailable: 'unavailable',
 } as const;
 
 export interface VaultKeyStatuses {
+  vault_status: VaultKeyStatusesVaultStatus;
   openai_api_key: VaultKeyStatusesOpenaiApiKey;
   deepseek_api_key: VaultKeyStatusesDeepseekApiKey;
   gemini_api_key: VaultKeyStatusesGeminiApiKey;
@@ -702,6 +781,9 @@ export interface VaultKeyStatuses {
   kite_access_token: VaultKeyStatusesKiteAccessToken;
   alpha_vantage_api_key: VaultKeyStatusesAlphaVantageApiKey;
   finnhub_api_key: VaultKeyStatusesFinnhubApiKey;
+  goldapi_io_key: VaultKeyStatusesGoldapiIoKey;
+  oilpriceapi_key: VaultKeyStatusesOilpriceapiKey;
+  commodity_api_key: VaultKeyStatusesCommodityApiKey;
 }
 
 export type AssistantSettingsInputProvider = typeof AssistantSettingsInputProvider[keyof typeof AssistantSettingsInputProvider];

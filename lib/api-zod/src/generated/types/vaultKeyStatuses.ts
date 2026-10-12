@@ -7,18 +7,23 @@
  */
 import type { VaultKeyStatusesAlphaVantageApiKey } from './vaultKeyStatusesAlphaVantageApiKey';
 import type { VaultKeyStatusesBraveSearchApiKey } from './vaultKeyStatusesBraveSearchApiKey';
+import type { VaultKeyStatusesCommodityApiKey } from './vaultKeyStatusesCommodityApiKey';
 import type { VaultKeyStatusesDeepseekApiKey } from './vaultKeyStatusesDeepseekApiKey';
 import type { VaultKeyStatusesFinnhubApiKey } from './vaultKeyStatusesFinnhubApiKey';
 import type { VaultKeyStatusesGeminiApiKey } from './vaultKeyStatusesGeminiApiKey';
+import type { VaultKeyStatusesGoldapiIoKey } from './vaultKeyStatusesGoldapiIoKey';
 import type { VaultKeyStatusesKiteAccessToken } from './vaultKeyStatusesKiteAccessToken';
 import type { VaultKeyStatusesKiteApiKey } from './vaultKeyStatusesKiteApiKey';
 import type { VaultKeyStatusesKiteApiSecret } from './vaultKeyStatusesKiteApiSecret';
+import type { VaultKeyStatusesOilpriceapiKey } from './vaultKeyStatusesOilpriceapiKey';
 import type { VaultKeyStatusesOpenaiApiKey } from './vaultKeyStatusesOpenaiApiKey';
 import type { VaultKeyStatusesOpenrouterApiKey } from './vaultKeyStatusesOpenrouterApiKey';
 import type { VaultKeyStatusesSerperApiKey } from './vaultKeyStatusesSerperApiKey';
 import type { VaultKeyStatusesTavilyApiKey } from './vaultKeyStatusesTavilyApiKey';
+import type { VaultKeyStatusesVaultStatus } from './vaultKeyStatusesVaultStatus';
 
 export interface VaultKeyStatuses {
+  vault_status: VaultKeyStatusesVaultStatus;
   openai_api_key: VaultKeyStatusesOpenaiApiKey;
   deepseek_api_key: VaultKeyStatusesDeepseekApiKey;
   gemini_api_key: VaultKeyStatusesGeminiApiKey;
@@ -31,4 +36,7 @@ export interface VaultKeyStatuses {
   kite_access_token: VaultKeyStatusesKiteAccessToken;
   alpha_vantage_api_key: VaultKeyStatusesAlphaVantageApiKey;
   finnhub_api_key: VaultKeyStatusesFinnhubApiKey;
+  goldapi_io_key: VaultKeyStatusesGoldapiIoKey;
+  oilpriceapi_key: VaultKeyStatusesOilpriceapiKey;
+  commodity_api_key: VaultKeyStatusesCommodityApiKey;
 }

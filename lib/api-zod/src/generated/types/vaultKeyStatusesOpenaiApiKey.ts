@@ -12,4 +12,5 @@ export type VaultKeyStatusesOpenaiApiKey = typeof VaultKeyStatusesOpenaiApiKey[k
 export const VaultKeyStatusesOpenaiApiKey = {
   configured: 'configured',
   not_set: 'not_set',
+  unavailable: 'unavailable',
 } as const;

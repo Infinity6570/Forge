@@ -12,4 +12,5 @@ export type VaultKeyStatusesDeepseekApiKey = typeof VaultKeyStatusesDeepseekApiK
 export const VaultKeyStatusesDeepseekApiKey = {
   configured: 'configured',
   not_set: 'not_set',
+  unavailable: 'unavailable',
 } as const;

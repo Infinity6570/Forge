@@ -12,4 +12,5 @@ export type VaultKeyStatusesOpenrouterApiKey = typeof VaultKeyStatusesOpenrouter
 export const VaultKeyStatusesOpenrouterApiKey = {
   configured: 'configured',
   not_set: 'not_set',
+  unavailable: 'unavailable',
 } as const;

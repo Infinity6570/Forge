@@ -12,4 +12,5 @@ export type VaultKeyStatusesKiteAccessToken = typeof VaultKeyStatusesKiteAccessT
 export const VaultKeyStatusesKiteAccessToken = {
   configured: 'configured',
   not_set: 'not_set',
+  unavailable: 'unavailable',
 } as const;

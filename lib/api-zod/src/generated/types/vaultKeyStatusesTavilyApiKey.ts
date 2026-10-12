@@ -12,4 +12,5 @@ export type VaultKeyStatusesTavilyApiKey = typeof VaultKeyStatusesTavilyApiKey[k
 export const VaultKeyStatusesTavilyApiKey = {
   configured: 'configured',
   not_set: 'not_set',
+  unavailable: 'unavailable',
 } as const;

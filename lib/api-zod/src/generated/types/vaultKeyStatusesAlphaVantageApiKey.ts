@@ -12,4 +12,5 @@ export type VaultKeyStatusesAlphaVantageApiKey = typeof VaultKeyStatusesAlphaVan
 export const VaultKeyStatusesAlphaVantageApiKey = {
   configured: 'configured',
   not_set: 'not_set',
+  unavailable: 'unavailable',
 } as const;

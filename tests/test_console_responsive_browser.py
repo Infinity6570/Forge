@@ -124,7 +124,7 @@ class ResponsiveConsoleBrowserTests(unittest.TestCase):
                             lambda route: route.fulfill(
                                 status=200,
                                 content_type="application/javascript",
-                                body="window.TradingView={widget:function(){this.remove=function(){throw new Error('widget already detached')};}};",
+                            body="window.__tvSymbols=[];window.__tvWidgets=0;window.__tvRemoved=0;window.TradingView={widget:function(options){window.__tvWidgets++;window.__tvSymbols.push(options.symbol);this.chart=function(){return {setSymbol:function(symbol){window.__tvSymbols.push(symbol);}}};this.onChartReady=function(callback){callback();};this.remove=function(){window.__tvRemoved++;};}};",
                             ),
                         )
                         page.goto(self.base_url, wait_until="domcontentloaded")
@@ -155,10 +155,23 @@ class ResponsiveConsoleBrowserTests(unittest.TestCase):
 
                         market_radar = page.get_by_test_id("section-market-radar")
                         market_radar.wait_for(state="visible")
-                        self.assertEqual(page.get_by_test_id("text-market-symbol").inner_text(), "MCX:GOLD1!")
-                        page.get_by_test_id("button-market-mcx-silver").click()
-                        self.assertEqual(page.get_by_test_id("text-market-symbol").inner_text(), "MCX:SILVER1!")
-                        self.assertEqual(page.get_by_test_id("button-market-mcx-silver").get_attribute("aria-pressed"), "true")
+                        self.assertEqual(page.get_by_test_id("text-market-symbol").inner_text(), "TVC:GOLD")
+                        self.assertEqual(page.get_by_test_id("button-market-comex-gold").get_attribute("aria-pressed"), "true")
+                        for button_id, expected_symbol in [
+                            ("button-market-wti-crude", "TVC:USOIL"),
+                            ("button-market-natural-gas", "TVC:NATGAS"),
+                            ("button-market-mcx-gold-inr", "MCX:GOLD1!"),
+                            ("button-market-nifty-50", "NSE:NIFTY"),
+                        ]:
+                            page.get_by_test_id(button_id).click()
+                            self.assertEqual(page.get_by_test_id("text-market-symbol").inner_text(), expected_symbol)
+                            self.assertEqual(page.get_by_test_id(button_id).get_attribute("aria-pressed"), "true")
+                            self.assertEqual(
+                                page.evaluate("window.__tvSymbols[window.__tvSymbols.length - 1]"),
+                                expected_symbol,
+                            )
+                        self.assertEqual(page.evaluate("window.__tvWidgets"), 1)
+                        self.assertEqual(page.evaluate("window.__tvRemoved"), 0)
 
                         live_preview_tab = page.get_by_test_id("tab-inspector-live-preview")
                         live_preview_tab.click()
