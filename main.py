@@ -50,9 +50,12 @@ from workspace_preview import (
     local_app_previews_enabled,
     resolve_workspace_asset,
     resolve_workspace_path,
+    resolve_workspace_source_file,
     write_workspace_app_script,
     write_workspace_asset,
+    write_workspace_source_file,
 )
+from tools.agent_tools import run_approved_terminal_command, validate_terminal_command
 from tools.elevated_runner import (
     execute_elevated_command,
     is_process_elevated,
@@ -363,6 +366,44 @@ def list_workspace_paths() -> list[str]:
                 continue
             listed.append(relative)
     return sorted(listed, key=str.casefold)[:1000]
+
+
+def list_workspace_directory(relative_path: str = ".") -> dict[str, Any]:
+    target = BASE_DIR if relative_path == "." else safe_workspace_path(relative_path)
+    if not target.is_dir():
+        raise PermissionError("Choose a workspace directory to list.")
+    entries: list[dict[str, Any]] = []
+    for item in sorted(target.iterdir(), key=lambda entry: entry.name.casefold()):
+        if item.name.startswith(".") or item.is_symlink():
+            continue
+        try:
+            resolved = item.resolve()
+            relative = resolved.relative_to(BASE_DIR)
+        except (OSError, ValueError):
+            continue
+        if not relative.parts or relative.parts[0].lower() in PRIVATE_WORKSPACE_ENTRIES:
+            continue
+        if any(part.startswith(".") for part in relative.parts):
+            continue
+        if item.is_dir():
+            entries.append({"name": item.name, "path": relative.as_posix(), "kind": "directory"})
+        elif item.is_file():
+            try:
+                entries.append({
+                    "name": item.name,
+                    "path": relative.as_posix(),
+                    "kind": "file",
+                    "sizeBytes": item.stat().st_size,
+                })
+            except OSError:
+                continue
+        if len(entries) >= 500:
+            break
+    return {
+        "path": "." if target == BASE_DIR else target.relative_to(BASE_DIR).as_posix(),
+        "entries": entries,
+        "truncated": len(entries) >= 500,
+    }
 
 
 def read_workspace_text(relative_path: str) -> dict[str, Any]:

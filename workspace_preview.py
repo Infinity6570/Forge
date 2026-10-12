@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import shutil
 import signal
@@ -23,6 +24,16 @@ STATIC_SUFFIXES = {
     ".woff", ".woff2", ".ttf", ".otf",
 }
 WRITABLE_SUFFIXES = STATIC_SUFFIXES
+SOURCE_SUFFIXES = STATIC_SUFFIXES | {
+    ".py", ".pyi", ".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs",
+    ".vue", ".svelte", ".astro", ".scss", ".sass", ".less", ".jsonc",
+    ".yaml", ".yml", ".toml", ".ini", ".cfg", ".md", ".txt", ".csv",
+    ".xml", ".sql", ".graphql", ".gql",
+}
+BLOCKED_SOURCE_NAMES = {
+    ".env", "credentials.json", "secrets.json", "id_rsa", "id_ed25519",
+}
+BLOCKED_SOURCE_SUFFIXES = {".pem", ".key", ".p12", ".pfx", ".crt", ".cer", ".db", ".sqlite"}
 MAX_PREVIEW_FILE_BYTES = 2 * 1024 * 1024
 MAX_RUNNING_APPS = 3
 STARTUP_TIMEOUT_SECONDS = 30
@@ -120,6 +131,64 @@ def resolve_workspace_script(workspace: Path, relative_path: str) -> Path:
     return path
 
 
+def resolve_workspace_source_file(workspace: Path, relative_path: str, *, allow_missing: bool = False) -> Path:
+    parts = _safe_relative_parts(relative_path)
+    path = resolve_workspace_path(workspace, Path(*parts), allow_missing=allow_missing)
+    resolved_parts = path.relative_to(workspace.resolve()).parts
+    if (
+        not resolved_parts
+        or resolved_parts[0].lower() in {"uploads", "notes", "preview-runtime"}
+        or any(part.startswith(".") for part in resolved_parts)
+        or path.name.casefold() in BLOCKED_SOURCE_NAMES
+        or path.suffix.lower() in BLOCKED_SOURCE_SUFFIXES
+        or path.suffix.lower() not in SOURCE_SUFFIXES
+    ):
+        raise WorkspacePreviewError("Only supported UTF-8 source and text files inside the workspace can be written.")
+    if not allow_missing and (not path.is_file() or path.stat().st_size > MAX_PREVIEW_FILE_BYTES):
+        raise WorkspacePreviewError("The workspace source file is missing or larger than 2 MB.")
+    return path
+
+
+def resolve_workspace_vite_project(workspace: Path, relative_path: str) -> Path:
+    parts = _safe_relative_parts(relative_path)
+    target = resolve_workspace_path(workspace, Path(*parts))
+    root = workspace.resolve()
+    if target.is_file() and target.name == "package.json":
+        project = target.parent
+    elif target.is_dir():
+        project = target
+    else:
+        raise WorkspacePreviewError("Choose a project directory or its package.json for a Vite preview.")
+    relative_project = project.relative_to(root)
+    if (
+        not relative_project.parts
+        or relative_project.parts[0].lower() in {"uploads", "notes", "preview-runtime"}
+        or any(part.startswith(".") for part in relative_project.parts)
+    ):
+        raise WorkspacePreviewError("Vite projects must be inside a visible workspace folder.")
+    package_file = project / "package.json"
+    if not package_file.is_file() or package_file.stat().st_size > 1_000_000:
+        raise WorkspacePreviewError("The Vite project needs a package.json no larger than 1 MB.")
+    try:
+        package = json.loads(package_file.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as error:
+        raise WorkspacePreviewError("The Vite project's package.json is not valid JSON.") from error
+    if not isinstance(package, dict) or not isinstance(package.get("scripts"), dict):
+        raise WorkspacePreviewError("The Vite project needs a package.json with a dev script.")
+    if not isinstance(package["scripts"].get("dev"), str):
+        raise WorkspacePreviewError("The Vite project needs a package.json with a dev script.")
+    vite_entry = project / "node_modules" / "vite" / "bin" / "vite.js"
+    try:
+        resolved_vite = resolve_workspace_path(
+            workspace, vite_entry.relative_to(root).as_posix()
+        )
+    except (PermissionError, ValueError) as error:
+        raise WorkspacePreviewError("Vite is not installed in this workspace project. Approve `npm install` first.") from error
+    if not resolved_vite.is_file():
+        raise WorkspacePreviewError("Vite is not installed in this workspace project. Approve `npm install` first.")
+    return package_file
+
+
 def static_preview_url(relative_path: str) -> str:
     parts = _safe_relative_parts(relative_path)
     return f"/api/workspace/preview/static/{quote('/'.join(parts), safe='/')}"
@@ -215,6 +284,42 @@ def write_workspace_app_script(
     }
 
 
+def write_workspace_source_file(
+    workspace: Path,
+    relative_path: str,
+    content: str,
+    *,
+    overwrite: bool = False,
+) -> dict[str, Any]:
+    payload = content.encode("utf-8")
+    if len(payload) > MAX_PREVIEW_FILE_BYTES:
+        raise WorkspacePreviewError("Generated source files must be 2 MB or smaller.")
+    path = resolve_workspace_source_file(workspace, relative_path, allow_missing=True)
+    root = workspace.resolve()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.exists() and not overwrite:
+        raise WorkspacePreviewError("That workspace file already exists. Ask before replacing it.")
+    if overwrite:
+        temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
+        try:
+            temporary.write_bytes(payload)
+            temporary.replace(path)
+        finally:
+            temporary.unlink(missing_ok=True)
+    else:
+        try:
+            with path.open("xb") as output:
+                output.write(payload)
+        except FileExistsError as error:
+            raise WorkspacePreviewError("That workspace file already exists. Ask before replacing it.") from error
+    return {
+        "saved": True,
+        "path": path.relative_to(root).as_posix(),
+        "sizeBytes": len(payload),
+        "previewable": path.suffix.lower() in {".html", ".htm"},
+    }
+
+
 @dataclass
 class PreviewProcess:
     app_id: str
@@ -295,6 +400,9 @@ class WorkspacePreviewManager:
             "HOST": "127.0.0.1",
             "BIND_HOST": "127.0.0.1",
             "WORKSPACE_PREVIEW_BASE_PATH": prefix,
+            "NODE_ENV": "development",
+            "BROWSER": "none",
+            "NPM_CONFIG_UPDATE_NOTIFIER": "false",
         }
         for name in ("SYSTEMROOT", "WINDIR"):
             value = os.environ.get(name)
@@ -385,7 +493,26 @@ class WorkspacePreviewManager:
                 encoding="utf-8",
             )
             return [sys.executable, str(wrapper_path), str(script), str(port), prefix], wrapper_path
-        raise WorkspacePreviewError("Choose static, Flask, Streamlit, or FastAPI preview mode.")
+        if framework == "vite":
+            node = shutil.which("node")
+            if not node:
+                raise WorkspacePreviewError("Node.js is required to launch a Vite preview.")
+            project = script.parent
+            vite_entry = project / "node_modules" / "vite" / "bin" / "vite.js"
+            project_root = project.relative_to(self.workspace).as_posix()
+            return [
+                node,
+                str(vite_entry),
+                project_root,
+                "--host",
+                "127.0.0.1",
+                "--port",
+                str(port),
+                "--strictPort",
+                "--base",
+                f"{prefix}/",
+            ], None
+        raise WorkspacePreviewError("Choose static, Flask, Streamlit, FastAPI, or Vite preview mode.")
 
     async def _wait_for_listening(self, app: PreviewProcess) -> None:
         deadline = time.monotonic() + STARTUP_TIMEOUT_SECONDS
@@ -425,15 +552,19 @@ class WorkspacePreviewManager:
                 "previewUrl": preview_url,
                 "status": "ready",
             }
-        if framework not in {"flask", "streamlit", "fastapi"}:
-            raise WorkspacePreviewError("Choose static, Flask, Streamlit, or FastAPI preview mode.")
+        if framework not in {"flask", "streamlit", "fastapi", "vite"}:
+            raise WorkspacePreviewError("Choose static, Flask, Streamlit, FastAPI, or Vite preview mode.")
         if not local_app_previews_enabled():
             raise PermissionError(
-                "Local Python app previews are disabled. Enable “Enable Local App Previews "
+                "Local app previews are disabled. Enable “Enable Local App Previews "
                 "(Unrestricted Workspace Execution)” in Preferences on a local copy. They are always "
                 "disabled in Replit Cloud."
             )
-        script = resolve_workspace_script(self.workspace, entry_path)
+        script = (
+            resolve_workspace_vite_project(self.workspace, entry_path)
+            if framework == "vite"
+            else resolve_workspace_script(self.workspace, entry_path)
+        )
         with self._lock:
             self._purge_exited()
             if len(self._apps) >= MAX_RUNNING_APPS:
@@ -517,6 +648,7 @@ class WorkspacePreviewManager:
             "staticEntryPath": entry_path if entry is not None else None,
             "staticPreviewUrl": static_preview_url(entry_path) if entry is not None else None,
             "pythonPreviewsEnabled": local_app_previews_enabled(),
+            "localAppPreviewsEnabled": local_app_previews_enabled(),
             "pythonPreviewRuntimeLimitSeconds": MAX_PREVIEW_RUNTIME_SECONDS,
             "apps": apps,
         }
