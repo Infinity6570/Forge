@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { Children, isValidElement } from 'react';
 import type { ReactNode } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { Activity, AlertCircle, ArrowDown, ArrowRight, Brain, CheckCircle2, ChevronDown, Copy, FileEdit, Globe, ListChecks, Terminal, Wrench } from 'lucide-react';
 import { SearchPayloadView, SourceList, parseSearchPayload } from '@/components/search-sources';
 import type { AssistantTask, ConversationMessage, TaskLog } from '@workspace/api-client-react';
@@ -19,12 +22,25 @@ function Code({ source, language }: { source: string; language: string }) {
 }
 
 function Rich({ text }: { text: string }) {
-  const parts = text.split(/(```[\s\S]*?```)/g).filter((p) => p !== '');
-  const out: ReactNode[] = parts.map((piece, i) => {
-    const m = piece.match(/^```([\w-]*)\n?([\s\S]*?)```$/);
-    return m ? <Code key={i} language={m[1]} source={m[2].replace(/\n$/, '')} /> : <p key={i}>{piece}</p>;
-  });
-  return <div className="exec-rich">{out}</div>;
+  return <div className="exec-rich">
+    <ReactMarkdown
+      remarkPlugins={[remarkGfm]}
+      components={{
+        pre({ children }) {
+          const code = Children.toArray(children).find((child) =>
+            isValidElement<{ children?: ReactNode; className?: string }>(child) && child.type === 'code',
+          );
+          if (!isValidElement<{ children?: ReactNode; className?: string }>(code)) return <pre>{children}</pre>;
+          const language = code.props.className?.match(/language-([\w-]+)/)?.[1] ?? 'code';
+          const source = String(code.props.children ?? '').replace(/\n$/, '');
+          return <Code source={source} language={language} />;
+        },
+        table({ children }) {
+          return <div className="exec-table-scroll"><table>{children}</table></div>;
+        },
+      }}
+    >{text}</ReactMarkdown>
+  </div>;
 }
 
 type Summary = { icon: typeof Terminal; label: string; text: string; tone: string };
