@@ -1,0 +1,68 @@
+Please implement the Key Vault database schema expansion, Preferences UI updates, and the 100% free Market Data & TradingView Chart integration for Forge:
+
+1. Key Vault Database Schema & Migration (SQLite / Backend):
+   - In the database schema/models (e.g., `vault.py`, `models.py`, or `schema.sql`), ensure the Key Vault supports both structured columns and dynamic key lookups:
+     * If using a dedicated columns table (`api_vault` or `user_settings`):
+       Add columns (with nullable text fields):
+       - `gemini_api_key` TEXT
+       - `tavily_api_key` TEXT
+       - `serper_api_key` TEXT
+       - `kite_api_key` TEXT
+       - `kite_api_secret` TEXT
+       - `kite_access_token` TEXT
+       - `alpha_vantage_api_key` TEXT
+       - `finnhub_api_key` TEXT
+     * Or ensure a dynamic key-value table exists (`vault_secrets`):
+       - `key_name` VARCHAR(50) PRIMARY KEY
+       - `key_value` TEXT NOT NULL
+       - `category` VARCHAR(30) -- ('ai', 'search', 'broker', 'market')
+       - `is_active` BOOLEAN DEFAULT 1
+       - `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+   - Vault Resolver Logic:
+     * Update the backend config resolver to fetch keys from the database vault first, falling back to `.env` variables if the database record is empty.
+     * Add API routes:
+       - `GET /api/vault/keys`: Returns masked key statuses (e.g. `{"gemini_api_key": "configured", "kite_api_key": "not_set", ...}`).
+       - `POST /api/vault/keys`: Upserts key values securely into the database.
+
+2. Preferences UI / Key Vault Panel:
+   - In the "Preferences" or "Key Vault" modal/view:
+     * Organize the inputs into cyber-styled collapsible sections:
+       1. AI & Core Reasoning:
+          - Gemini API Key (`GEMINI_API_KEY`)
+       2. Web Search & Grounding:
+          - Tavily Search Key (`TAVILY_API_KEY`)
+          - Serper Search Key (`SERPER_API_KEY`)
+       3. Market & Broker Integrations (Optional / Stored for execution):
+          - Zerodha Kite API Key (`KITE_API_KEY`)
+          - Zerodha Kite API Secret (`KITE_API_SECRET`)
+          - Zerodha Kite Daily Access Token (`KITE_ACCESS_TOKEN`)
+          - Alpha Vantage / Market Key (`ALPHA_VANTAGE_API_KEY`)
+     * UI Polish:
+       - Password-masked inputs (`type="password"`) with an eye toggle to reveal.
+       - A green "CONNECTED / ACTIVE" badge next to configured keys.
+       - A "SAVE VAULT" button with a brief glowing confirmation flash.
+
+3. Free Backend Market Tool (`yfinance` — Zero Key Required):
+   - Add `yfinance` to `requirements.txt`.
+   - Register the agent tool `get_market_quote(symbol: str)` in the agent tool registry:
+     * Takes symbols:
+       - Global/MCX Pegged Futures: `GC=F` (Gold), `SI=F` (Silver), `CL=F` (Crude Oil)
+       - Indian Equities / ETFs / Indices: `GOLDBEES.NS`, `SILVERBEES.NS`, `RELIANCE.NS`, `^NSEI` (Nifty 50)
+     * Returns:
+       - `symbol`, `current_price`, `previous_close`, `day_change_percent`, `currency`.
+     * Instruct Gemini in system instructions that it can call `get_market_quote` autonomously whenever the user asks for spot prices, gold/silver price ratios, or market performance.
+
+4. Free Frontend TradingView Chart Component (`TradingViewChart.tsx`):
+   - Create a reusable React component using the TradingView Advanced Real-Time Chart widget (via `https://s3.tradingview.com/tv.js`):
+     * Theme: "dark"
+     * Background / Toolbar: `#070a0f`
+     * Timezone: "Asia/Kolkata"
+     * Default Symbol: Prop-driven (default: "MCX:GOLD1!" or "NSE:NIFTY")
+     * Features: Enable candlesticks, volume, symbol search, and timeframe controls.
+     * Styling: Neon cyan border (`border: 1px solid rgba(0, 240, 255, 0.25)`), rounded corners, full responsive height.
+
+5. Ultrawide Telemetry Integration (Right-Hand Pane):
+   - In the right-hand Ultrawide Telemetry Pane, add an interactive "MARKET RADAR" card:
+     * Above the chart, add a cyber-pill quick-switcher row with buttons:
+       `[ MCX GOLD ]`  `[ MCX SILVER ]`  `[ NIFTY 50 ]`  `[ CRUDE OIL ]`
+     * Clicking a button dynamically updates the embedded TradingView chart without reloading the page.

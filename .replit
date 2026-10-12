@@ -21,4 +21,4 @@ timeoutMs = 20000
 
 [nix]
 channel = "stable-25_05"
-packages = ["gitFull", "libxcrypt", "playwright-driver"]
+packages = ["cargo", "gitFull", "libiconv", "libxcrypt", "openssl", "pkg-config", "playwright-driver", "rustc"]

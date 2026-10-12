@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import ipaddress
 import json
+import math
 import mimetypes
 import os
 import re
@@ -26,6 +27,7 @@ from urllib.parse import quote, urlparse
 import httpx
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from bs4 import BeautifulSoup
+from cryptography.fernet import Fernet, InvalidToken
 from dotenv import load_dotenv, set_key
 from fastapi import FastAPI, File, HTTPException, Request, Response, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -108,6 +110,34 @@ KEY_NAMES = {
     "deepseek": "DEEPSEEK_API_KEY",
     "gemini": "GEMINI_API_KEY",
     "openrouter": "OPENROUTER_API_KEY",
+}
+VAULT_KEY_CATEGORIES = {
+    "OPENAI_API_KEY": "ai",
+    "DEEPSEEK_API_KEY": "ai",
+    "GEMINI_API_KEY": "ai",
+    "OPENROUTER_API_KEY": "ai",
+    "TAVILY_API_KEY": "search",
+    "SERPER_API_KEY": "search",
+    "BRAVE_SEARCH_API_KEY": "search",
+    "KITE_API_KEY": "broker",
+    "KITE_API_SECRET": "broker",
+    "KITE_ACCESS_TOKEN": "broker",
+    "ALPHA_VANTAGE_API_KEY": "market",
+    "FINNHUB_API_KEY": "market",
+}
+VAULT_FORM_TO_ENV = {
+    "openaiApiKey": "OPENAI_API_KEY",
+    "deepseekApiKey": "DEEPSEEK_API_KEY",
+    "geminiApiKey": "GEMINI_API_KEY",
+    "openrouterApiKey": "OPENROUTER_API_KEY",
+    "tavilyApiKey": "TAVILY_API_KEY",
+    "serperApiKey": "SERPER_API_KEY",
+    "braveApiKey": "BRAVE_SEARCH_API_KEY",
+    "kiteApiKey": "KITE_API_KEY",
+    "kiteApiSecret": "KITE_API_SECRET",
+    "kiteAccessToken": "KITE_ACCESS_TOKEN",
+    "alphaVantageApiKey": "ALPHA_VANTAGE_API_KEY",
+    "finnhubApiKey": "FINNHUB_API_KEY",
 }
 DEFAULT_MODELS = {
     "openai": "gpt-4o-mini",
@@ -340,6 +370,14 @@ def utc_now() -> str:
 def connect_db() -> sqlite3.Connection:
     WORKSPACE.mkdir(parents=True, exist_ok=True)
     connection = sqlite3.connect(DATABASE, timeout=20, check_same_thread=False)
+    try:
+        os.chmod(DATABASE, 0o600)
+        for suffix in ("-wal", "-shm"):
+            auxiliary_file = Path(f"{DATABASE}{suffix}")
+            if auxiliary_file.exists():
+                os.chmod(auxiliary_file, 0o600)
+    except OSError:
+        pass
     connection.row_factory = sqlite3.Row
     connection.execute("PRAGMA journal_mode=WAL")
     connection.execute("PRAGMA foreign_keys=ON")
@@ -386,6 +424,13 @@ def init_db() -> None:
                   id TEXT PRIMARY KEY, task_id TEXT NOT NULL, tool_call_id TEXT NOT NULL,
                   action TEXT NOT NULL, payload_json TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending',
                   created_at TEXT NOT NULL, resolved_at TEXT
+                );
+                CREATE TABLE IF NOT EXISTS vault_secrets (
+                  key_name TEXT PRIMARY KEY,
+                  key_value TEXT NOT NULL,
+                  category TEXT NOT NULL,
+                  is_active INTEGER NOT NULL DEFAULT 1,
+                  updated_at TEXT NOT NULL
                 );
                 CREATE INDEX IF NOT EXISTS tasks_created_idx ON tasks(created_at DESC);
                 CREATE INDEX IF NOT EXISTS timers_due_idx ON timers(status, scheduled_for);
@@ -440,6 +485,101 @@ def db_run(sql: str, values: tuple[Any, ...] = ()) -> int:
             return cursor.rowcount
         finally:
             connection.close()
+
+
+def _vault_fernet() -> Fernet:
+    key = os.getenv("VAULT_ENCRYPTION_KEY", "").strip()
+    if not key:
+        key = Fernet.generate_key().decode("ascii")
+        set_key(str(ENV_FILE), "VAULT_ENCRYPTION_KEY", key, quote_mode="never")
+        os.environ["VAULT_ENCRYPTION_KEY"] = key
+        os.chmod(ENV_FILE, 0o600)
+    try:
+        return Fernet(key.encode("ascii"))
+    except (ValueError, UnicodeEncodeError) as error:
+        raise RuntimeError("The local vault encryption key is invalid; restore VAULT_ENCRYPTION_KEY before reading saved keys.") from error
+
+
+def get_vault_values(key_names: list[str] | tuple[str, ...]) -> dict[str, str | None]:
+    names = list(dict.fromkeys(name for name in key_names if name in VAULT_KEY_CATEGORIES))
+    if not names:
+        return {}
+    placeholders = ",".join("?" for _ in names)
+    try:
+        rows = db_all(
+            f"SELECT key_name,key_value FROM vault_secrets WHERE is_active=1 AND key_name IN ({placeholders})",
+            tuple(names),
+        )
+    except sqlite3.OperationalError as error:
+        if "no such table: vault_secrets" not in str(error).lower():
+            raise
+        rows = []
+    encrypted = {row["key_name"]: row["key_value"] for row in rows}
+    decrypted: dict[str, str] = {}
+    if encrypted:
+        cipher = _vault_fernet()
+        for key_name, stored_value in encrypted.items():
+            try:
+                decrypted[key_name] = cipher.decrypt(stored_value.encode("ascii")).decode("utf-8")
+            except (InvalidToken, UnicodeDecodeError, UnicodeEncodeError) as error:
+                raise RuntimeError(
+                    "A saved vault value could not be decrypted; restore the original VAULT_ENCRYPTION_KEY."
+                ) from error
+    return {
+        name: decrypted.get(name) or os.getenv(name) or None
+        for name in names
+    }
+
+
+def get_vault_secret(key_name: str) -> str | None:
+    return get_vault_values([key_name]).get(key_name)
+
+
+def save_vault_values(values: dict[str, str | None]) -> None:
+    clean_values = {
+        key_name: value.strip()
+        for key_name, value in values.items()
+        if key_name in VAULT_KEY_CATEGORIES and isinstance(value, str) and value.strip()
+    }
+    if not clean_values:
+        return
+    cipher = _vault_fernet()
+    updated_at = utc_now()
+    rows = [
+        (
+            key_name,
+            cipher.encrypt(value.encode("utf-8")).decode("ascii"),
+            VAULT_KEY_CATEGORIES[key_name],
+            updated_at,
+        )
+        for key_name, value in clean_values.items()
+    ]
+    with DB_LOCK:
+        connection = connect_db()
+        try:
+            connection.executemany(
+                """
+                INSERT INTO vault_secrets(key_name,key_value,category,is_active,updated_at)
+                VALUES(?,?,?,1,?)
+                ON CONFLICT(key_name) DO UPDATE SET
+                  key_value=excluded.key_value,
+                  category=excluded.category,
+                  is_active=1,
+                  updated_at=excluded.updated_at
+                """,
+                rows,
+            )
+            connection.commit()
+        finally:
+            connection.close()
+
+
+def vault_key_statuses() -> dict[str, str]:
+    values = get_vault_values(tuple(VAULT_KEY_CATEGORIES))
+    return {
+        key_name.lower(): "configured" if values.get(key_name) else "not_set"
+        for key_name in VAULT_KEY_CATEGORIES
+    }
 
 
 def parse_json(value: str | None, fallback: Any) -> Any:
@@ -642,6 +782,8 @@ def get_settings(local_allowed: bool, provider_settings_allowed: bool) -> dict[s
     model = os.getenv("AGENT_MODEL", DEFAULT_MODELS[provider])
     if not MODEL_ID_PATTERN.fullmatch(model):
         model = DEFAULT_MODELS[provider]
+    vault_values = get_vault_values(tuple(VAULT_KEY_CATEGORIES))
+    secret_from_vault = lambda name: vault_values.get(name) or os.getenv(name)
     return {
         "provider": provider,
         "modelId": model,
@@ -653,13 +795,13 @@ def get_settings(local_allowed: bool, provider_settings_allowed: bool) -> dict[s
         "ollamaBaseUrl": os.getenv("OLLAMA_BASE_URL", DEFAULT_OLLAMA_BASE_URL),
         "localSetupAllowed": local_allowed,
         "providerSettingsAllowed": provider_settings_allowed,
-        "hasOpenaiKey": bool(os.getenv("OPENAI_API_KEY")),
-        "hasDeepseekKey": bool(os.getenv("DEEPSEEK_API_KEY")),
-        "hasGeminiKey": bool(os.getenv("GEMINI_API_KEY")),
-        "hasOpenrouterKey": bool(os.getenv("OPENROUTER_API_KEY")),
+        "hasOpenaiKey": bool(secret_from_vault("OPENAI_API_KEY")),
+        "hasDeepseekKey": bool(secret_from_vault("DEEPSEEK_API_KEY")),
+        "hasGeminiKey": bool(secret_from_vault("GEMINI_API_KEY")),
+        "hasOpenrouterKey": bool(secret_from_vault("OPENROUTER_API_KEY")),
         "codeRunnerEnabled": local_code_runner_available(),
         "appPreviewsEnabled": local_allowed and local_app_previews_enabled(),
-        **search_settings(),
+        **search_settings(secret_from_vault),
         "chromiumAvailable": chromium_available(),
     }
 
@@ -813,6 +955,15 @@ class ProviderKeysInput(BaseModel):
     tavilyApiKey: str | None = Field(default=None, max_length=1000)
     serperApiKey: str | None = Field(default=None, max_length=1000)
     braveApiKey: str | None = Field(default=None, max_length=1000)
+    kiteApiKey: str | None = Field(default=None, max_length=1000)
+    kiteApiSecret: str | None = Field(default=None, max_length=1000)
+    kiteAccessToken: str | None = Field(default=None, max_length=1000)
+    alphaVantageApiKey: str | None = Field(default=None, max_length=1000)
+    finnhubApiKey: str | None = Field(default=None, max_length=1000)
+
+
+class VaultKeysInput(ProviderKeysInput):
+    pass
 
 
 class SearchSettingsInput(BaseModel):
@@ -829,7 +980,7 @@ def credential_for(provider: str) -> str | None:
             return None
         return "ollama"
     key_name = KEY_NAMES.get(provider)
-    return os.getenv(key_name) if key_name else None
+    return get_vault_secret(key_name) if key_name else None
 
 
 def validate_ollama_base_url(value: str | None) -> str:
@@ -853,8 +1004,11 @@ def validate_ollama_base_url(value: str | None) -> str:
 
 
 def redact_provider_keys(message: str) -> str:
-    for key_name in (*KEY_NAMES.values(), *SEARCH_KEY_NAMES.values()):
-        key = os.getenv(key_name)
+    try:
+        secrets = get_vault_values(tuple(VAULT_KEY_CATEGORIES))
+    except (RuntimeError, sqlite3.OperationalError):
+        secrets = {key_name: os.getenv(key_name) for key_name in VAULT_KEY_CATEGORIES}
+    for key in secrets.values():
         if key:
             message = message.replace(key, "[redacted]")
     return message
@@ -1006,12 +1160,76 @@ async def web_search(
     settings = get_settings(False, False)
     result = await routed_search(
         query, provider or settings["provider"], model or settings["modelId"], validate_public_url,
-        throttle_key=task_id,
+        throttle_key=task_id, key_resolver=get_vault_secret,
     )
     output = json.dumps(result, ensure_ascii=False)
     if len(output) > 120_000:
         raise ValueError("The search response exceeded the safe context size; refine your query.")
     return output
+
+
+MARKET_SYMBOL_PATTERN = re.compile(r"^[A-Za-z0-9^=._-]{1,32}$")
+
+
+def _market_quote_number(value: Any) -> float | None:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if math.isfinite(number) else None
+
+
+def market_quote_sync(symbol: str) -> dict[str, Any]:
+    import yfinance as yf
+
+    ticker = yf.Ticker(symbol)
+    info = ticker.fast_info
+
+    def info_value(*names: str) -> Any:
+        for name in names:
+            try:
+                value = info.get(name)
+            except Exception:
+                continue
+            if value is not None:
+                return value
+        return None
+
+    current = _market_quote_number(info_value("lastPrice", "last_price"))
+    previous = _market_quote_number(info_value("previousClose", "previous_close"))
+    currency = info_value("currency")
+    if current is None or previous is None or not currency:
+        history = ticker.history(period="5d", interval="1d", auto_adjust=False)
+        closes = history["Close"].dropna() if history is not None and not history.empty else []
+        if current is None and len(closes):
+            current = _market_quote_number(closes.iloc[-1])
+        if previous is None and len(closes) > 1:
+            previous = _market_quote_number(closes.iloc[-2])
+    if not currency:
+        currency = "INR" if symbol.endswith(".NS") or symbol == "^NSEI" else "USD"
+    if current is None or previous is None or previous == 0:
+        raise ValueError("Yahoo Finance returned incomplete quote data.")
+    return {
+        "symbol": symbol,
+        "current_price": current,
+        "previous_close": previous,
+        "day_change_percent": round(((current - previous) / previous) * 100, 4),
+        "currency": str(currency),
+        "data_source": "Yahoo Finance (may be delayed)",
+    }
+
+
+async def get_market_quote(symbol: str) -> str:
+    normalized = symbol.strip().upper()
+    if not MARKET_SYMBOL_PATTERN.fullmatch(normalized):
+        return json.dumps({"error": "Use a valid Yahoo Finance symbol such as GC=F, GOLDBEES.NS, RELIANCE.NS, or ^NSEI."})
+    try:
+        result = await asyncio.wait_for(asyncio.to_thread(market_quote_sync, normalized), timeout=20)
+    except TimeoutError:
+        return json.dumps({"symbol": normalized, "error": "Yahoo Finance quote request timed out; try again shortly."})
+    except Exception:
+        return json.dumps({"symbol": normalized, "error": "Yahoo Finance could not return a complete quote; try again shortly."})
+    return json.dumps(result, ensure_ascii=False)
 
 
 def validate_public_url(url: str) -> str:
@@ -1341,8 +1559,10 @@ async def execute_tool(
 ) -> str:
     if name == "web_search":
         return await web_search(str(arguments.get("query", "")), provider, model_state["model"], task_id)
+    if name == "get_market_quote":
+        return await get_market_quote(str(arguments.get("symbol", "")))
     if name == "fetch_webpage":
-        if search_settings()["searchMode"] == "chromium":
+        if search_settings(get_vault_secret)["searchMode"] == "chromium":
             return json.dumps(await BrowserRunner(validate_public_url).fetch(str(arguments.get("url", ""))), ensure_ascii=False)
         return await fetch_public_page(str(arguments.get("url", "")))
     if name == "search_workspace":
@@ -1493,6 +1713,7 @@ async def execute_tool(
 
 TOOLS = [
     {"type": "function", "function": {"name": "web_search", "description": "Search public web pages and return source titles, URLs, and snippets.", "parameters": {"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]}}},
+    {"type": "function", "function": {"name": "get_market_quote", "description": "Get the latest available Yahoo Finance quote and previous close for a market symbol, such as GC=F, SI=F, CL=F, GOLDBEES.NS, SILVERBEES.NS, RELIANCE.NS, or ^NSEI. Returns current price, previous close, daily percentage change, and currency. Data can be delayed; this is not a broker execution quote.", "parameters": {"type": "object", "properties": {"symbol": {"type": "string", "description": "Yahoo Finance ticker symbol, for example GC=F or RELIANCE.NS."}}, "required": ["symbol"]}}},
     {"type": "function", "function": {"name": "fetch_webpage", "description": "Extract readable text from one public HTTPS web page.", "parameters": {"type": "object", "properties": {"url": {"type": "string"}}, "required": ["url"]}}},
     {"type": "function", "function": {"name": "search_workspace", "description": "Find matching excerpts in uploaded files and saved notes.", "parameters": {"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]}}},
     {"type": "function", "function": {"name": "read_document", "description": "Read extracted text from an uploaded file by its file ID.", "parameters": {"type": "object", "properties": {"fileId": {"type": "string"}}, "required": ["fileId"]}}},
@@ -1552,6 +1773,8 @@ async def run_agent_task(
                 "Never execute an administrative command directly. If a user task genuinely requires administrator privileges, "
                 "request exactly one single-line command with execute_elevated_command; the backend pauses for explicit UI approval. "
                 "Never hide, encode, or combine extra commands in an elevation request; the backend also blocks shell chaining, redirection, inline scripts, and known destructive commands. "
+                "For questions about current market prices, gold or silver performance, or market index changes, use get_market_quote for relevant symbols before answering. "
+                "Quote values come from Yahoo Finance and may be delayed; never call them guaranteed real-time or broker execution prices. "
                 "When the user explicitly requests a website or web app, create only requested safe assets under workspace/. "
                 "Static sites should use workspace/index.html with relative asset links. " + python_preview_guidance + "Do not run arbitrary code: run_command "
                 "supports only safe, read-only workspace commands. Do not expose environment variables, keys, or private machine data. "
@@ -2497,6 +2720,7 @@ async def update_settings(body: SettingsInput, request: Request) -> dict[str, An
     pending_key = values.get(required_key_name) if required_key_name else None
     if body.provider != "ollama" and not credential_for(body.provider) and not (pending_key and pending_key.strip()):
         raise HTTPException(status_code=400, detail=f"Add a {body.provider.title()} API key before selecting this provider.")
+    save_vault_values(values)
     for key, value in values.items():
         if value is not None and value.strip():
             set_key(str(ENV_FILE), key, value.strip(), quote_mode="always")
@@ -2556,7 +2780,13 @@ async def save_provider_keys(body: ProviderKeysInput, request: Request) -> dict[
         "TAVILY_API_KEY": body.tavilyApiKey,
         "SERPER_API_KEY": body.serperApiKey,
         "BRAVE_SEARCH_API_KEY": body.braveApiKey,
+        "KITE_API_KEY": body.kiteApiKey,
+        "KITE_API_SECRET": body.kiteApiSecret,
+        "KITE_ACCESS_TOKEN": body.kiteAccessToken,
+        "ALPHA_VANTAGE_API_KEY": body.alphaVantageApiKey,
+        "FINNHUB_API_KEY": body.finnhubApiKey,
     }
+    save_vault_values(values)
     for key, value in values.items():
         if value is not None and value.strip():
             set_key(str(ENV_FILE), key, value.strip(), quote_mode="always")
@@ -2566,6 +2796,33 @@ async def save_provider_keys(body: ProviderKeysInput, request: Request) -> dict[
         os.chmod(ENV_FILE, 0o600)
         load_dotenv(ENV_FILE, override=True)
     return get_settings(local_allowed, True)
+
+
+@app.get("/api/vault/keys")
+async def read_vault_key_statuses() -> dict[str, str]:
+    return vault_key_statuses()
+
+
+@app.post("/api/vault/keys")
+async def write_vault_keys(body: VaultKeysInput, request: Request) -> dict[str, str]:
+    if not can_manage_provider_settings(request):
+        raise HTTPException(status_code=403, detail="API keys can only be changed from this app's preview or a local copy.")
+    base_url = None
+    if body.ollamaBaseUrl is not None:
+        try:
+            base_url = validate_ollama_base_url(body.ollamaBaseUrl)
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+    values = {
+        env_name: getattr(body, form_name)
+        for form_name, env_name in VAULT_FORM_TO_ENV.items()
+    }
+    save_vault_values(values)
+    if base_url is not None:
+        set_key(str(ENV_FILE), "OLLAMA_BASE_URL", base_url, quote_mode="always")
+        os.chmod(ENV_FILE, 0o600)
+        load_dotenv(ENV_FILE, override=True)
+    return vault_key_statuses()
 
 
 @app.patch("/api/assistant/settings/search")

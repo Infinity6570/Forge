@@ -17,3 +17,5 @@ pydantic
 streamlit
 websockets
 playwright>=1.49,<2
+cryptography
+yfinance

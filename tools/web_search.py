@@ -11,6 +11,11 @@ import httpx
 from tools.browser_runner import BrowserRunner
 
 SEARCH_KEY_NAMES = {"tavily": "TAVILY_API_KEY", "serper": "SERPER_API_KEY", "brave": "BRAVE_SEARCH_API_KEY"}
+KeyResolver = Callable[[str], str | None]
+
+
+def _secret(key_name: str, key_resolver: KeyResolver | None) -> str | None:
+    return key_resolver(key_name) if key_resolver else os.getenv(key_name)
 
 
 class SearchError(RuntimeError):
@@ -70,16 +75,16 @@ class _GroundingThrottle:
 _grounding_throttle = _GroundingThrottle()
 
 
-def search_settings() -> dict[str, Any]:
+def search_settings(key_resolver: KeyResolver | None = None) -> dict[str, Any]:
     mode = os.getenv("WEB_SEARCH_MODE", "native")
     engine = os.getenv("WEB_SEARCH_API_PROVIDER", "tavily")
     return {
         "searchMode": mode if mode in {"native", "api", "chromium"} else "native",
         "searchApiProvider": engine if engine in SEARCH_KEY_NAMES else "tavily",
         "searchChromiumFallback": os.getenv("WEB_SEARCH_CHROMIUM_FALLBACK", "false").lower() == "true",
-        "hasTavilyKey": bool(os.getenv("TAVILY_API_KEY")),
-        "hasSerperKey": bool(os.getenv("SERPER_API_KEY")),
-        "hasBraveKey": bool(os.getenv("BRAVE_SEARCH_API_KEY")),
+        "hasTavilyKey": bool(_secret("TAVILY_API_KEY", key_resolver)),
+        "hasSerperKey": bool(_secret("SERPER_API_KEY", key_resolver)),
+        "hasBraveKey": bool(_secret("BRAVE_SEARCH_API_KEY", key_resolver)),
     }
 
 
@@ -127,8 +132,10 @@ class GeminiGroundingAdapter:
     The agent's existing OpenAI-compatible history (including thought signatures)
     is untouched. The returned grounding metadata becomes a normal tool result.
     """
-    async def search(self, query: str, model: str) -> dict[str, Any]:
-        key = os.getenv("GEMINI_API_KEY")
+    async def search(
+        self, query: str, model: str, key_resolver: KeyResolver | None = None
+    ) -> dict[str, Any]:
+        key = _secret("GEMINI_API_KEY", key_resolver)
         if not key:
             raise SearchError("Add a Gemini API key in Preferences before using native grounding.")
         model = model.removeprefix("models/")
@@ -168,8 +175,10 @@ class GeminiGroundingAdapter:
         return result
 
 
-async def search_api(query: str, engine: str) -> dict[str, Any]:
-    key = os.getenv(SEARCH_KEY_NAMES[engine])
+async def search_api(
+    query: str, engine: str, key_resolver: KeyResolver | None = None
+) -> dict[str, Any]:
+    key = _secret(SEARCH_KEY_NAMES[engine], key_resolver)
     if not key:
         raise SearchError(f"No {engine.title()} search key is saved. Add it in API Keys Vault.")
     async with httpx.AsyncClient(timeout=20, follow_redirects=False) as client:
@@ -211,9 +220,19 @@ def _google_failure_reason(error: Exception) -> str:
     return "Google Error"
 
 
-async def _grounding_search_with_retry(adapter: GeminiGroundingAdapter, query: str, model: str) -> dict[str, Any]:
-    try:
+async def _grounding_search_with_retry(
+    adapter: GeminiGroundingAdapter,
+    query: str,
+    model: str,
+    key_resolver: KeyResolver | None = None,
+) -> dict[str, Any]:
+    async def search() -> dict[str, Any]:
+        if key_resolver:
+            return await adapter.search(query, model, key_resolver=key_resolver)
         return await adapter.search(query, model)
+
+    try:
+        return await search()
     except SearchError as first_error:
         if first_error.status_code != 429:
             raise
@@ -221,7 +240,7 @@ async def _grounding_search_with_retry(adapter: GeminiGroundingAdapter, query: s
     # Retry once before consuming an alternate provider's quota.
     await asyncio.sleep(1.5 * random.uniform(0.9, 1.1))
     try:
-        return await adapter.search(query, model)
+        return await search()
     except (SearchError, httpx.TimeoutException, httpx.RequestError) as retry_error:
         reason = _google_failure_reason(retry_error)
         raise SearchError(
@@ -238,15 +257,19 @@ async def _fallback_from_google_failure(
     settings: dict[str, Any],
     failure_reason: str,
     google_error: SearchError,
+    key_resolver: KeyResolver | None = None,
 ) -> dict[str, Any]:
     attempted: list[str] = []
     failures: list[str] = []
     for engine in ("tavily", "serper", "brave"):
-        if not os.getenv(SEARCH_KEY_NAMES[engine]):
+        if not _secret(SEARCH_KEY_NAMES[engine], key_resolver):
             continue
         attempted.append(engine)
         try:
-            result = await search_api(query, engine)
+            if key_resolver:
+                result = await search_api(query, engine, key_resolver=key_resolver)
+            else:
+                result = await search_api(query, engine)
             result.update(
                 fallbackFrom="google-grounding",
                 fallbackReason=failure_reason,
@@ -286,29 +309,34 @@ async def routed_search(
     model: str,
     validate_url: Callable[[str], str],
     throttle_key: str | None = None,
+    key_resolver: KeyResolver | None = None,
 ) -> dict[str, Any]:
     query = query.strip()[:500]
     if not query:
         raise SearchError("Search query cannot be empty.")
-    settings = search_settings()
+    settings = search_settings(key_resolver)
     mode, engine = settings["searchMode"], settings["searchApiProvider"]
     browser = BrowserRunner(validate_url)
     if mode == "chromium":
         return await browser.search(query)
     route = "google-grounding" if mode == "native" and provider == "gemini" else engine
-    if mode == "native" and provider != "gemini" and not os.getenv(SEARCH_KEY_NAMES[engine]):
+    if mode == "native" and provider != "gemini" and not _secret(SEARCH_KEY_NAMES[engine], key_resolver):
         result = await browser.search(query)
         result["warning"] = "This provider has no native search or saved selected search API key; Chromium was used."
         return result
     try:
         if route == "google-grounding":
             adapter = GeminiGroundingAdapter()
-            operation = lambda: _grounding_search_with_retry(adapter, query, model)
+            operation = lambda: _grounding_search_with_retry(adapter, query, model, key_resolver)
             return await _grounding_throttle.run(throttle_key, operation) if throttle_key else await operation()
+        if key_resolver:
+            return await search_api(query, engine, key_resolver=key_resolver)
         return await search_api(query, engine)
     except SearchError as exc:
         if route == "google-grounding" and exc.fallback_reason:
-            return await _fallback_from_google_failure(query, validate_url, settings, exc.fallback_reason, exc)
+            return await _fallback_from_google_failure(
+                query, validate_url, settings, exc.fallback_reason, exc, key_resolver
+            )
         if not exc.quota or not settings["searchChromiumFallback"]:
             raise
         result = await browser.search(query)
