@@ -838,6 +838,16 @@ export const saveAssistantProviderKeysBodySerperApiKeyMax = 1000;
 
 export const saveAssistantProviderKeysBodyBraveApiKeyMax = 1000;
 
+export const saveAssistantProviderKeysBodyKiteApiKeyMax = 1000;
+
+export const saveAssistantProviderKeysBodyKiteApiSecretMax = 1000;
+
+export const saveAssistantProviderKeysBodyKiteAccessTokenMax = 1000;
+
+export const saveAssistantProviderKeysBodyAlphaVantageApiKeyMax = 1000;
+
+export const saveAssistantProviderKeysBodyFinnhubApiKeyMax = 1000;
+
 
 
 export const SaveAssistantProviderKeysBody = zod.object({
@@ -848,7 +858,12 @@ export const SaveAssistantProviderKeysBody = zod.object({
   "ollamaBaseUrl": zod.string().max(saveAssistantProviderKeysBodyOllamaBaseUrlMax).optional(),
   "tavilyApiKey": zod.string().max(saveAssistantProviderKeysBodyTavilyApiKeyMax).nullish(),
   "serperApiKey": zod.string().max(saveAssistantProviderKeysBodySerperApiKeyMax).nullish(),
-  "braveApiKey": zod.string().max(saveAssistantProviderKeysBodyBraveApiKeyMax).nullish()
+  "braveApiKey": zod.string().max(saveAssistantProviderKeysBodyBraveApiKeyMax).nullish(),
+  "kiteApiKey": zod.string().max(saveAssistantProviderKeysBodyKiteApiKeyMax).nullish(),
+  "kiteApiSecret": zod.string().max(saveAssistantProviderKeysBodyKiteApiSecretMax).nullish(),
+  "kiteAccessToken": zod.string().max(saveAssistantProviderKeysBodyKiteAccessTokenMax).nullish(),
+  "alphaVantageApiKey": zod.string().max(saveAssistantProviderKeysBodyAlphaVantageApiKeyMax).nullish(),
+  "finnhubApiKey": zod.string().max(saveAssistantProviderKeysBodyFinnhubApiKeyMax).nullish()
 })
 
 export const SaveAssistantProviderKeysResponse = zod.object({
@@ -871,6 +886,88 @@ export const SaveAssistantProviderKeysResponse = zod.object({
   "hasSerperKey": zod.boolean().optional(),
   "hasBraveKey": zod.boolean().optional(),
   "chromiumAvailable": zod.boolean().optional()
+})
+
+
+/**
+ * @summary Read API-key presence without returning any key values
+ */
+export const GetVaultKeysResponse = zod.object({
+  "openai_api_key": zod.enum(['configured', 'not_set']),
+  "deepseek_api_key": zod.enum(['configured', 'not_set']),
+  "gemini_api_key": zod.enum(['configured', 'not_set']),
+  "openrouter_api_key": zod.enum(['configured', 'not_set']),
+  "tavily_api_key": zod.enum(['configured', 'not_set']),
+  "serper_api_key": zod.enum(['configured', 'not_set']),
+  "brave_search_api_key": zod.enum(['configured', 'not_set']),
+  "kite_api_key": zod.enum(['configured', 'not_set']),
+  "kite_api_secret": zod.enum(['configured', 'not_set']),
+  "kite_access_token": zod.enum(['configured', 'not_set']),
+  "alpha_vantage_api_key": zod.enum(['configured', 'not_set']),
+  "finnhub_api_key": zod.enum(['configured', 'not_set'])
+})
+
+
+/**
+ * @summary Encrypt and save local API keys in SQLite
+ */
+export const saveVaultKeysBodyOpenaiApiKeyMax = 1000;
+
+export const saveVaultKeysBodyDeepseekApiKeyMax = 1000;
+
+export const saveVaultKeysBodyGeminiApiKeyMax = 1000;
+
+export const saveVaultKeysBodyOpenrouterApiKeyMax = 1000;
+
+export const saveVaultKeysBodyOllamaBaseUrlMax = 500;
+
+export const saveVaultKeysBodyTavilyApiKeyMax = 1000;
+
+export const saveVaultKeysBodySerperApiKeyMax = 1000;
+
+export const saveVaultKeysBodyBraveApiKeyMax = 1000;
+
+export const saveVaultKeysBodyKiteApiKeyMax = 1000;
+
+export const saveVaultKeysBodyKiteApiSecretMax = 1000;
+
+export const saveVaultKeysBodyKiteAccessTokenMax = 1000;
+
+export const saveVaultKeysBodyAlphaVantageApiKeyMax = 1000;
+
+export const saveVaultKeysBodyFinnhubApiKeyMax = 1000;
+
+
+
+export const SaveVaultKeysBody = zod.object({
+  "openaiApiKey": zod.string().max(saveVaultKeysBodyOpenaiApiKeyMax).nullish(),
+  "deepseekApiKey": zod.string().max(saveVaultKeysBodyDeepseekApiKeyMax).nullish(),
+  "geminiApiKey": zod.string().max(saveVaultKeysBodyGeminiApiKeyMax).nullish(),
+  "openrouterApiKey": zod.string().max(saveVaultKeysBodyOpenrouterApiKeyMax).nullish(),
+  "ollamaBaseUrl": zod.string().max(saveVaultKeysBodyOllamaBaseUrlMax).nullish(),
+  "tavilyApiKey": zod.string().max(saveVaultKeysBodyTavilyApiKeyMax).nullish(),
+  "serperApiKey": zod.string().max(saveVaultKeysBodySerperApiKeyMax).nullish(),
+  "braveApiKey": zod.string().max(saveVaultKeysBodyBraveApiKeyMax).nullish(),
+  "kiteApiKey": zod.string().max(saveVaultKeysBodyKiteApiKeyMax).nullish(),
+  "kiteApiSecret": zod.string().max(saveVaultKeysBodyKiteApiSecretMax).nullish(),
+  "kiteAccessToken": zod.string().max(saveVaultKeysBodyKiteAccessTokenMax).nullish(),
+  "alphaVantageApiKey": zod.string().max(saveVaultKeysBodyAlphaVantageApiKeyMax).nullish(),
+  "finnhubApiKey": zod.string().max(saveVaultKeysBodyFinnhubApiKeyMax).nullish()
+})
+
+export const SaveVaultKeysResponse = zod.object({
+  "openai_api_key": zod.enum(['configured', 'not_set']),
+  "deepseek_api_key": zod.enum(['configured', 'not_set']),
+  "gemini_api_key": zod.enum(['configured', 'not_set']),
+  "openrouter_api_key": zod.enum(['configured', 'not_set']),
+  "tavily_api_key": zod.enum(['configured', 'not_set']),
+  "serper_api_key": zod.enum(['configured', 'not_set']),
+  "brave_search_api_key": zod.enum(['configured', 'not_set']),
+  "kite_api_key": zod.enum(['configured', 'not_set']),
+  "kite_api_secret": zod.enum(['configured', 'not_set']),
+  "kite_access_token": zod.enum(['configured', 'not_set']),
+  "alpha_vantage_api_key": zod.enum(['configured', 'not_set']),
+  "finnhub_api_key": zod.enum(['configured', 'not_set'])
 })
 
 

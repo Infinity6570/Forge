@@ -56,7 +56,7 @@ from tools.elevated_runner import (
     validate_elevated_command,
 )
 from tools.browser_runner import BrowserRunner, chromium_available
-from tools.web_search import SEARCH_KEY_NAMES, routed_search, search_settings
+from tools.web_search import routed_search, search_settings
 
 ROOT = Path(__file__).resolve().parent
 ENV_FILE = ROOT / ".env"
@@ -557,6 +557,17 @@ def save_vault_values(values: dict[str, str | None]) -> None:
     with DB_LOCK:
         connection = connect_db()
         try:
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS vault_secrets (
+                  key_name TEXT PRIMARY KEY,
+                  key_value TEXT NOT NULL,
+                  category TEXT NOT NULL,
+                  is_active INTEGER NOT NULL DEFAULT 1,
+                  updated_at TEXT NOT NULL
+                )
+                """
+            )
             connection.executemany(
                 """
                 INSERT INTO vault_secrets(key_name,key_value,category,is_active,updated_at)

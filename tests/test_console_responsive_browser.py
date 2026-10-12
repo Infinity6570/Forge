@@ -114,6 +114,14 @@ class ResponsiveConsoleBrowserTests(unittest.TestCase):
                         page.route("**/api/**", mock_api)
                         page_errors: list[str] = []
                         page.on("pageerror", lambda error: page_errors.append(str(error)))
+                        page.route(
+                            "https://s3.tradingview.com/tv.js",
+                            lambda route: route.fulfill(
+                                status=200,
+                                content_type="application/javascript",
+                                body="window.TradingView={widget:function(){this.remove=function(){throw new Error('widget already detached')};}};",
+                            ),
+                        )
                         page.goto(self.base_url, wait_until="domcontentloaded")
 
                         toggle = page.get_by_test_id("button-toggle-console")
@@ -136,6 +144,13 @@ class ResponsiveConsoleBrowserTests(unittest.TestCase):
                         self.assertGreater(panel_box["width"], 0)
                         self.assertLessEqual(panel_box["x"] + panel_box["width"], viewport["width"])
                         self.assertEqual(inspector.evaluate("(el) => getComputedStyle(el).position"), "fixed")
+
+                        market_radar = page.get_by_test_id("section-market-radar")
+                        market_radar.wait_for(state="visible")
+                        self.assertEqual(page.get_by_test_id("text-market-symbol").inner_text(), "MCX:GOLD1!")
+                        page.get_by_test_id("button-market-mcx-silver").click()
+                        self.assertEqual(page.get_by_test_id("text-market-symbol").inner_text(), "MCX:SILVER1!")
+                        self.assertEqual(page.get_by_test_id("button-market-mcx-silver").get_attribute("aria-pressed"), "true")
 
                         live_preview_tab = page.get_by_test_id("tab-inspector-live-preview")
                         live_preview_tab.click()

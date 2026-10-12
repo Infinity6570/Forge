@@ -506,6 +506,35 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AssistantSettings"
+  /vault/keys:
+    get:
+      operationId: getVaultKeys
+      tags: [assistant]
+      summary: Read API-key presence without returning any key values
+      responses:
+        "200":
+          description: Configuration status for each local vault entry
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VaultKeyStatuses"
+    post:
+      operationId: saveVaultKeys
+      tags: [assistant]
+      summary: Encrypt and save local API keys in SQLite
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VaultKeysInput"
+      responses:
+        "200":
+          description: Updated key presence, without exposing saved values
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VaultKeyStatuses"
   /assistant/settings/search:
     patch:
       operationId: updateAssistantSearchSettings
@@ -954,6 +983,55 @@ components:
         tavilyApiKey: { type: ["string", "null"], maxLength: 1000 }
         serperApiKey: { type: ["string", "null"], maxLength: 1000 }
         braveApiKey: { type: ["string", "null"], maxLength: 1000 }
+        kiteApiKey: { type: ["string", "null"], maxLength: 1000 }
+        kiteApiSecret: { type: ["string", "null"], maxLength: 1000 }
+        kiteAccessToken: { type: ["string", "null"], maxLength: 1000 }
+        alphaVantageApiKey: { type: ["string", "null"], maxLength: 1000 }
+        finnhubApiKey: { type: ["string", "null"], maxLength: 1000 }
+    VaultKeysInput:
+      type: object
+      properties:
+        openaiApiKey: { type: ["string", "null"], maxLength: 1000 }
+        deepseekApiKey: { type: ["string", "null"], maxLength: 1000 }
+        geminiApiKey: { type: ["string", "null"], maxLength: 1000 }
+        openrouterApiKey: { type: ["string", "null"], maxLength: 1000 }
+        ollamaBaseUrl: { type: ["string", "null"], maxLength: 500 }
+        tavilyApiKey: { type: ["string", "null"], maxLength: 1000 }
+        serperApiKey: { type: ["string", "null"], maxLength: 1000 }
+        braveApiKey: { type: ["string", "null"], maxLength: 1000 }
+        kiteApiKey: { type: ["string", "null"], maxLength: 1000 }
+        kiteApiSecret: { type: ["string", "null"], maxLength: 1000 }
+        kiteAccessToken: { type: ["string", "null"], maxLength: 1000 }
+        alphaVantageApiKey: { type: ["string", "null"], maxLength: 1000 }
+        finnhubApiKey: { type: ["string", "null"], maxLength: 1000 }
+    VaultKeyStatuses:
+      type: object
+      required:
+        - openai_api_key
+        - deepseek_api_key
+        - gemini_api_key
+        - openrouter_api_key
+        - tavily_api_key
+        - serper_api_key
+        - brave_search_api_key
+        - kite_api_key
+        - kite_api_secret
+        - kite_access_token
+        - alpha_vantage_api_key
+        - finnhub_api_key
+      properties:
+        openai_api_key: { type: string, enum: [configured, not_set] }
+        deepseek_api_key: { type: string, enum: [configured, not_set] }
+        gemini_api_key: { type: string, enum: [configured, not_set] }
+        openrouter_api_key: { type: string, enum: [configured, not_set] }
+        tavily_api_key: { type: string, enum: [configured, not_set] }
+        serper_api_key: { type: string, enum: [configured, not_set] }
+        brave_search_api_key: { type: string, enum: [configured, not_set] }
+        kite_api_key: { type: string, enum: [configured, not_set] }
+        kite_api_secret: { type: string, enum: [configured, not_set] }
+        kite_access_token: { type: string, enum: [configured, not_set] }
+        alpha_vantage_api_key: { type: string, enum: [configured, not_set] }
+        finnhub_api_key: { type: string, enum: [configured, not_set] }
     AssistantSettingsInput:
       type: object
       required: [provider, modelId]

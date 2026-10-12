@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock, patch
 import httpx
 import main
 from tools.browser_runner import BrowserError, BrowserRunner, clean_browser_env, unwrap_search_url
-from tools.web_search import GeminiGroundingAdapter, SearchError, routed_search, search_api
+from tools.web_search import GeminiGroundingAdapter, SearchError, routed_search, search_api, search_settings
 
 
 class SearchRoutingTests(unittest.IsolatedAsyncioTestCase):
@@ -62,6 +62,22 @@ class SearchRoutingTests(unittest.IsolatedAsyncioTestCase):
             result = await GeminiGroundingAdapter().search("query", "models/gemini-2.5-flash")
         self.assertFalse(result["grounded"])
         self.assertIn("not return grounding", result["warning"])
+
+    async def test_vault_resolver_supplies_search_keys_without_environment_values(self):
+        def handler(request):
+            self.assertEqual(request.headers["x-goog-api-key"], "vault-gemini-key")
+            return httpx.Response(200, json={"candidates": [{
+                "content": {"parts": [{"text": "Grounded answer"}]},
+                "groundingMetadata": {"groundingChunks": []},
+            }]})
+
+        resolver = lambda key: "vault-gemini-key" if key == "GEMINI_API_KEY" else None
+        with self.transport(handler):
+            result = await GeminiGroundingAdapter().search(
+                "query", "gemini-3.8-flash", key_resolver=resolver
+            )
+        self.assertEqual(result["answer"], "Grounded answer")
+        self.assertFalse(search_settings(resolver)["hasTavilyKey"])
 
     async def test_gemma_native_does_not_silently_change_model(self):
         with self.assertRaisesRegex(SearchError, "compatible Gemini"):
@@ -277,6 +293,9 @@ class SearchSettingsTests(unittest.IsolatedAsyncioTestCase):
         p = patch.object(main, "ENV_FILE", self.env_file)
         p.start()
         self.addCleanup(p.stop)
+        db = patch.object(main, "DATABASE", Path(self.tmp.name) / "assistant.db")
+        db.start()
+        self.addCleanup(db.stop)
         env = patch.dict(os.environ, {}, clear=True)
         env.start()
         self.addCleanup(env.stop)

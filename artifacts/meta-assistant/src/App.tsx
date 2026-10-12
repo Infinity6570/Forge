@@ -27,7 +27,9 @@ import {
   useListAssistantTimers,
   useUpdateAssistantSettings,
   useApplyAssistantModel,
-  useSaveAssistantProviderKeys,
+  useGetVaultKeys,
+  getGetVaultKeysQueryKey,
+  useSaveVaultKeys,
   useStopWorkspacePreviewApp,
   useRetryAssistantTaskStep,
   getGetAssistantDashboardQueryKey,
@@ -40,12 +42,12 @@ import {
   getListAssistantTasksQueryKey,
   getListAssistantTimersQueryKey,
 } from '@workspace/api-client-react';
-import type { AssistantFile, AssistantNote, AssistantSettings, AssistantSettingsInput, AssistantTask, AssistantTimer, WorkspacePreviewApp } from '@workspace/api-client-react';
+import type { AssistantFile, AssistantNote, AssistantSettings, AssistantSettingsInput, AssistantTask, AssistantTimer, VaultKeysInput, VaultKeyStatuses, WorkspacePreviewApp } from '@workspace/api-client-react';
 import {
   Activity, AlertCircle, ArrowDownToLine, ArrowRight, Bell, BookOpen, Check, CheckCircle2,
   ChevronDown, ChevronRight, CircleHelp, Clock3, Copy, Cpu, ExternalLink, FileText, FolderOpen, Gauge, HardDrive, Layers3, Moon, Sun,
   KeyRound, LoaderCircle, LockKeyhole, Menu, Plus, RefreshCw, Search,
-  Send, Settings2, ShieldCheck, Sparkles, StopCircle, Trash2, Upload, X, Zap, PanelRight, GripVertical,
+  Send, Settings2, ShieldCheck, Sparkles, StopCircle, Trash2, Upload, X, Zap, PanelRight, GripVertical, Eye, EyeOff, CandlestickChart,
 } from 'lucide-react';
 import { ConversationProvider, useConversations } from '@/components/conversation-provider';
 import { SearchSettingsPanel } from '@/components/search-settings-panel';
@@ -54,6 +56,7 @@ import { ChatModelPicker } from '@/components/chat-model-picker';
 import { ActivityStream } from '@/components/activity-stream';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { RecentFileRows, RecentNoteRows, RecentTaskLogRows } from '@/components/telemetry-records';
+import { TradingViewChart } from '@/components/TradingViewChart';
 import { Toaster } from '@/components/ui/toaster';
 import { toast } from '@/hooks/use-toast';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -868,6 +871,25 @@ function WorkspaceInspector() {
   </div>;
 }
 
+function MarketRadar() {
+  const symbols = [
+    { label: 'MCX Gold', symbol: 'MCX:GOLD1!' },
+    { label: 'MCX Silver', symbol: 'MCX:SILVER1!' },
+    { label: 'Nifty 50', symbol: 'NSE:NIFTY' },
+    { label: 'Crude Oil', symbol: 'MCX:CRUDEOIL1!' },
+  ];
+  const [symbol, setSymbol] = useState(symbols[0].symbol);
+  return <section className="telemetry-section market-radar" data-testid="section-market-radar">
+    <div className="telemetry-section-head"><span className="telemetry-section-mark"><CandlestickChart size={14} /></span><div><span className="telemetry-kicker">MARKET RADAR</span><h3>Live market chart</h3></div><span className="telemetry-live-tag">TV WIDGET</span></div>
+    <div className="market-radar-symbol"><span>INSTRUMENT</span><strong data-testid="text-market-symbol">{symbol}</strong></div>
+    <div className="market-radar-switches" role="group" aria-label="Quick market symbols">
+      {symbols.map((item) => <button type="button" key={item.symbol} className={symbol === item.symbol ? 'selected' : ''} aria-pressed={symbol === item.symbol} onClick={() => setSymbol(item.symbol)} data-testid={`button-market-${item.label.toLowerCase().replaceAll(' ', '-')}`}>{item.label}</button>)}
+    </div>
+    <TradingViewChart symbol={symbol} />
+    <p className="market-radar-note">External TradingView chart · no quote data stored by Forge.</p>
+  </section>;
+}
+
 function SystemTelemetry() {
   const dashboard = useGetAssistantDashboard({ query: { queryKey: getGetAssistantDashboardQueryKey(), refetchInterval: 4000 } });
   const settings = useGetAssistantSettings();
@@ -936,6 +958,7 @@ function SystemTelemetry() {
       <div className="telemetry-section-head"><span className="telemetry-section-mark"><Clock3 size={14} /></span><div><span className="telemetry-kicker">TASK LOGS</span><h3>Recent execution events</h3></div></div>
       {tasks.isLoading ? <div className="telemetry-skeleton"><i /><i /><i /></div> : tasks.isError ? <div className="telemetry-error"><span>Task logs unavailable.</span><button type="button" onClick={() => tasks.refetch()}>Retry</button></div> : recentLogs.length ? <div className="telemetry-log-list"><RecentTaskLogRows logs={recentLogs} /></div> : <p className="telemetry-empty">No task log entries recorded yet.</p>}
     </section>
+    <MarketRadar />
     <div className="telemetry-safety-note"><span className="telemetry-safety-indicator" /><span>Local-first operations · Python execution and preview behavior unchanged</span></div>
   </div>;
 }
@@ -1069,24 +1092,55 @@ const models = {
   ],
 } as const;
 
+type VaultSecretName = Exclude<keyof VaultKeysInput, 'ollamaBaseUrl'>;
+
+function VaultSecretField({ name, label, placeholder, statusName, value, disabled, onChange, statuses, loading }: {
+  name: VaultSecretName;
+  label: string;
+  placeholder: string;
+  statusName: keyof VaultKeyStatuses;
+  value: string;
+  disabled: boolean;
+  onChange: (value: string) => void;
+  statuses?: VaultKeyStatuses;
+  loading: boolean;
+}) {
+  const [visible, setVisible] = useState(false);
+  const configured = statuses?.[statusName] === 'configured';
+  return <div className="vault-field">
+    <label className="form-label" htmlFor={`vault-${name}`}>{label}</label>
+    <div className="vault-field-meta"><span className={`key-status ${configured ? 'active' : ''}`} role="status" data-testid={`status-vault-${name}`}>{loading ? 'CHECKING' : configured ? 'CONFIGURED' : 'NOT SET'}</span><span className="optional-label">{configured ? 'Blank keeps existing key' : 'Optional · not configured'}</span></div>
+    <div className="vault-input-wrap">
+      <input id={`vault-${name}`} type={visible ? 'text' : 'password'} autoComplete="new-password" spellCheck={false} value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} disabled={disabled} data-testid={`input-${name}`} />
+      <button className="vault-visibility" type="button" aria-label={`${visible ? 'Hide' : 'Show'} ${label}`} aria-pressed={visible} onClick={() => setVisible((current) => !current)} disabled={disabled} data-testid={`button-toggle-${name}-visibility`}>{visible ? <EyeOff size={14} /> : <Eye size={14} />}</button>
+    </div>
+  </div>;
+}
+
 function SettingsPage() {
   const qc = useQueryClient();
   const settingsQuery = useGetAssistantSettings();
   const updateSettings = useUpdateAssistantSettings();
   const applyModel = useApplyAssistantModel();
-  const saveVault = useSaveAssistantProviderKeys();
+  const vaultStatusQuery = useGetVaultKeys({ query: { queryKey: getGetVaultKeysQueryKey() } });
+  const saveVault = useSaveVaultKeys();
   const [provider, setProvider] = useState<'openai' | 'deepseek' | 'gemini' | 'openrouter' | 'ollama'>('deepseek');
   const [modelId, setModelId] = useState('deepseek-chat');
   const [customModelId, setCustomModelId] = useState('');
   const [fallbackModelId, setFallbackModelId] = useState('');
   const initialized = useRef(false);
   const credentialStatus = settingsQuery.data;
-  const [apiKeys, setApiKeys] = useState({ openaiApiKey: '', deepseekApiKey: '', geminiApiKey: '', openrouterApiKey: '', tavilyApiKey: '', serperApiKey: '', braveApiKey: '' });
+  const [apiKeys, setApiKeys] = useState<VaultKeysInput>({
+    openaiApiKey: '', deepseekApiKey: '', geminiApiKey: '', openrouterApiKey: '',
+    tavilyApiKey: '', serperApiKey: '', braveApiKey: '', kiteApiKey: '',
+    kiteApiSecret: '', kiteAccessToken: '', alphaVantageApiKey: '', finnhubApiKey: '',
+  });
   const [ollamaBaseUrl, setOllamaBaseUrl] = useState('http://localhost:11434/v1');
   const [codeRunnerEnabled, setCodeRunnerEnabled] = useState(false);
   const [appPreviewsEnabled, setAppPreviewsEnabled] = useState(false);
   const [providerError, setProviderError] = useState('');
   const [providerSaved, setProviderSaved] = useState(false);
+  const [vaultExpanded, setVaultExpanded] = useState<Record<string, boolean>>({ core: true, search: false, market: false });
   const [modelApplied, setModelApplied] = useState('');
   const [confirmBeforeActions, setConfirmBeforeActions] = useState(true);
   const [allowExternalResearch, setAllowExternalResearch] = useState(true);
@@ -1142,15 +1196,22 @@ function SettingsPage() {
   const saveKeys = () => {
     setProviderError('');
     setProviderSaved(false);
-    saveVault.mutate({ data: { ...Object.fromEntries(Object.entries(apiKeys).filter(([, value]) => value.trim()).map(([key, value]) => [key, value.trim()])), ollamaBaseUrl } }, {
-      onSuccess: (result) => {
-        syncSettings(result);
-        setApiKeys({ openaiApiKey: '', deepseekApiKey: '', geminiApiKey: '', openrouterApiKey: '', tavilyApiKey: '', serperApiKey: '', braveApiKey: '' });
-        setOllamaBaseUrl(result.ollamaBaseUrl || ollamaBaseUrl);
+    const payload = Object.fromEntries([
+      ...Object.entries(apiKeys).filter(([, value]) => typeof value === 'string' && value.trim()).map(([key, value]) => [key, value.trim()]),
+      ['ollamaBaseUrl', ollamaBaseUrl.trim()],
+    ]) as VaultKeysInput;
+    saveVault.mutate({ data: payload }, {
+      onSuccess: () => {
+        void qc.invalidateQueries({ queryKey: getGetVaultKeysQueryKey() });
+        void qc.invalidateQueries({ queryKey: getGetAssistantSettingsQueryKey() });
+        setApiKeys({
+          openaiApiKey: '', deepseekApiKey: '', geminiApiKey: '', openrouterApiKey: '',
+          tavilyApiKey: '', serperApiKey: '', braveApiKey: '', kiteApiKey: '',
+          kiteApiSecret: '', kiteAccessToken: '', alphaVantageApiKey: '', finnhubApiKey: '',
+        });
         setProviderSaved(true);
-        toast({ title: 'API KEYS SAVED', description: 'Provider status refreshed. Existing blank keys were preserved.' });
       },
-      onError: (error) => setProviderError(settingsError(error)),
+      onError: () => setProviderError('Vault settings could not be saved. Check the connection and try again.'),
     });
   };
   const applyWorkingModel = () => {
@@ -1167,6 +1228,31 @@ function SettingsPage() {
       onError: (error) => setProviderError(settingsError(error)),
     });
   };
+  const vaultField = (name: VaultSecretName, statusName: keyof VaultKeyStatuses, label: string, placeholder: string) =>
+    <VaultSecretField key={name} name={name} statusName={statusName} label={label} placeholder={placeholder}
+      value={String(apiKeys[name] ?? '')} disabled={!credentialStatus?.providerSettingsAllowed}
+      onChange={(value) => { setApiKeys((current) => ({ ...current, [name]: value })); setProviderSaved(false); }}
+      statuses={vaultStatusQuery.data} loading={vaultStatusQuery.isLoading} />;
+  const vaultGroups = [
+    { id: 'core', title: 'AI & Core Reasoning', fields: [
+      ['openaiApiKey', 'openai_api_key', 'OpenAI API key', 'Enter API key'],
+      ['deepseekApiKey', 'deepseek_api_key', 'DeepSeek API key', 'Enter API key'],
+      ['geminiApiKey', 'gemini_api_key', 'Gemini API key', 'Enter API key'],
+      ['openrouterApiKey', 'openrouter_api_key', 'OpenRouter API key', 'Enter API key'],
+    ] },
+    { id: 'search', title: 'Web Search & Grounding', fields: [
+      ['tavilyApiKey', 'tavily_api_key', 'Tavily API key', 'Enter API key'],
+      ['serperApiKey', 'serper_api_key', 'Serper API key', 'Enter API key'],
+      ['braveApiKey', 'brave_search_api_key', 'Brave Search API key', 'Enter API key'],
+    ] },
+    { id: 'market', title: 'Market & Broker', fields: [
+      ['kiteApiKey', 'kite_api_key', 'Kite API key', 'Enter broker API key'],
+      ['kiteApiSecret', 'kite_api_secret', 'Kite API secret', 'Enter broker API secret'],
+      ['kiteAccessToken', 'kite_access_token', 'Kite access token', 'Enter access token'],
+      ['alphaVantageApiKey', 'alpha_vantage_api_key', 'Alpha Vantage API key', 'Enter API key'],
+      ['finnhubApiKey', 'finnhub_api_key', 'Finnhub API key', 'Enter API key'],
+    ] },
+  ] as const;
   return <AppShell page="settings"><div className="content-page settings-page enter">
     <section className="settings-section theme-settings"><div className="settings-section-heading"><div><h2>Appearance</h2><p>Choose the command center color system.</p></div><ThemeChooser /></div></section>
     <PageHeading eyebrow="AGENT CONFIGURATION" title="Preferences" description="Choose how your agent works and where it should pause for your approval." />
@@ -1184,20 +1270,22 @@ function SettingsPage() {
     </section>
     <section className="settings-section key-vault" data-testid="settings-api-keys-vault">
       <div className="settings-section-heading"><div className="section-symbol"><KeyRound size={17} /></div><div><h2>API KEYS VAULT</h2><p>Credentials stay local. Saved values are never shown or prefilled.</p></div><span className={`connection-state ${credentialStatus?.providerSettingsAllowed ? 'connected' : 'disconnected'}`} data-testid="status-provider-settings-access">{credentialStatus?.providerSettingsAllowed ? 'KEY STORAGE AVAILABLE' : 'KEY STORAGE RESTRICTED'}</span></div>
-      <form className="key-vault-form" onSubmit={(event) => { event.preventDefault(); saveKeys(); }}><div className="key-vault-grid">
-        <label className="form-label">DeepSeek API key <span className={`key-status ${credentialStatus?.hasDeepseekKey ? 'active' : ''}`}>{credentialStatus?.hasDeepseekKey ? 'ACTIVE KEY' : 'NO KEY'}</span><span className="optional-label">{credentialStatus?.hasDeepseekKey ? 'Blank keeps existing key' : 'Optional · not configured'}</span><input type="password" autoComplete="new-password" value={apiKeys.deepseekApiKey} onChange={(event) => { setApiKeys({ ...apiKeys, deepseekApiKey: event.target.value }); setProviderSaved(false); }} placeholder="Enter sk-…" disabled={!credentialStatus?.providerSettingsAllowed} data-testid="input-deepseek-api-key" /></label>
-        <label className="form-label">Gemini API key <span className={`key-status ${credentialStatus?.hasGeminiKey ? 'active' : ''}`}>{credentialStatus?.hasGeminiKey ? 'ACTIVE KEY' : 'NO KEY'}</span><span className="optional-label">{credentialStatus?.hasGeminiKey ? 'Blank keeps existing key' : 'Optional · not configured'}</span><input type="password" autoComplete="new-password" value={apiKeys.geminiApiKey} onChange={(event) => { setApiKeys({ ...apiKeys, geminiApiKey: event.target.value }); setProviderSaved(false); }} placeholder="Enter AIza…" disabled={!credentialStatus?.providerSettingsAllowed} data-testid="input-gemini-api-key" /></label>
-        <label className="form-label">OpenAI API key <span className={`key-status ${credentialStatus?.hasOpenaiKey ? 'active' : ''}`}>{credentialStatus?.hasOpenaiKey ? 'ACTIVE KEY' : 'NO KEY'}</span><span className="optional-label">{credentialStatus?.hasOpenaiKey ? 'Blank keeps existing key' : 'Optional · not configured'}</span><input type="password" autoComplete="new-password" value={apiKeys.openaiApiKey} onChange={(event) => { setApiKeys({ ...apiKeys, openaiApiKey: event.target.value }); setProviderSaved(false); }} placeholder="Enter sk-…" disabled={!credentialStatus?.providerSettingsAllowed} data-testid="input-openai-api-key" /></label>
-        <label className="form-label">OpenRouter / Custom Endpoint key <span className={`key-status ${credentialStatus?.hasOpenrouterKey ? 'active' : ''}`}>{credentialStatus?.hasOpenrouterKey ? 'ACTIVE KEY' : 'NO KEY'}</span><span className="optional-label">{credentialStatus?.hasOpenrouterKey ? 'Blank keeps existing key' : 'Optional · not configured'}</span><input type="password" autoComplete="new-password" value={apiKeys.openrouterApiKey} onChange={(event) => { setApiKeys({ ...apiKeys, openrouterApiKey: event.target.value }); setProviderSaved(false); }} placeholder="Enter key…" disabled={!credentialStatus?.providerSettingsAllowed} data-testid="input-openrouter-api-key" /></label>
-        <label className="form-label">Tavily API key <span className={`key-status ${credentialStatus?.hasTavilyKey ? 'active' : ''}`}>{credentialStatus?.hasTavilyKey ? 'ACTIVE KEY' : 'NO KEY'}</span><span className="optional-label">{credentialStatus?.hasTavilyKey ? 'Blank keeps existing key' : 'Optional web search key'}</span><input type="password" autoComplete="new-password" value={apiKeys.tavilyApiKey} onChange={(event) => { setApiKeys({ ...apiKeys, tavilyApiKey: event.target.value }); setProviderSaved(false); }} placeholder="Enter key…" disabled={!credentialStatus?.providerSettingsAllowed} data-testid="input-tavily-api-key" /></label>
-        <label className="form-label">Serper API key <span className={`key-status ${credentialStatus?.hasSerperKey ? 'active' : ''}`}>{credentialStatus?.hasSerperKey ? 'ACTIVE KEY' : 'NO KEY'}</span><span className="optional-label">{credentialStatus?.hasSerperKey ? 'Blank keeps existing key' : 'Optional web search key'}</span><input type="password" autoComplete="new-password" value={apiKeys.serperApiKey} onChange={(event) => { setApiKeys({ ...apiKeys, serperApiKey: event.target.value }); setProviderSaved(false); }} placeholder="Enter key…" disabled={!credentialStatus?.providerSettingsAllowed} data-testid="input-serper-api-key" /></label>
-        <label className="form-label">Brave Search API key <span className={`key-status ${credentialStatus?.hasBraveKey ? 'active' : ''}`}>{credentialStatus?.hasBraveKey ? 'ACTIVE KEY' : 'NO KEY'}</span><span className="optional-label">{credentialStatus?.hasBraveKey ? 'Blank keeps existing key' : 'Optional web search key'}</span><input type="password" autoComplete="new-password" value={apiKeys.braveApiKey} onChange={(event) => { setApiKeys({ ...apiKeys, braveApiKey: event.target.value }); setProviderSaved(false); }} placeholder="Enter key…" disabled={!credentialStatus?.providerSettingsAllowed} data-testid="input-brave-api-key" /></label>
-        <label className="form-label">Ollama / Local Base URL <span className="key-status local">LOCAL</span><span className="optional-label">OpenAI-compatible local endpoint</span><input type="url" value={ollamaBaseUrl} onChange={(event) => { setOllamaBaseUrl(event.target.value); setProviderSaved(false); }} placeholder="http://localhost:11434/v1" disabled={!credentialStatus?.providerSettingsAllowed || !credentialStatus?.localSetupAllowed} data-testid="input-ollama-base-url" /></label>
-      </div></form>
-      <p className="settings-footnote"><LockKeyhole size={13} /> Blank key fields mean “keep existing key”. Key values are never returned to this screen.</p>
-      {providerError && <p className="field-error" role="alert" data-testid="status-provider-save-error">{providerError}</p>}
-      {providerSaved && <p className="save-state" role="status" data-testid="status-provider-saved"><CheckCircle2 size={15} /> Provider settings saved. Key values remain hidden.</p>}
-      <div className="settings-save-row"><span className="settings-footnote">Keys and local URL save independently. Use Apply Model to activate a model.</span><button type="button" className="button button-primary" disabled={!credentialStatus?.providerSettingsAllowed || saveVault.isPending || applyModel.isPending || updateSettings.isPending} onClick={saveKeys} data-testid="button-save-provider"><Check size={15} /> {saveVault.isPending ? 'Saving…' : 'Save Keys'}</button></div>
+      {vaultStatusQuery.isError && <QueryProblem retry={() => { void vaultStatusQuery.refetch(); }} message="Key status is unavailable. Saved keys remain untouched." />}
+      <form className="key-vault-form" onSubmit={(event) => { event.preventDefault(); saveKeys(); }}>
+        {vaultGroups.map((group) => <details className="vault-group" key={group.id} open={vaultExpanded[group.id]} data-testid={`group-vault-${group.id}`}>
+          <summary aria-expanded={vaultExpanded[group.id]} onClick={(event) => { event.preventDefault(); setVaultExpanded((current) => ({ ...current, [group.id]: !current[group.id] })); }} data-testid={`toggle-vault-${group.id}`}><span>{group.title}</span><ChevronDown size={15} /></summary>
+          <div className="key-vault-grid">{group.fields.map(([name, statusName, label, placeholder]) => vaultField(name, statusName, label, placeholder))}</div>
+        </details>)}
+        <div className="vault-group vault-local-group">
+          <div className="vault-local-heading"><strong>Ollama / Local Base URL</strong><span className="key-status local" data-testid="status-vault-ollama">LOCAL</span></div>
+          <p className="optional-label">OpenAI-compatible local endpoint</p>
+          <input className="settings-input" type="url" value={ollamaBaseUrl} onChange={(event) => { setOllamaBaseUrl(event.target.value); setProviderSaved(false); }} placeholder="http://localhost:11434/v1" disabled={!credentialStatus?.providerSettingsAllowed || !credentialStatus?.localSetupAllowed} data-testid="input-ollama-base-url" />
+        </div>
+        <p className="settings-footnote"><LockKeyhole size={13} /> Blank key fields mean “keep existing key”. Saved key values are never returned to this screen.</p>
+        {providerError && <p className="field-error" role="alert" data-testid="status-provider-save-error">{providerError}</p>}
+        {providerSaved && <p className="save-state" role="status" data-testid="status-provider-saved"><CheckCircle2 size={15} /> Vault settings saved. Key values remain hidden.</p>}
+        <div className="settings-save-row"><span className="settings-footnote">Keys and local URL save independently. Use Apply Model to activate a model.</span><button type="submit" className="button button-primary" disabled={!credentialStatus?.providerSettingsAllowed || saveVault.isPending || applyModel.isPending || updateSettings.isPending || vaultStatusQuery.isLoading} data-testid="button-save-provider">{saveVault.isPending ? <LoaderCircle className="spin" size={15} /> : <Check size={15} />} {saveVault.isPending ? 'Saving…' : 'Save Vault'}</button></div>
+      </form>
     </section>
     <SearchSettingsPanel settings={credentialStatus} loading={settingsQuery.isLoading} />
     <section className="settings-section safety-section"><div className="settings-section-heading"><div className="section-symbol amber"><ShieldCheck size={18} /></div><div><h2>Local code runner</h2><p>Optional Python execution in the local workspace, disabled by default.</p></div></div>

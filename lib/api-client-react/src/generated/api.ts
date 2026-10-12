@@ -43,6 +43,8 @@ import type {
   ThreadInput,
   ThreadUpdate,
   TimerInput,
+  VaultKeyStatuses,
+  VaultKeysInput,
   WorkspacePreviewStatus,
   WorkspacePreviewStopAllResult,
   WorkspacePreviewStopInput
@@ -2625,6 +2627,171 @@ export const useSaveAssistantProviderKeys = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getSaveAssistantProviderKeysMutationOptions(options));
+    }
+
+export const getGetVaultKeysUrl = () => {
+
+
+
+
+  return `/api/vault/keys`
+}
+
+/**
+ * @summary Read API-key presence without returning any key values
+ */
+export const getVaultKeys = async ( options?: Parameters<typeof customFetch>[1]): Promise<VaultKeyStatuses> => {
+
+  return customFetch<VaultKeyStatuses>(getGetVaultKeysUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetVaultKeysQueryKey = () => {
+    return [
+    `/api/vault/keys`
+    ] as const;
+    }
+
+
+export const getGetVaultKeysQueryOptions = <TData = Awaited<ReturnType<typeof getVaultKeys>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getVaultKeys>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetVaultKeysQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getVaultKeys>>> = ({ signal }) => getVaultKeys({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getVaultKeys>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetVaultKeysQueryResult = NonNullable<Awaited<ReturnType<typeof getVaultKeys>>>
+export type GetVaultKeysQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Read API-key presence without returning any key values
+ */
+
+export function useGetVaultKeys<TData = Awaited<ReturnType<typeof getVaultKeys>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getVaultKeys>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetVaultKeysQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getSaveVaultKeysUrl = () => {
+
+
+
+
+  return `/api/vault/keys`
+}
+
+/**
+ * @summary Encrypt and save local API keys in SQLite
+ */
+export const saveVaultKeys = async (vaultKeysInput: VaultKeysInput, options?: Parameters<typeof customFetch>[1]): Promise<VaultKeyStatuses> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<VaultKeyStatuses>(getSaveVaultKeysUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(vaultKeysInput)
+  }
+);}
+
+
+
+
+
+export const getSaveVaultKeysMutationKey = () => ['saveVaultKeys'] as const;
+
+export const getSaveVaultKeysMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof saveVaultKeys>>, TError,SaveVaultKeysMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof saveVaultKeys>>, TError,SaveVaultKeysMutationVariables, TContext> => {
+
+const mutationKey = getSaveVaultKeysMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof saveVaultKeys>>, SaveVaultKeysMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  saveVaultKeys(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SaveVaultKeysMutationResult = NonNullable<Awaited<ReturnType<typeof saveVaultKeys>>>
+    export type SaveVaultKeysMutationBody = BodyType<VaultKeysInput>
+    export type SaveVaultKeysMutationError = ErrorType<unknown>
+    export type SaveVaultKeysMutationVariables = {data: BodyType<VaultKeysInput>}
+
+    /**
+ * @summary Encrypt and save local API keys in SQLite
+ */
+export const useSaveVaultKeys = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof saveVaultKeys>>, TError,SaveVaultKeysMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof saveVaultKeys>>,
+        TError,
+        SaveVaultKeysMutationVariables,
+        TContext
+      > => {
+      return useMutation(getSaveVaultKeysMutationOptions(options));
     }
 
 export const getUpdateAssistantSearchSettingsUrl = () => {

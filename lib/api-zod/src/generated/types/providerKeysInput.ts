@@ -44,4 +44,29 @@ export interface ProviderKeysInput {
      * @nullable
      */
   braveApiKey?: string | null;
+  /**
+     * @maxLength 1000
+     * @nullable
+     */
+  kiteApiKey?: string | null;
+  /**
+     * @maxLength 1000
+     * @nullable
+     */
+  kiteApiSecret?: string | null;
+  /**
+     * @maxLength 1000
+     * @nullable
+     */
+  kiteAccessToken?: string | null;
+  /**
+     * @maxLength 1000
+     * @nullable
+     */
+  alphaVantageApiKey?: string | null;
+  /**
+     * @maxLength 1000
+     * @nullable
+     */
+  finnhubApiKey?: string | null;
 }
