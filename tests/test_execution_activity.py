@@ -8,6 +8,36 @@ import main
 
 
 class ExecutionActivityTests(unittest.TestCase):
+    def test_task_response_exposes_stored_log_timestamp_as_created_at(self) -> None:
+        timestamp = "2026-10-12T10:20:15Z"
+        row = {
+            "id": "task",
+            "thread_id": "thread",
+            "objective": "Run a task",
+            "status": "completed",
+            "current_step": "Done",
+            "result": "ok",
+            "error": None,
+            "logs_json": json.dumps([{"id": "log", "kind": "info", "message": "Started", "timestamp": timestamp}]),
+            "provider": "gemini",
+            "model_id": "gemini-3.5-flash-lite",
+            "recommendation_kind": None,
+            "recommendation_reason": None,
+            "recommended_provider": None,
+            "recommended_model_id": None,
+            "retry_prompt": None,
+            "pending_approval_id": None,
+            "pending_approval_kind": None,
+            "approval_summary": None,
+            "created_at": timestamp,
+            "updated_at": timestamp,
+        }
+
+        task = main.task_dict(row)
+
+        self.assertEqual(task["logs"][0]["createdAt"], timestamp)
+        self.assertEqual(task["logs"][0]["timestamp"], timestamp)
+
     def test_summaries_identify_real_actions(self) -> None:
         self.assertEqual(main.tool_activity_summary("run_command", {"command": "ls assets"}, finished=True), "Ran command: ls assets")
         self.assertEqual(main.tool_activity_summary("write_workspace_preview_file", {"path": "index.html"}, finished=True), "Edited: index.html")

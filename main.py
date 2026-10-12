@@ -447,6 +447,13 @@ def parse_json(value: str | None, fallback: Any) -> Any:
 
 
 def task_dict(row: sqlite3.Row) -> dict[str, Any]:
+    raw_logs = parse_json(row["logs_json"], [])
+    logs = [
+        {**log, "createdAt": log.get("createdAt") or log.get("timestamp")}
+        if isinstance(log, dict)
+        else log
+        for log in raw_logs
+    ]
     return {
         "id": row["id"],
         "threadId": row["thread_id"],
@@ -455,7 +462,7 @@ def task_dict(row: sqlite3.Row) -> dict[str, Any]:
         "currentStep": row["current_step"],
         "result": row["result"],
         "error": row["error"],
-        "logs": parse_json(row["logs_json"], []),
+        "logs": logs,
         "provider": row["provider"],
         "modelId": row["model_id"],
         "recommendationKind": row["recommendation_kind"],
