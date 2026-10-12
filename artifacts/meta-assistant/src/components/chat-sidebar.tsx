@@ -3,7 +3,7 @@ import { Check, MessageSquare, Pencil, Pin, PinOff, Plus, Trash2, X } from 'luci
 import type { ConversationThread } from '@workspace/api-client-react';
 import { useConversations } from '@/components/conversation-provider';
 
-function Row({ thread, onPicked }: { thread: ConversationThread; onPicked?: () => void }) {
+function Row({ thread, onPicked, collapsed = false }: { thread: ConversationThread; onPicked?: () => void; collapsed?: boolean }) {
   const { selectedId, select, rename, setPinned, remove } = useConversations();
   const [editing, setEditing] = useState(false);
   const [title, setTitle] = useState(thread.title);
@@ -31,28 +31,40 @@ function Row({ thread, onPicked }: { thread: ConversationThread; onPicked?: () =
     </div>
   </li>;
   return <li className={`chat-row ${active ? 'active' : ''}`} data-testid={`chat-thread-${thread.id}`}>
-    <button type="button" className="chat-pick" onClick={() => { select(thread.id); onPicked?.(); }} aria-current={active ? 'true' : undefined} title={thread.title} data-testid={`button-select-chat-${thread.id}`}>
+    <button type="button" className="chat-pick" onClick={() => { select(thread.id); onPicked?.(); }} aria-current={active ? 'true' : undefined} aria-label={thread.title} title={thread.title} data-testid={`button-select-chat-${thread.id}`}>
       {thread.activeTaskId ? <span className="exec-dot live" aria-label="Running" /> : thread.pinned ? <Pin size={12} /> : <MessageSquare size={12} />}
       <span>{thread.title}</span>
     </button>
-    <span className="chat-acts">
+    {!collapsed && <span className="chat-acts">
       <button type="button" className="chat-act" onClick={() => void setPinned(thread.id, !thread.pinned)} aria-label={thread.pinned ? 'Unpin chat' : 'Pin chat'} aria-pressed={thread.pinned} data-testid={`button-pin-chat-${thread.id}`}>{thread.pinned ? <PinOff size={12} /> : <Pin size={12} />}</button>
       <button type="button" className="chat-act" onClick={() => { setTitle(thread.title); setEditing(true); }} aria-label="Rename chat" data-testid={`button-rename-chat-${thread.id}`}><Pencil size={12} /></button>
       <button type="button" className="chat-act" onClick={() => setConfirming(true)} aria-label="Delete chat" data-testid={`button-delete-chat-${thread.id}`}><Trash2 size={12} /></button>
-    </span>
+    </span>}
   </li>;
 }
 
-export function ChatSidebar({ onPicked }: { onPicked?: () => void }) {
-  const { threads, loading, error, retry, newChat, creating, actionError } = useConversations();
+export function NewChatAction({ onPicked, collapsed = false }: { onPicked?: () => void; collapsed?: boolean }) {
+  const { newChat, creating } = useConversations();
+  return <button
+    type="button"
+    className="new-chat-button"
+    onClick={() => { newChat(); onPicked?.(); }}
+    disabled={creating}
+    aria-label="New Task / Chat"
+    title={collapsed ? 'New Task / Chat' : undefined}
+    data-testid="button-new-chat"
+  ><Plus size={14} /><span>New Task / Chat</span></button>;
+}
+
+export function RecentSessions({ onPicked, collapsed = false }: { onPicked?: () => void; collapsed?: boolean }) {
+  const { threads, loading, error, retry, actionError } = useConversations();
   const ordered = [...threads].sort((a, b) => Number(b.pinned) - Number(a.pinned) || (Date.parse(b.updatedAt) || 0) - (Date.parse(a.updatedAt) || 0));
-  return <section className="chat-sidebar" aria-label="Chats">
-    <button type="button" className="new-chat-button" onClick={() => { newChat(); onPicked?.(); }} disabled={creating} data-testid="button-new-chat"><Plus size={14} />New Task / Chat</button>
+  return <section className="chat-sidebar chat-sidebar-nested" aria-label="Recent sessions">
     <div className="sidebar-section-title chat-sidebar-title" role="heading" aria-level={2}>RECENT SESSIONS</div>
     {actionError && <p className="chat-error" role="alert" data-testid="text-chat-error">{actionError}</p>}
     {loading ? <div className="chat-skeleton" aria-busy="true"><i /><i /><i /></div>
       : error && !threads.length ? <p className="chat-error" role="alert">Chats could not load. <button type="button" onClick={retry} data-testid="button-retry-chats">Retry</button></p>
       : !ordered.length ? <p className="chat-empty">No chats yet. Send a request to start one.</p>
-      : <ul className="chat-list">{ordered.map((t) => <Row key={t.id} thread={t} onPicked={onPicked} />)}</ul>}
+      : <ul className="chat-list">{ordered.map((t) => <Row key={t.id} thread={t} onPicked={onPicked} collapsed={collapsed} />)}</ul>}
   </section>;
 }

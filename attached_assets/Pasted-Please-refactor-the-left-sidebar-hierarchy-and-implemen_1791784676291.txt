@@ -1,0 +1,33 @@
+Please refactor the left sidebar hierarchy and implement a collapsible sidebar drawer:
+
+1. Reorganize Sidebar Hierarchy (Sessions Under Command Center):
+   - Move the "RECENT SESSIONS" section so it lives directly underneath "Command center".
+   - Desired structure in the sidebar from top to bottom:
+     1. App Header ("FORGE / LOCAL OPERATIONS")
+     2. Primary Action: "+ New Task / Chat" button
+     3. Navigation Items ("YOUR WORKSPACE"):
+        - [Command center] (Active/Main Chat Stream)
+          * Nested immediately beneath Command Center (with subtle left indent or tree guide line):
+            - Section Header: "RECENT SESSIONS"
+            - Scrollable list of past threads/chats (e.g., "Do Deep Research Using...", "Whats Weather Madurai", etc.)
+            - When Command center is active, this sub-list shows the history of discussions.
+        - [Task activity]
+        - [Workspace files]
+        - [Scheduled alarms]
+        - [Preferences]
+     4. "QUICK STATUS" footer (anchored at the bottom)
+
+2. Collapsible Sidebar Functionality:
+   - Add a collapse/expand toggle button for the sidebar:
+     * Place an icon button (e.g., sidebar collapse icon or chevron `«` / `»`) at the top right of the sidebar header or adjacent to the Forge logo.
+     * State Persistence: Save the collapsed state (`isSidebarCollapsed: boolean`) to `localStorage` so it persists across page reloads.
+   - Collapsed State Behavior:
+     * Collapse sidebar width down to an icon-only rail (~56px to 64px width).
+     * Hide text labels ("Command center", "Recent Sessions", titles) and show only sleek icons with hover tooltips.
+     * The main workspace ("WORK IN MOTION" / Command Center stream) expands smoothly to take up the reclaimed horizontal screen width.
+   - Expanded State Behavior:
+     * Restores full sidebar width (~230px–250px) with smooth CSS transition (`transition: width 0.25s ease-in-out;`).
+
+3. Visual Styling & Polish:
+   - Keep cyberdeck aesthetics: Neon cyan accents, thin borders (`border: 1px solid rgba(0, 240, 255, 0.2)`), subtle scanline/glass backdrop.
+   - Ensure the nested Recent Sessions list has a max height with custom sleek scrollbars so it does not push the other workspace navigation links off-screen.

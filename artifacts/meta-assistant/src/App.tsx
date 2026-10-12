@@ -49,7 +49,7 @@ import {
 } from 'lucide-react';
 import { ConversationProvider, useConversations } from '@/components/conversation-provider';
 import { SearchSettingsPanel } from '@/components/search-settings-panel';
-import { ChatSidebar } from '@/components/chat-sidebar';
+import { NewChatAction, RecentSessions } from '@/components/chat-sidebar';
 import { ChatModelPicker } from '@/components/chat-model-picker';
 import { ActivityStream } from '@/components/activity-stream';
 import { ErrorBoundary } from '@/components/error-boundary';
@@ -200,6 +200,9 @@ function inspectorRange(viewportWidth = typeof window === 'undefined' ? 1400 : w
 
 function AppShell({ children, page }: { children: ReactNode; page: Page }) {
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    try { return localStorage.getItem('forge-sidebar-collapsed') === 'true'; } catch { return false; }
+  });
   const [inspectorOpen, setInspectorOpen] = useState(() => typeof window !== 'undefined' && window.innerWidth > 1100);
   const [inspectorWidth, setInspectorWidth] = useState(410);
   const [viewportWidth, setViewportWidth] = useState(() => typeof window === 'undefined' ? 1400 : window.innerWidth);
@@ -209,6 +212,9 @@ function AppShell({ children, page }: { children: ReactNode; page: Page }) {
   const [location] = useLocation();
   const routePage = (location === '/' ? 'home' : location.slice(1)) as Page;
   const current = page || routePage;
+  useEffect(() => {
+    try { localStorage.setItem('forge-sidebar-collapsed', String(sidebarCollapsed)); } catch { /* Persistence is optional when storage is blocked. */ }
+  }, [sidebarCollapsed]);
   useEffect(() => {
     const viewport = window.matchMedia('(max-width: 900px)');
     const syncViewport = () => setViewportWidth(window.innerWidth);
@@ -238,16 +244,21 @@ function AppShell({ children, page }: { children: ReactNode; page: Page }) {
     window.addEventListener('morrow:open-preview-inspector', openPreview);
     return () => window.removeEventListener('morrow:open-preview-inspector', openPreview);
   }, []);
-  return <div className={`app-frame shell-noise ${inspectorOpen ? 'inspector-open' : 'inspector-closed'}`} style={{ '--inspector-width': `${displayedInspectorWidth}px` } as CSSProperties}>
-    <aside className={`sidebar ${mobileOpen ? 'mobile-open' : ''}`}>
-      <div className="brand"><div className="brand-mark" aria-hidden="true"><svg viewBox="0 0 32 32" fill="none"><path d="M5 9.5 16 4l11 5.5-4.7 2.35L16 9l-6.3 2.85L5 9.5Z" /><path d="m5 9.5 2.8 12L16 27l8.2-5.5L27 9.5" /><path d="m9.7 11.85 1.55 7.1L16 22l4.75-3.05 1.55-7.1" /><path d="m11.25 18.95 4.75-2.6 4.75 2.6M16 9v7.35" /></svg></div><div><div className="brand-name">Forge</div><div className="brand-caption">LOCAL OPERATIONS</div></div><span className="runtime-ready-dot" aria-label="Local runtime ready" title="Local runtime ready" /><button className="sidebar-close icon-button" onClick={() => setMobileOpen(false)} aria-label="Close navigation"><X size={17} /></button></div>
-      <ChatSidebar onPicked={() => setMobileOpen(false)} />
+  const renderNavItem = ({ href, label, icon: Icon }: typeof navItems[number]) => <Link key={href} href={href} className={`nav-link ${current === (href === '/' ? 'home' : href.slice(1)) ? 'active' : ''}`} onClick={() => setMobileOpen(false)} aria-label={label} title={sidebarCollapsed ? label : undefined} data-testid={`link-nav-${href === '/' ? 'home' : href.slice(1)}`}><Icon size={17} /><span>{label}</span>{href === '/tasks' && <span className="nav-trailing"><span className="nav-dot" /></span>}</Link>;
+  return <div className={`app-frame shell-noise ${inspectorOpen ? 'inspector-open' : 'inspector-closed'} ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`} style={{ '--inspector-width': `${displayedInspectorWidth}px`, ...(sidebarCollapsed && viewportWidth > 900 ? { '--sidebar-w': '64px' } : {}) } as CSSProperties}>
+    <aside className={`sidebar ${sidebarCollapsed ? 'sidebar-collapsed' : ''} ${mobileOpen ? 'mobile-open' : ''}`}>
+      <div className="brand"><div className="brand-mark" aria-hidden="true"><svg viewBox="0 0 32 32" fill="none"><path d="M5 9.5 16 4l11 5.5-4.7 2.35L16 9l-6.3 2.85L5 9.5Z" /><path d="m5 9.5 2.8 12L16 27l8.2-5.5L27 9.5" /><path d="m9.7 11.85 1.55 7.1L16 22l4.75-3.05 1.55-7.1" /><path d="m11.25 18.95 4.75-2.6 4.75 2.6M16 9v7.35" /></svg></div><div className="brand-copy"><div className="brand-name">Forge</div><div className="brand-caption">LOCAL OPERATIONS</div></div><span className="runtime-ready-dot" aria-label="Local runtime ready" title="Local runtime ready" /><button type="button" className="sidebar-collapse-toggle icon-button" onClick={() => setSidebarCollapsed((collapsed) => !collapsed)} aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'} aria-expanded={!sidebarCollapsed} title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'} data-testid="button-toggle-sidebar"><ChevronRight size={16} className={sidebarCollapsed ? '' : 'is-expanded'} /></button><button className="sidebar-close icon-button" onClick={() => setMobileOpen(false)} aria-label="Close navigation"><X size={17} /></button></div>
+      <NewChatAction collapsed={sidebarCollapsed} onPicked={() => setMobileOpen(false)} />
       <div className="workspace-label">YOUR WORKSPACE</div>
-      <nav className="side-nav" aria-label="Main navigation">{navItems.map(({ href, label, icon: Icon }) => <Link key={href} href={href} className={`nav-link ${current === (href === '/' ? 'home' : href.slice(1)) ? 'active' : ''}`} onClick={() => setMobileOpen(false)} data-testid={`link-nav-${href === '/' ? 'home' : href.slice(1)}`}><Icon size={17} /><span>{label}</span>{href === '/tasks' && <span className="nav-trailing"><span className="nav-dot" /></span>}</Link>)}</nav>
+      <nav className="side-nav" aria-label="Main navigation">
+        {renderNavItem(navItems[0])}
+        {current === 'home' && <RecentSessions onPicked={() => setMobileOpen(false)} collapsed={sidebarCollapsed} />}
+        {navItems.slice(1).map(renderNavItem)}
+      </nav>
+      <div className="sidebar-spacer" />
       <div className="side-divider" />
       <div className="sidebar-section-title">QUICK STATUS</div>
       <QuickSidebarStatus />
-      <div className="sidebar-spacer" />
       <div className="agent-card"><div className="agent-orbit"><span /><i /></div><div className="agent-card-copy"><strong>Your agent is ready</strong><span>Waiting for direction</span></div><span className="ready-indicator" /></div>
       <div className="sidebar-bottom"><div className="user-avatar">F</div><div className="user-meta"><strong>My workspace</strong><span>Personal account</span></div><button className="icon-button user-menu" aria-label="Account options" onClick={() => window.dispatchEvent(new Event('morrow:account'))}><MoreHorizontal size={18} /></button></div>
     </aside>
@@ -271,10 +282,10 @@ function QuickSidebarStatus() {
   const runningCount = data?.activeTasks ?? 0;
   const systemState = isLoading ? 'Online' : isError ? 'Offline' : runningCount ? `Running · ${runningCount}` : 'Idle';
   return <div className="quick-status">
-    <div data-testid="system-status"><span className="quick-status-icon"><Activity size={14} /></span><span>System status</span><strong>{systemState}</strong></div>
-    <div data-testid="active-model"><span className="quick-status-icon"><Zap size={14} /></span><span>Active model</span><strong className="model-name" title={activeModel}>{activeModel}</strong></div>
-    <div><span className="quick-status-icon amber"><Bell size={14} /></span><span>Active alarms</span><strong>{timers.isLoading ? '—' : (timers.data ?? []).filter((timer) => timer.status === 'active').length}</strong></div>
-    <div className="sidebar-storage"><span className="quick-status-icon"><HardDrive size={14} /></span><span>Workspace storage</span><strong>{files.isLoading ? '—' : formatSize(storage)}</strong></div>
+    <div data-testid="system-status" title={`System status: ${systemState}`}><span className="quick-status-icon"><Activity size={14} /></span><span>System status</span><strong>{systemState}</strong></div>
+    <div data-testid="active-model" title={`Active model: ${activeModel}`}><span className="quick-status-icon"><Zap size={14} /></span><span>Active model</span><strong className="model-name">{activeModel}</strong></div>
+    <div title="Active alarms"><span className="quick-status-icon amber"><Bell size={14} /></span><span>Active alarms</span><strong>{timers.isLoading ? '—' : (timers.data ?? []).filter((timer) => timer.status === 'active').length}</strong></div>
+    <div className="sidebar-storage" title={`Workspace storage: ${files.isLoading ? 'Loading' : formatSize(storage)}`}><span className="quick-status-icon"><HardDrive size={14} /></span><span>Workspace storage</span><strong>{files.isLoading ? '—' : formatSize(storage)}</strong></div>
   </div>;
 }
 
