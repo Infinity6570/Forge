@@ -7,6 +7,7 @@ export type SearchPayload = {
   answer?: string;
   groundingMetadata?: Record<string, unknown>;
   fallbackFrom?: string;
+  fallbackReason?: string;
   warning?: string;
   error?: string;
 };
@@ -56,8 +57,12 @@ function suggestionsHtml(meta?: Record<string, unknown>): string | null {
 
 export function SearchPayloadView({ payload }: { payload: SearchPayload }) {
   const html = suggestionsHtml(payload.groundingMetadata);
+  const googleFallback = payload.fallbackFrom === 'google-grounding' && Boolean(payload.fallbackReason);
   return <div className="search-payload" data-testid="search-payload">
-    <div className="search-engine-line"><span className="search-engine-badge">{engineLabel(payload.engine)}</span>{payload.fallbackFrom && <span className="search-note">Fallback from {engineLabel(payload.fallbackFrom)}</span>}</div>
+    <div className="search-engine-line"><span className="search-engine-badge">{engineLabel(payload.engine)}</span>
+      {googleFallback && <span className="search-fallback-badge" data-testid="badge-search-fallback">Fallback from Google grounding · {payload.fallbackReason}</span>}
+      {payload.fallbackFrom && payload.fallbackFrom !== 'google-grounding' && <span className="search-note">Fallback from {engineLabel(payload.fallbackFrom)}</span>}
+    </div>
     {payload.error && <p className="search-error"><AlertCircle size={12} />{payload.error}</p>}
     {payload.warning && <p className="search-note">{payload.warning}</p>}
     {payload.answer && <p className="search-answer">{payload.answer}</p>}

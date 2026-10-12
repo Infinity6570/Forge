@@ -14,10 +14,18 @@ SEARCH_KEY_NAMES = {"tavily": "TAVILY_API_KEY", "serper": "SERPER_API_KEY", "bra
 
 
 class SearchError(RuntimeError):
-    def __init__(self, message: str, *, quota: bool = False, status_code: int | None = None):
+    def __init__(
+        self,
+        message: str,
+        *,
+        quota: bool = False,
+        status_code: int | None = None,
+        fallback_reason: str | None = None,
+    ):
         super().__init__(message)
         self.quota = quota
         self.status_code = status_code
+        self.fallback_reason = fallback_reason
 
 
 class _GroundingThrottle:
@@ -189,10 +197,47 @@ async def search_api(query: str, engine: str) -> dict[str, Any]:
     return {"engine": engine, "results": results}
 
 
-async def _fallback_from_google_rate_limit(
+def _google_failure_reason(error: Exception) -> str:
+    if isinstance(error, (httpx.TimeoutException, TimeoutError)):
+        return "Google Timeout"
+    if isinstance(error, SearchError):
+        if error.status_code == 429:
+            return "Google 429 Throttled"
+        message = str(error).lower()
+        if "no answer" in message or "no usable text" in message or "empty result" in message:
+            return "Google Empty Results"
+        if error.status_code is not None:
+            return f"Google HTTP {error.status_code}"
+    return "Google Error"
+
+
+async def _grounding_search_with_retry(adapter: GeminiGroundingAdapter, query: str, model: str) -> dict[str, Any]:
+    try:
+        return await adapter.search(query, model)
+    except SearchError as first_error:
+        if first_error.status_code != 429:
+            raise
+
+    # Retry once before consuming an alternate provider's quota.
+    await asyncio.sleep(1.5 * random.uniform(0.9, 1.1))
+    try:
+        return await adapter.search(query, model)
+    except (SearchError, httpx.TimeoutException, httpx.RequestError) as retry_error:
+        reason = _google_failure_reason(retry_error)
+        raise SearchError(
+            "Google grounding retry failed after the initial HTTP 429.",
+            quota=getattr(retry_error, "quota", False),
+            status_code=getattr(retry_error, "status_code", None),
+            fallback_reason=reason,
+        ) from retry_error
+
+
+async def _fallback_from_google_failure(
     query: str,
     validate_url: Callable[[str], str],
     settings: dict[str, Any],
+    failure_reason: str,
+    google_error: SearchError,
 ) -> dict[str, Any]:
     attempted: list[str] = []
     failures: list[str] = []
@@ -204,8 +249,9 @@ async def _fallback_from_google_rate_limit(
             result = await search_api(query, engine)
             result.update(
                 fallbackFrom="google-grounding",
+                fallbackReason=failure_reason,
                 fallbackAttempted=attempted,
-                warning=f"Google grounding was rate-limited; search results came from {engine.title()} instead.",
+                warning=f"{failure_reason}; search results came from {engine.title()} instead.",
             )
             return result
         except SearchError:
@@ -217,8 +263,9 @@ async def _fallback_from_google_rate_limit(
         result = await BrowserRunner(validate_url).search(query)
         result.update(
             fallbackFrom="google-grounding",
+            fallbackReason=failure_reason,
             fallbackAttempted=attempted,
-            warning="Google grounding was rate-limited and saved API fallbacks were unavailable; Chromium was used.",
+            warning=f"{failure_reason}; saved API fallbacks were unavailable, so Chromium was used.",
         )
         return result
 
@@ -227,9 +274,9 @@ async def _fallback_from_google_rate_limit(
     else:
         reason = f"Configured search fallbacks were unavailable ({', '.join(failures)})."
     raise SearchError(
-        f"Google grounding hit HTTP 429. {reason} Save a search API key or enable Chromium fallback.",
-        quota=True,
-        status_code=429,
+        f"{failure_reason}. {reason} Save a search API key or enable Chromium fallback.",
+        quota=google_error.quota,
+        status_code=google_error.status_code,
     )
 
 
@@ -256,14 +303,22 @@ async def routed_search(
     try:
         if route == "google-grounding":
             adapter = GeminiGroundingAdapter()
-            operation = lambda: adapter.search(query, model)
+            operation = lambda: _grounding_search_with_retry(adapter, query, model)
             return await _grounding_throttle.run(throttle_key, operation) if throttle_key else await operation()
         return await search_api(query, engine)
     except SearchError as exc:
-        if route == "google-grounding" and exc.status_code == 429:
-            return await _fallback_from_google_rate_limit(query, validate_url, settings)
+        if route == "google-grounding" and exc.fallback_reason:
+            return await _fallback_from_google_failure(query, validate_url, settings, exc.fallback_reason, exc)
         if not exc.quota or not settings["searchChromiumFallback"]:
             raise
         result = await browser.search(query)
-        result.update(fallbackFrom=route, warning=f"{route} quota/rate limit exhausted; used the enabled Chromium fallback.")
+        if route == "google-grounding":
+            failure_reason = _google_failure_reason(exc)
+            result.update(
+                fallbackFrom=route,
+                fallbackReason=failure_reason,
+                warning=f"{failure_reason}; used the enabled Chromium fallback.",
+            )
+        else:
+            result.update(fallbackFrom=route, warning=f"{route} quota/rate limit exhausted; used the enabled Chromium fallback.")
         return result

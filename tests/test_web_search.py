@@ -116,15 +116,74 @@ class SearchRoutingTests(unittest.IsolatedAsyncioTestCase):
             return {"engine": engine, "results": [{"title": "Brave result"}]}
 
         with patch.object(GeminiGroundingAdapter, "search", new_callable=AsyncMock,
-                          side_effect=SearchError("Google grounding 429", quota=True, status_code=429)):
-            with patch("tools.web_search.search_api", new_callable=AsyncMock, side_effect=fallback):
-                result = await routed_search("query", "gemini", "gemini-3.8-flash", lambda u: u)
+                          side_effect=SearchError("Google grounding 429", quota=True, status_code=429)) as google:
+            with patch("tools.web_search.asyncio.sleep", new_callable=AsyncMock) as sleep:
+                with patch("tools.web_search.random.uniform", return_value=1.0):
+                    with patch("tools.web_search.search_api", new_callable=AsyncMock, side_effect=fallback):
+                        result = await routed_search("query", "gemini", "gemini-3.8-flash", lambda u: u)
 
+        self.assertEqual(google.await_count, 2)
+        sleep.assert_awaited_once_with(1.5)
         self.assertEqual(calls, ["tavily", "serper", "brave"])
         self.assertEqual(result["engine"], "brave")
         self.assertEqual(result["fallbackFrom"], "google-grounding")
+        self.assertEqual(result["fallbackReason"], "Google 429 Throttled")
         self.assertEqual(result["fallbackAttempted"], calls)
         self.assertIn("Brave", result["warning"])
+
+    async def test_google_429_retries_before_fallback_and_no_badge_if_retry_succeeds(self):
+        success = {"engine": "google-grounding", "answer": "Found it", "results": []}
+        with patch.object(GeminiGroundingAdapter, "search", new_callable=AsyncMock,
+                          side_effect=[SearchError("rate limited", quota=True, status_code=429), success]) as google:
+            with patch("tools.web_search.asyncio.sleep", new_callable=AsyncMock) as sleep:
+                with patch("tools.web_search.random.uniform", return_value=1.0):
+                    with patch("tools.web_search.search_api", new_callable=AsyncMock) as api:
+                        result = await routed_search("query", "gemini", "gemini-3.8-flash", lambda u: u)
+        self.assertEqual(result, success)
+        self.assertNotIn("fallbackFrom", result)
+        self.assertNotIn("fallbackReason", result)
+        self.assertEqual(google.await_count, 2)
+        sleep.assert_awaited_once_with(1.5)
+        api.assert_not_awaited()
+
+    async def test_google_429_retry_timeout_falls_back_with_specific_reason(self):
+        with patch.object(GeminiGroundingAdapter, "search", new_callable=AsyncMock,
+                          side_effect=[
+                              SearchError("rate limited", quota=True, status_code=429),
+                              httpx.ReadTimeout("timed out"),
+                          ]) as google:
+            with patch("tools.web_search.asyncio.sleep", new_callable=AsyncMock):
+                with patch("tools.web_search.random.uniform", return_value=1.0):
+                    with patch("tools.web_search.search_api", new_callable=AsyncMock,
+                               return_value={"engine": "tavily", "results": []}) as api:
+                        result = await routed_search("query", "gemini", "gemini-3.8-flash", lambda u: u)
+        self.assertEqual(google.await_count, 2)
+        api.assert_awaited_once_with("query", "tavily")
+        self.assertEqual(result["fallbackReason"], "Google Timeout")
+
+    async def test_google_429_retry_empty_answer_falls_back_as_empty_results(self):
+        with patch.object(GeminiGroundingAdapter, "search", new_callable=AsyncMock,
+                          side_effect=[
+                              SearchError("rate limited", quota=True, status_code=429),
+                              SearchError("Google grounding returned no usable text."),
+                          ]):
+            with patch("tools.web_search.asyncio.sleep", new_callable=AsyncMock):
+                with patch("tools.web_search.random.uniform", return_value=1.0):
+                    with patch("tools.web_search.search_api", new_callable=AsyncMock,
+                               return_value={"engine": "tavily", "results": []}):
+                        result = await routed_search("query", "gemini", "gemini-3.8-flash", lambda u: u)
+        self.assertEqual(result["fallbackReason"], "Google Empty Results")
+
+    async def test_google_chromium_fallback_includes_failure_reason(self):
+        os.environ["WEB_SEARCH_CHROMIUM_FALLBACK"] = "true"
+        with patch.object(GeminiGroundingAdapter, "search", new_callable=AsyncMock,
+                          side_effect=SearchError("quota", quota=True, status_code=403)):
+            with patch.object(BrowserRunner, "search", new_callable=AsyncMock,
+                              return_value={"engine": "chromium", "results": []}) as browser:
+                result = await routed_search("query", "gemini", "gemini-3.8-flash", lambda u: u)
+        browser.assert_awaited_once()
+        self.assertEqual(result["fallbackFrom"], "google-grounding")
+        self.assertEqual(result["fallbackReason"], "Google HTTP 403")
 
     async def test_google_non_429_does_not_switch_search_providers(self):
         with patch.object(GeminiGroundingAdapter, "search", new_callable=AsyncMock,
