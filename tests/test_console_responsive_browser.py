@@ -60,7 +60,7 @@ class ResponsiveConsoleBrowserTests(unittest.TestCase):
             cls.server.kill()
             cls.server.wait(timeout=5)
 
-    def test_console_remains_usable_on_phone_and_laptop(self) -> None:
+    def test_console_remains_usable_across_screen_sizes(self) -> None:
         executable = os.environ.get("CHROMIUM_EXECUTABLE_PATH") or shutil.which("chromium")
         if not executable:
             candidate = Path("/repl/tools/bin/chromium")
@@ -74,7 +74,12 @@ class ResponsiveConsoleBrowserTests(unittest.TestCase):
                 args=["--no-sandbox", "--disable-dev-shm-usage"],
             )
             try:
-                for viewport in ({"width": 390, "height": 844}, {"width": 1366, "height": 768}):
+                for viewport in (
+                    {"width": 390, "height": 844},
+                    {"width": 1366, "height": 768},
+                    {"width": 1920, "height": 1080},
+                    {"width": 2560, "height": 1080},
+                ):
                     with self.subTest(viewport=viewport):
                         context = browser.new_context(viewport=viewport)
                         page = context.new_page()
@@ -126,8 +131,9 @@ class ResponsiveConsoleBrowserTests(unittest.TestCase):
 
                         toggle = page.get_by_test_id("button-toggle-console")
                         toggle.wait_for(state="visible")
-                        self.assertEqual(toggle.get_attribute("aria-expanded"), "false")
-                        self.assertEqual(page.get_by_test_id("right-inspector").count(), 0)
+                        starts_open = viewport["width"] >= 1600
+                        self.assertEqual(toggle.get_attribute("aria-expanded"), str(starts_open).lower())
+                        self.assertEqual(page.get_by_test_id("right-inspector").count(), 1 if starts_open else 0)
                         toggle_box = toggle.bounding_box()
                         self.assertIsNotNone(toggle_box)
                         self.assertGreaterEqual(toggle_box["x"], 0)
@@ -135,7 +141,8 @@ class ResponsiveConsoleBrowserTests(unittest.TestCase):
 
                         chat_before = page.locator(".center-pane").bounding_box()
                         self.assertIsNotNone(chat_before)
-                        toggle.click()
+                        if not starts_open:
+                            toggle.click()
                         inspector = page.get_by_test_id("right-inspector")
                         inspector.wait_for(state="visible")
                         self.assertEqual(toggle.get_attribute("aria-expanded"), "true")
@@ -156,6 +163,20 @@ class ResponsiveConsoleBrowserTests(unittest.TestCase):
                         live_preview_tab.click()
                         self.assertEqual(live_preview_tab.get_attribute("aria-selected"), "true")
                         page.get_by_test_id("workspace-live-preview").wait_for(state="visible")
+
+                        if viewport["width"] >= 1500:
+                            maximize = page.get_by_test_id("button-toggle-preview-maximize")
+                            normal_panel_box = inspector.bounding_box()
+                            maximize.click()
+                            self.assertTrue(page.locator(".app-frame").evaluate("(el) => el.classList.contains('preview-maximized')"))
+                            self.assertIsNone(page.locator(".main-area").bounding_box())
+                            expanded_panel_box = inspector.bounding_box()
+                            self.assertIsNotNone(normal_panel_box)
+                            self.assertIsNotNone(expanded_panel_box)
+                            self.assertGreater(expanded_panel_box["width"], normal_panel_box["width"])
+                            maximize.click()
+                            self.assertFalse(page.locator(".app-frame").evaluate("(el) => el.classList.contains('preview-maximized')"))
+                            self.assertIsNotNone(page.locator(".main-area").bounding_box())
 
                         workspace_tab = page.get_by_test_id("tab-workspace-inspector")
                         workspace_tab.click()

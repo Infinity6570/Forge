@@ -191,6 +191,10 @@ function Modal({ title, onClose, children }: { title: string; onClose: () => voi
 
 // Inspector width bounds track the viewport so the CSS cap and the resizer agree.
 function inspectorRange(viewportWidth = typeof window === 'undefined' ? 1400 : window.innerWidth) {
+  if (viewportWidth >= 1500) {
+    const max = Math.max(500, Math.floor((viewportWidth - 268) * 0.45));
+    return { min: 500, max };
+  }
   const max = Math.max(320, Math.min(450, Math.floor(viewportWidth * 0.34)));
   return { min: Math.min(380, max), max };
 }
@@ -201,7 +205,11 @@ function AppShell({ children, page }: { children: ReactNode; page: Page }) {
     try { return localStorage.getItem('forge-sidebar-collapsed') === 'true'; } catch { return false; }
   });
   const [inspectorOpen, setInspectorOpen] = useState(() => typeof window !== 'undefined' && window.innerWidth >= 1600);
-  const [inspectorWidth, setInspectorWidth] = useState(450);
+  const [inspectorWidth, setInspectorWidth] = useState(() => {
+    const width = typeof window === 'undefined' ? 1400 : window.innerWidth;
+    return width >= 1500 ? Math.floor((width - 268) * 0.45) : 450;
+  });
+  const [previewMaximized, setPreviewMaximized] = useState(false);
   const [viewportWidth, setViewportWidth] = useState(() => typeof window === 'undefined' ? 1400 : window.innerWidth);
   const range = inspectorRange(viewportWidth);
   const displayedInspectorWidth = Math.max(range.min, Math.min(range.max, inspectorWidth));
@@ -214,7 +222,11 @@ function AppShell({ children, page }: { children: ReactNode; page: Page }) {
   }, [sidebarCollapsed]);
   useEffect(() => {
     const viewport = window.matchMedia('(min-width: 1600px)');
-    const syncViewport = () => setViewportWidth(window.innerWidth);
+    const syncViewport = () => {
+      const width = window.innerWidth;
+      setViewportWidth(width);
+      setInspectorWidth(width >= 1500 ? Math.floor((width - 268) * 0.45) : 450);
+    };
     const setDefaultDockForBreakpoint = (event: MediaQueryListEvent) => setInspectorOpen(event.matches);
     viewport.addEventListener('change', setDefaultDockForBreakpoint);
     window.addEventListener('resize', syncViewport);
@@ -234,13 +246,22 @@ function AppShell({ children, page }: { children: ReactNode; page: Page }) {
   useEffect(() => {
     const openPreview = () => {
       setInspectorOpen(true);
+      setPreviewMaximized(false);
       window.dispatchEvent(new Event('morrow:show-preview'));
     };
     window.addEventListener('morrow:open-preview-inspector', openPreview);
     return () => window.removeEventListener('morrow:open-preview-inspector', openPreview);
   }, []);
+  const toggleInspector = () => {
+    if (inspectorOpen) setPreviewMaximized(false);
+    setInspectorOpen((open) => !open);
+  };
+  const closeInspector = () => {
+    setInspectorOpen(false);
+    setPreviewMaximized(false);
+  };
   const renderNavItem = ({ href, label, icon: Icon }: typeof navItems[number]) => <Link key={href} href={href} className={`nav-link ${current === (href === '/' ? 'home' : href.slice(1)) ? 'active' : ''}`} onClick={() => setMobileOpen(false)} aria-label={label} title={sidebarCollapsed ? label : undefined} data-testid={`link-nav-${href === '/' ? 'home' : href.slice(1)}`}><Icon size={17} /><span>{label}</span>{href === '/tasks' && <span className="nav-trailing"><span className="nav-dot" /></span>}</Link>;
-  return <div className={`app-frame shell-noise ${inspectorOpen ? 'inspector-open' : 'inspector-closed'} ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`} style={{ '--inspector-width': `${displayedInspectorWidth}px`, ...(sidebarCollapsed && viewportWidth > 900 ? { '--sidebar-w': '64px' } : {}) } as CSSProperties}>
+  return <div className={`app-frame shell-noise ${inspectorOpen ? 'inspector-open' : 'inspector-closed'} ${sidebarCollapsed ? 'sidebar-collapsed' : ''} ${previewMaximized ? 'preview-maximized' : ''}`} style={{ '--inspector-width': `${displayedInspectorWidth}px`, ...(sidebarCollapsed && viewportWidth > 900 ? { '--sidebar-w': '64px' } : {}) } as CSSProperties}>
     <aside className={`sidebar ${sidebarCollapsed ? 'sidebar-collapsed' : ''} ${mobileOpen ? 'mobile-open' : ''}`}>
       <div className="brand"><div className="brand-mark" aria-hidden="true"><svg viewBox="0 0 32 32" fill="none"><path d="M5 9.5 16 4l11 5.5-4.7 2.35L16 9l-6.3 2.85L5 9.5Z" /><path d="m5 9.5 2.8 12L16 27l8.2-5.5L27 9.5" /><path d="m9.7 11.85 1.55 7.1L16 22l4.75-3.05 1.55-7.1" /><path d="m11.25 18.95 4.75-2.6 4.75 2.6M16 9v7.35" /></svg></div><div className="brand-copy"><div className="brand-name">Forge</div><div className="brand-caption">LOCAL OPERATIONS</div></div><span className="runtime-ready-dot" aria-label="Local runtime ready" title="Local runtime ready" /><button className="sidebar-close icon-button" onClick={() => setMobileOpen(false)} aria-label="Close navigation"><X size={17} /></button></div>
       <NewChatAction collapsed={sidebarCollapsed} onPicked={() => setMobileOpen(false)} />
@@ -255,11 +276,11 @@ function AppShell({ children, page }: { children: ReactNode; page: Page }) {
     </aside>
     {mobileOpen && <button className="mobile-scrim" onClick={() => setMobileOpen(false)} aria-label="Close menu" />}
     <main className="main-area">
-      <header className={`topbar ${current === 'home' ? 'topbar-command-center' : ''}`}><button className="mobile-menu icon-button" aria-label="Open navigation" onClick={() => setMobileOpen(true)} data-testid="button-open-navigation"><Menu size={20} /></button><div className="breadcrumbs"><span>Workspace</span><span className="crumb-slash">/</span><strong>{navItems.find((n) => (n.href === '/' ? 'home' : n.href.slice(1)) === current)?.label ?? 'Overview'}</strong></div><div className="topbar-right"><span className="ops-tagline">LOCAL OPS // 6570</span><div className="system-online"><span className="online-pip" />All systems operational</div><ThemeChooser /><CyberFxToggle /><button type="button" className="icon-button console-toggle" onClick={() => setInspectorOpen((open) => !open)} aria-label={inspectorOpen ? 'Close telemetry and workspace console' : 'Open telemetry and workspace console'} aria-expanded={inspectorOpen} title={inspectorOpen ? 'Close system console' : 'Open system console'} data-testid="button-toggle-console"><PanelRight size={16} /><span>Console</span></button><button type="button" className="sidebar-collapse-toggle icon-button" onClick={() => setSidebarCollapsed((collapsed) => !collapsed)} aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'} aria-expanded={!sidebarCollapsed} title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'} data-testid="button-toggle-sidebar"><ChevronRight size={16} className={sidebarCollapsed ? '' : 'is-expanded'} /></button></div></header>
+      <header className={`topbar ${current === 'home' ? 'topbar-command-center' : ''}`}><button className="mobile-menu icon-button" aria-label="Open navigation" onClick={() => setMobileOpen(true)} data-testid="button-open-navigation"><Menu size={20} /></button><div className="breadcrumbs"><span>Workspace</span><span className="crumb-slash">/</span><strong>{navItems.find((n) => (n.href === '/' ? 'home' : n.href.slice(1)) === current)?.label ?? 'Overview'}</strong></div><div className="topbar-right"><span className="ops-tagline">LOCAL OPS // 6570</span><div className="system-online"><span className="online-pip" />All systems operational</div><ThemeChooser /><CyberFxToggle /><button type="button" className="icon-button console-toggle" onClick={toggleInspector} aria-label={inspectorOpen ? 'Close telemetry and workspace console' : 'Open telemetry and workspace console'} aria-expanded={inspectorOpen} title={inspectorOpen ? 'Close system console' : 'Open system console'} data-testid="button-toggle-console"><PanelRight size={16} /><span>Console</span></button><button type="button" className="sidebar-collapse-toggle icon-button" onClick={() => setSidebarCollapsed((collapsed) => !collapsed)} aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'} aria-expanded={!sidebarCollapsed} title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'} data-testid="button-toggle-sidebar"><ChevronRight size={16} className={sidebarCollapsed ? '' : 'is-expanded'} /></button></div></header>
       <div className={`center-pane ${page === 'home' ? 'center-pane-home' : ''}`}><div className="page-wrap">{children}</div><footer className="app-footer"><span>Made for thoughtful delegation.</span><span className="footer-build">FORGE <span>·</span> LOCAL COMMAND CENTER</span></footer></div>
     </main>
     {inspectorOpen && <div className="inspector-resize" role="separator" aria-orientation="vertical" aria-label="Resize workspace inspector" aria-valuemin={range.min} aria-valuemax={range.max} aria-valuenow={displayedInspectorWidth} tabIndex={0} onPointerDown={(event) => { event.preventDefault(); setResizingInspector(true); }} onKeyDown={(event) => { if (event.key === 'ArrowLeft') setInspectorWidth(Math.min(range.max, displayedInspectorWidth + 10)); if (event.key === 'ArrowRight') setInspectorWidth(Math.max(range.min, displayedInspectorWidth - 10)); }} data-testid="separator-inspector"><GripVertical size={14} /></div>}
-    {inspectorOpen && <InspectorPanel onClose={() => setInspectorOpen(false)} defaultTab={current === 'home' ? 'telemetry' : 'preview'} />}
+    {inspectorOpen && <InspectorPanel onClose={closeInspector} defaultTab={current === 'home' ? 'telemetry' : 'preview'} previewMaximized={previewMaximized} onPreviewMaximizedChange={setPreviewMaximized} />}
   </div>;
 }
 
@@ -744,7 +765,7 @@ function safePreviewUrl(value?: string | null) {
   }
 }
 
-function WorkspacePreview() {
+function WorkspacePreview({ isMaximized, onToggleMaximized }: { isMaximized: boolean; onToggleMaximized: () => void }) {
   const qc = useQueryClient();
   const previewQuery = useGetWorkspacePreview({
     query: { queryKey: getGetWorkspacePreviewQueryKey(), staleTime: 0, refetchOnMount: 'always', refetchInterval: 15000 },
@@ -808,7 +829,11 @@ function WorkspacePreview() {
   return <section className="preview-workspace" aria-label="Live app previews" data-testid="workspace-live-preview">
     <div className="preview-toolbar">
       <div className="preview-view-label"><span className="preview-status-dot" /><div><strong>Live preview</strong><span>Private workspace · updates every 15 seconds</span></div></div>
-      <button className="button button-quiet button-small" onClick={() => { setRefreshKey((n) => n + 1); void previewQuery.refetch(); }} disabled={previewQuery.isFetching} data-testid="button-refresh-preview"><RefreshCw size={14} className={previewQuery.isFetching ? 'preview-spinning' : ''} />{previewQuery.isFetching ? 'Refreshing' : 'Refresh'}</button>
+      <div className="preview-toolbar-actions">
+        {iframeUrl && <a className="button button-quiet button-small preview-open" href={iframeUrl} target="_blank" rel="noopener noreferrer" data-testid="link-open-preview"><ExternalLink size={14} /> Open in New Tab</a>}
+        <button type="button" className="button button-quiet button-small" onClick={() => { setRefreshKey((n) => n + 1); void previewQuery.refetch(); }} disabled={previewQuery.isFetching} data-testid="button-refresh-preview"><RefreshCw size={14} className={previewQuery.isFetching ? 'preview-spinning' : ''} />{previewQuery.isFetching ? 'Refreshing' : 'Refresh'}</button>
+        <button type="button" className={`button button-quiet button-small preview-maximize ${isMaximized ? 'is-maximized' : ''}`} onClick={onToggleMaximized} aria-pressed={isMaximized} aria-label={isMaximized ? 'Restore split view' : 'Expand live preview'} data-testid="button-toggle-preview-maximize"><span aria-hidden="true">{isMaximized ? '❐' : '⛶'}</span>{isMaximized ? 'RESTORE' : 'FULL VIEW'}</button>
+      </div>
     </div>
     {previewQuery.isLoading ? <div className="preview-loading" aria-label="Loading previews"><div className="preview-loading-bar" /><div className="preview-loading-stage" /></div>
       : previewQuery.isError ? <div className="preview-state preview-error"><div className="preview-state-icon"><AlertCircle size={20} /></div><strong>Preview status is unavailable</strong><p>We couldn’t reach the workspace preview service.</p><button className="button button-primary button-small" onClick={() => void previewQuery.refetch()} data-testid="button-retry-preview"><RefreshCw size={14} /> Try again</button></div>
@@ -830,7 +855,6 @@ function WorkspacePreview() {
             <input aria-label="Preview address" aria-invalid={addressError} value={addressValue} onChange={(event) => { setAddressValue(event.target.value); setAddressError(false); }} spellCheck={false} data-testid="input-preview-address" />
             <button type="submit" data-testid="button-go-preview">Go</button>
           </form>
-          {iframeUrl && <a className="button button-quiet button-small preview-open" href={iframeUrl} target="_blank" rel="noopener noreferrer" data-testid="link-open-preview"><ExternalLink size={14} /> Open in New Tab</a>}
         </div>
         {addressError && <p className="preview-address-error" role="alert" data-testid="status-preview-address-error">Enter a same-origin workspace preview URL.</p>}
         <div className="preview-frame-shell" data-testid="preview-frame-shell">
@@ -963,21 +987,30 @@ function SystemTelemetry() {
   </div>;
 }
 
-function InspectorPanel({ onClose, defaultTab }: { onClose: () => void; defaultTab: 'telemetry' | 'preview' }) {
+function InspectorPanel({ onClose, defaultTab, previewMaximized, onPreviewMaximizedChange }: {
+  onClose: () => void;
+  defaultTab: 'telemetry' | 'preview';
+  previewMaximized: boolean;
+  onPreviewMaximizedChange: (maximized: boolean) => void;
+}) {
   const [tab, setTab] = useState<'telemetry' | 'preview' | 'files'>(defaultTab);
   useEffect(() => {
     const showPreview = () => setTab('preview');
     window.addEventListener('morrow:show-preview', showPreview);
     return () => window.removeEventListener('morrow:show-preview', showPreview);
   }, []);
+  const selectTab = (next: 'telemetry' | 'preview' | 'files') => {
+    setTab(next);
+    if (next !== 'preview') onPreviewMaximizedChange(false);
+  };
   return <aside className="right-inspector" aria-label="Telemetry and workspace console" data-testid="right-inspector">
     <div className="inspector-heading"><div><span className="eyebrow">// TELEMETRY &amp; ACTIVE SYSTEM RUNTIME</span><strong>Forge Console</strong></div><button className="icon-button" onClick={onClose} aria-label="Close inspector" data-testid="button-close-inspector"><X size={16} /></button></div>
     <div className="inspector-tabs" role="tablist" aria-label="Console views">
-      <button role="tab" aria-selected={tab === 'telemetry'} className={tab === 'telemetry' ? 'active' : ''} onClick={() => setTab('telemetry')} data-testid="tab-inspector-telemetry">Telemetry</button>
-      <button role="tab" aria-selected={tab === 'preview'} className={tab === 'preview' ? 'active' : ''} onClick={() => setTab('preview')} data-testid="tab-inspector-live-preview">Live Preview</button>
-      <button role="tab" aria-label="Workspace Inspector" title="Workspace Inspector" aria-selected={tab === 'files'} className={tab === 'files' ? 'active' : ''} onClick={() => setTab('files')} data-testid="tab-workspace-inspector">Workspace</button>
+      <button type="button" role="tab" aria-selected={tab === 'telemetry'} className={tab === 'telemetry' ? 'active' : ''} onClick={() => selectTab('telemetry')} data-testid="tab-inspector-telemetry">Telemetry</button>
+      <button type="button" role="tab" aria-selected={tab === 'preview'} className={tab === 'preview' ? 'active' : ''} onClick={() => selectTab('preview')} data-testid="tab-inspector-live-preview">Live Preview</button>
+      <button type="button" role="tab" aria-label="Workspace Inspector" title="Workspace Inspector" aria-selected={tab === 'files'} className={tab === 'files' ? 'active' : ''} onClick={() => selectTab('files')} data-testid="tab-workspace-inspector">Workspace</button>
     </div>
-    <div className="inspector-content">{tab === 'telemetry' ? <SystemTelemetry /> : tab === 'preview' ? <WorkspacePreview /> : <WorkspaceInspector />}</div>
+    <div className="inspector-content">{tab === 'telemetry' ? <SystemTelemetry /> : tab === 'preview' ? <WorkspacePreview isMaximized={previewMaximized} onToggleMaximized={() => onPreviewMaximizedChange(!previewMaximized)} /> : <WorkspaceInspector />}</div>
   </aside>;
 }
 
