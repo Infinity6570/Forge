@@ -33,7 +33,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from openai import APIStatusError, AsyncOpenAI
 from llm_protocol import TextCallback, assistant_turn, collect_completion, prepare_history
-from conversation_threads import ThreadStore, thread_router
+from conversation_threads import ThreadStore, thread_routers
 from pydantic import BaseModel, Field
 from websockets.asyncio.client import connect as websocket_connect
 from websockets.exceptions import ConnectionClosed
@@ -1778,7 +1778,8 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title="Universal Meta-Agent Assistant", version="1.0.0", lifespan=lifespan)
-app.include_router(thread_router(THREADS, task_dict, redact_provider_keys))
+for conversation_router in thread_routers(THREADS, task_dict, redact_provider_keys):
+    app.include_router(conversation_router)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],

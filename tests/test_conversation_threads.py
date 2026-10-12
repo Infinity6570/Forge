@@ -132,6 +132,38 @@ class ConversationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((await self.client.get("/api/assistant/threads")).json(), [])
         self.assertEqual((await self.client.get("/api/assistant/threads/" + thread["id"])).status_code, 404)
 
+    async def test_short_session_routes_preserve_history_and_delete_only_selected_chat(self):
+        created = await self.client.post("/api/threads")
+        self.assertEqual(created.status_code, 201, created.text)
+        first_id = created.json()["id"]
+        timestamp = "2020-01-01T00:00:00Z"
+        with main.THREADS.transaction() as connection:
+            main.THREADS.append_user(connection, first_id, "saved-session-task", "Remember this chat", timestamp)
+            main.THREADS.save(connection, first_id, "saved-session-task", [
+                {"role": "user", "content": "Remember this chat"},
+                {"role": "assistant", "content": "This chat remains saved."},
+            ], [], timestamp)
+
+        other = await self.client.post("/api/assistant/threads", json={"title": "Other session"})
+        self.assertEqual(other.status_code, 201)
+        sessions = await self.client.get("/api/threads")
+        self.assertEqual(sessions.status_code, 200)
+        self.assertEqual({item["id"] for item in sessions.json()}, {first_id, other.json()["id"]})
+        self.assertEqual([item["id"] for item in sessions.json()], [other.json()["id"], first_id])
+
+        history = await self.client.get(f"/api/threads/{first_id}/messages")
+        self.assertEqual(history.status_code, 200)
+        self.assertEqual([message["content"] for message in history.json()],
+                         ["Remember this chat", "This chat remains saved."])
+
+        removed = await self.client.delete(f"/api/threads/{other.json()['id']}")
+        self.assertEqual(removed.status_code, 204)
+        remaining = await self.client.get("/api/threads")
+        self.assertEqual([item["id"] for item in remaining.json()], [first_id])
+        retained = await self.client.get(f"/api/threads/{first_id}/messages")
+        self.assertEqual([message["content"] for message in retained.json()],
+                         ["Remember this chat", "This chat remains saved."])
+
     async def test_missing_thread_and_invalid_provider_do_not_create_orphan_messages(self):
         missing = await self.client.post("/api/assistant/tasks", json={"objective": "Hello", "threadId": "missing"})
         self.assertEqual(missing.status_code, 404)

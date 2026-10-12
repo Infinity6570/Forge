@@ -48,7 +48,7 @@ export function ChatSidebar({ onPicked }: { onPicked?: () => void }) {
   const ordered = [...threads].sort((a, b) => Number(b.pinned) - Number(a.pinned) || (Date.parse(b.updatedAt) || 0) - (Date.parse(a.updatedAt) || 0));
   return <section className="chat-sidebar" aria-label="Chats">
     <button type="button" className="new-chat-button" onClick={() => { newChat(); onPicked?.(); }} disabled={creating} data-testid="button-new-chat"><Plus size={14} />New Task / Chat</button>
-    <div className="sidebar-section-title">RECENT CHATS / TASKS</div>
+    <div className="sidebar-section-title chat-sidebar-title" role="heading" aria-level={2}>RECENT SESSIONS</div>
     {actionError && <p className="chat-error" role="alert" data-testid="text-chat-error">{actionError}</p>}
     {loading ? <div className="chat-skeleton" aria-busy="true"><i /><i /><i /></div>
       : error && !threads.length ? <p className="chat-error" role="alert">Chats could not load. <button type="button" onClick={retry} data-testid="button-retry-chats">Retry</button></p>

@@ -182,6 +182,79 @@ export const DeleteConversationThreadResponse = zod.void()
 
 
 /**
+ * @summary List saved chat sessions by most recent activity
+ */
+export const ListThreadSessionsResponseItem = zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "pinned": zod.boolean(),
+  "activeTaskId": zod.string().nullable(),
+  "messageCount": zod.number().int(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+export const ListThreadSessionsResponse = zod.array(ListThreadSessionsResponseItem)
+
+
+/**
+ * @summary Create a new empty chat session
+ */
+export const createThreadSessionBodyTitleDefault = `New Chat`;
+export const createThreadSessionBodyTitleMax = 100;
+
+
+
+export const CreateThreadSessionBody = zod.object({
+  "title": zod.string().min(1).max(createThreadSessionBodyTitleMax).default(createThreadSessionBodyTitleDefault)
+})
+
+export const CreateThreadSessionResponse = zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "pinned": zod.boolean(),
+  "activeTaskId": zod.string().nullable(),
+  "messageCount": zod.number().int(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Load chronological messages from a chat session
+ */
+export const GetThreadSessionMessagesParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const GetThreadSessionMessagesResponseItem = zod.object({
+  "id": zod.string(),
+  "threadId": zod.string(),
+  "taskId": zod.string(),
+  "role": zod.enum(['user', 'assistant', 'tool']),
+  "content": zod.string(),
+  "thoughtSteps": zod.array(zod.object({
+  "id": zod.string(),
+  "kind": zod.enum(['plan', 'agent', 'tool', 'result', 'error', 'info', 'warning', 'success']),
+  "message": zod.string(),
+  "createdAt": zod.coerce.date()
+})),
+  "isToolCall": zod.boolean(),
+  "createdAt": zod.coerce.date()
+})
+export const GetThreadSessionMessagesResponse = zod.array(GetThreadSessionMessagesResponseItem)
+
+
+/**
+ * @summary Delete one chat session while retaining Task Activity
+ */
+export const DeleteThreadSessionParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const DeleteThreadSessionResponse = zod.void()
+
+
+/**
  * @summary List recent assistant tasks
  */
 export const ListAssistantTasksResponseItem = zod.object({

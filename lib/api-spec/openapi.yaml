@@ -89,6 +89,53 @@ paths:
       responses:
         "204": { description: Chat deleted; Task Activity records retained }
         "409": { description: Chat has an active task and cannot be deleted }
+  /threads:
+    get:
+      operationId: listThreadSessions
+      summary: List saved chat sessions by most recent activity
+      responses:
+        "200":
+          description: Saved chat sessions, newest first
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/ConversationThread" } }
+    post:
+      operationId: createThreadSession
+      summary: Create a new empty chat session
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ThreadInput" }
+      responses:
+        "201":
+          description: New empty chat session
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ConversationThread" }
+  /threads/{id}/messages:
+    get:
+      operationId: getThreadSessionMessages
+      summary: Load chronological messages from a chat session
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Full chronological message history
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/ConversationMessage" } }
+        "404": { description: Chat session not found }
+  /threads/{id}:
+    delete:
+      operationId: deleteThreadSession
+      summary: Delete one chat session while retaining Task Activity
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "204": { description: Chat session deleted; Task Activity records retained }
+        "404": { description: Chat session not found }
+        "409": { description: Chat has an active task and cannot be deleted }
   /assistant/tasks:
     get:
       operationId: listAssistantTasks

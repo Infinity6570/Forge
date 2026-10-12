@@ -216,8 +216,19 @@ class ThreadUpdate(BaseModel):
     pinned: bool | None = None
 
 
-def thread_router(store: ThreadStore, serialize_task, redact=lambda value: value) -> APIRouter:
+def thread_routers(store: ThreadStore, serialize_task, redact=lambda value: value) -> tuple[APIRouter, APIRouter]:
     router = APIRouter(prefix="/api/assistant/threads")
+    sessions = APIRouter(prefix="/api/threads")
+
+    def read_messages(connection, thread_id: str) -> list[dict[str, Any]]:
+        return [
+            {"id": row["id"], "threadId": row["thread_id"], "taskId": row["task_id"], "role": row["role"],
+             "content": redact(row["content"]), "thoughtSteps": json.loads(row["thought_steps"]),
+             "isToolCall": bool(json.loads(row["protocol_json"]).get("tool_calls")),
+             "createdAt": row["created_at"]}
+            for row in connection.execute(
+                "SELECT * FROM conversation_messages WHERE thread_id=? ORDER BY ordering", (thread_id,))
+        ]
 
     @router.get("")
     async def list_threads():
@@ -237,15 +248,26 @@ def thread_router(store: ThreadStore, serialize_task, redact=lambda value: value
     async def get_thread(thread_id: str):
         with store.transaction() as connection:
             result = store.describe(connection, store.require(connection, thread_id))
-            result["messages"] = [
-                {"id": row["id"], "threadId": row["thread_id"], "taskId": row["task_id"], "role": row["role"],
-                 "content": redact(row["content"]), "thoughtSteps": json.loads(row["thought_steps"]),
-                 "isToolCall": bool(json.loads(row["protocol_json"]).get("tool_calls")),
-                 "createdAt": row["created_at"]}
-                for row in connection.execute("SELECT * FROM conversation_messages WHERE thread_id=? ORDER BY ordering", (thread_id,))]
+            result["messages"] = read_messages(connection, thread_id)
             result["tasks"] = [serialize_task(row) for row in connection.execute(
                 "SELECT * FROM tasks WHERE thread_id=? ORDER BY created_at,id", (thread_id,))]
             return result
+
+    @sessions.get("")
+    async def list_sessions():
+        with store.transaction() as connection:
+            return [store.describe(connection, row) for row in connection.execute(
+                "SELECT * FROM conversation_threads ORDER BY updated_at DESC,id")]
+
+    @sessions.post("", status_code=201)
+    async def create_session(body: ThreadInput | None = None):
+        return await create_thread(body or ThreadInput())
+
+    @sessions.get("/{thread_id}/messages")
+    async def get_session_messages(thread_id: str):
+        with store.transaction() as connection:
+            store.require(connection, thread_id)
+            return read_messages(connection, thread_id)
 
     @router.patch("/{thread_id}")
     async def update_thread(thread_id: str, body: ThreadUpdate):
@@ -272,4 +294,8 @@ def thread_router(store: ThreadStore, serialize_task, redact=lambda value: value
             connection.execute("DELETE FROM conversation_threads WHERE id=?", (thread_id,))
         return Response(status_code=204)
 
-    return router
+    @sessions.delete("/{thread_id}", status_code=204)
+    async def delete_session(thread_id: str):
+        return await delete_thread(thread_id)
+
+    return router, sessions

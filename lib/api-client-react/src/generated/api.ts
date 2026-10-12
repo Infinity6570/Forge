@@ -26,6 +26,7 @@ import type {
   AssistantSettingsInput,
   AssistantTask,
   AssistantTimer,
+  ConversationMessage,
   ConversationThread,
   ConversationThreadDetail,
   DashboardSummary,
@@ -602,6 +603,322 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
         TContext
       > => {
       return useMutation(getDeleteConversationThreadMutationOptions(options));
+    }
+
+export const getListThreadSessionsUrl = () => {
+
+
+
+
+  return `/api/threads`
+}
+
+/**
+ * @summary List saved chat sessions by most recent activity
+ */
+export const listThreadSessions = async ( options?: Parameters<typeof customFetch>[1]): Promise<ConversationThread[]> => {
+
+  return customFetch<ConversationThread[]>(getListThreadSessionsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListThreadSessionsQueryKey = () => {
+    return [
+    `/api/threads`
+    ] as const;
+    }
+
+
+export const getListThreadSessionsQueryOptions = <TData = Awaited<ReturnType<typeof listThreadSessions>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listThreadSessions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListThreadSessionsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listThreadSessions>>> = ({ signal }) => listThreadSessions({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listThreadSessions>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListThreadSessionsQueryResult = NonNullable<Awaited<ReturnType<typeof listThreadSessions>>>
+export type ListThreadSessionsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List saved chat sessions by most recent activity
+ */
+
+export function useListThreadSessions<TData = Awaited<ReturnType<typeof listThreadSessions>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listThreadSessions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListThreadSessionsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreateThreadSessionUrl = () => {
+
+
+
+
+  return `/api/threads`
+}
+
+/**
+ * @summary Create a new empty chat session
+ */
+export const createThreadSession = async (threadInput?: ThreadInput, options?: Parameters<typeof customFetch>[1]): Promise<ConversationThread> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<ConversationThread>(getCreateThreadSessionUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(threadInput)
+  }
+);}
+
+
+
+
+
+export const getCreateThreadSessionMutationKey = () => ['createThreadSession'] as const;
+
+export const getCreateThreadSessionMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createThreadSession>>, TError,CreateThreadSessionMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createThreadSession>>, TError,CreateThreadSessionMutationVariables, TContext> => {
+
+const mutationKey = getCreateThreadSessionMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createThreadSession>>, CreateThreadSessionMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  createThreadSession(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateThreadSessionMutationResult = NonNullable<Awaited<ReturnType<typeof createThreadSession>>>
+    export type CreateThreadSessionMutationBody = BodyType<ThreadInput> | undefined
+    export type CreateThreadSessionMutationError = ErrorType<unknown>
+    export type CreateThreadSessionMutationVariables = {data?: BodyType<ThreadInput>}
+
+    /**
+ * @summary Create a new empty chat session
+ */
+export const useCreateThreadSession = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createThreadSession>>, TError,CreateThreadSessionMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createThreadSession>>,
+        TError,
+        CreateThreadSessionMutationVariables,
+        TContext
+      > => {
+      return useMutation(getCreateThreadSessionMutationOptions(options));
+    }
+
+export const getGetThreadSessionMessagesUrl = (id: string,) => {
+
+
+
+
+  return `/api/threads/${id}/messages`
+}
+
+/**
+ * @summary Load chronological messages from a chat session
+ */
+export const getThreadSessionMessages = async (id: string, options?: Parameters<typeof customFetch>[1]): Promise<ConversationMessage[]> => {
+
+  return customFetch<ConversationMessage[]>(getGetThreadSessionMessagesUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetThreadSessionMessagesQueryKey = (id: string,) => {
+    return [
+    `/api/threads/${id}/messages`
+    ] as const;
+    }
+
+
+export const getGetThreadSessionMessagesQueryOptions = <TData = Awaited<ReturnType<typeof getThreadSessionMessages>>, TError = ErrorType<void>>(id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getThreadSessionMessages>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetThreadSessionMessagesQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getThreadSessionMessages>>> = ({ signal }) => getThreadSessionMessages(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getThreadSessionMessages>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetThreadSessionMessagesQueryResult = NonNullable<Awaited<ReturnType<typeof getThreadSessionMessages>>>
+export type GetThreadSessionMessagesQueryError = ErrorType<void>
+
+
+/**
+ * @summary Load chronological messages from a chat session
+ */
+
+export function useGetThreadSessionMessages<TData = Awaited<ReturnType<typeof getThreadSessionMessages>>, TError = ErrorType<void>>(
+ id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getThreadSessionMessages>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetThreadSessionMessagesQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getDeleteThreadSessionUrl = (id: string,) => {
+
+
+
+
+  return `/api/threads/${id}`
+}
+
+/**
+ * @summary Delete one chat session while retaining Task Activity
+ */
+export const deleteThreadSession = async (id: string, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+  return customFetch<void>(getDeleteThreadSessionUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getDeleteThreadSessionMutationKey = () => ['deleteThreadSession'] as const;
+
+export const getDeleteThreadSessionMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteThreadSession>>, TError,DeleteThreadSessionMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteThreadSession>>, TError,DeleteThreadSessionMutationVariables, TContext> => {
+
+const mutationKey = getDeleteThreadSessionMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteThreadSession>>, DeleteThreadSessionMutationVariables> = (props) => {
+          const {id} = props ?? {};
+
+          return  deleteThreadSession(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteThreadSessionMutationResult = NonNullable<Awaited<ReturnType<typeof deleteThreadSession>>>
+
+    export type DeleteThreadSessionMutationError = ErrorType<void>
+    export type DeleteThreadSessionMutationVariables = {id: string}
+
+    /**
+ * @summary Delete one chat session while retaining Task Activity
+ */
+export const useDeleteThreadSession = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteThreadSession>>, TError,DeleteThreadSessionMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteThreadSession>>,
+        TError,
+        DeleteThreadSessionMutationVariables,
+        TContext
+      > => {
+      return useMutation(getDeleteThreadSessionMutationOptions(options));
     }
 
 export const getListAssistantTasksUrl = () => {

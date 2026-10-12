@@ -1,7 +1,27 @@
-html[data-theme] .chat-sidebar { display:flex; flex-direction:column; gap:4px; min-height:0; margin:8px 0; }
-html[data-theme] .new-chat-button { display:flex; align-items:center; justify-content:center; gap:6px; height:32px; border:1px solid var(--accent); border-radius:4px; background:color-mix(in srgb,var(--accent) 12%,transparent); color:var(--accent); font:500 13px var(--font-mono); cursor:pointer; }
+html[data-theme] .chat-sidebar {
+  display:flex; flex:0 0 auto; flex-direction:column; gap:0;
+  width:100%; min-width:0; min-height:0; align-self:stretch;
+  margin:8px 0 12px; position:relative; isolation:isolate;
+}
+html[data-theme] .new-chat-button {
+  display:flex; flex:none; width:100%; align-items:center; justify-content:center;
+  gap:6px; height:32px; margin:14px 0 12px; padding:0 8px;
+  border:1px solid var(--accent); border-radius:4px;
+  background:color-mix(in srgb,var(--accent) 12%,transparent);
+  color:var(--accent); font:500 13px var(--font-mono); cursor:pointer;
+}
 html[data-theme] .new-chat-button:disabled { opacity:.6; cursor:wait; }
-html[data-theme] .chat-list { list-style:none; margin:0; padding:0; max-height:32vh; overflow-y:auto; scrollbar-width:thin; scrollbar-color:var(--border) transparent; }
+html[data-theme] .chat-sidebar-title {
+  display:block; position:static!important; inset:auto!important;
+  flex:none; min-height:13px; margin:0 11px 12px!important; padding:0!important;
+  color:var(--text-muted); font:600 11px/1.2 'Orbitron',sans-serif!important;
+  letter-spacing:.08em!important; text-transform:uppercase;
+}
+html[data-theme] .chat-list {
+  flex:0 1 auto; min-height:0; width:100%; list-style:none;
+  margin:0; padding:0; max-height:32vh; overflow-y:auto;
+  scrollbar-width:thin; scrollbar-color:var(--border) transparent;
+}
 html[data-theme] .chat-row { position:relative; display:flex; align-items:center; border-left:2px solid transparent; }
 html[data-theme] .chat-row.active { border-left-color:var(--accent); background:color-mix(in srgb,var(--accent) 12%,transparent); }
 html[data-theme] .chat-pick { display:flex; flex:1; min-width:0; align-items:center; gap:7px; padding:5px 6px; border:0; background:none; color:var(--text-primary); font:13px var(--font-mono); text-align:left; cursor:pointer; }
