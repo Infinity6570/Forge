@@ -70,6 +70,11 @@ html[data-theme] :is(.exec-text,.exec-user-text) { min-width:0; }
   html[data-theme] .app-frame.inspector-open .inspector-resize { display:none!important; }
 }
 @media (max-width:900px) {
+  /* Keep the console above the chat on phones; theme chrome otherwise resets it to relative positioning. */
+  html[data-theme] .app-frame.inspector-open .right-inspector {
+    position:fixed; z-index:45; top:58px; right:8px; bottom:8px; height:auto;
+    width:min(450px,calc(100vw - 16px)); box-shadow:0 15px 55px #0009;
+  }
   html[data-theme] .activity-panel { min-height:160px; }
   html[data-theme] .dashboard-page.command-center { min-height:0; }
   html[data-theme] .sidebar { width:min(86vw,260px)!important; }
