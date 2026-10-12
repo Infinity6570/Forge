@@ -26,6 +26,11 @@ provider API key you configure. It does not use Replit AI Integrations.
     latest prebuilt frontend from `artifacts/meta-assistant/dist/public`,
     falling back to `static/app` when that build is absent. Include the latest
     build directory in your local export so Python serves the updated UI.
+6. For a native desktop window, keep the Python server running and launch
+   `pnpm run desktop` (or `npm run desktop` after installing dependencies with
+   pnpm). Electron opens the local app at `http://localhost:8000`; set
+   `FORGE_DESKTOP_URL`, `VITE_DEV_SERVER_URL`, or `VITE_PORT` to use another
+   local server address.
 
 ## Local data and API keys
 
