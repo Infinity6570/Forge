@@ -53,10 +53,12 @@ import { NewChatAction, RecentSessions } from '@/components/chat-sidebar';
 import { ChatModelPicker } from '@/components/chat-model-picker';
 import { ActivityStream } from '@/components/activity-stream';
 import { ErrorBoundary } from '@/components/error-boundary';
+import { RecentFileRows, RecentNoteRows, RecentTaskLogRows } from '@/components/telemetry-records';
 import { Toaster } from '@/components/ui/toaster';
 import { toast } from '@/hooks/use-toast';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import NotFound from '@/pages/not-found';
+import { getRecentFiles, getRecentNotes, getRecentTaskLogs, timeAgo } from '@/lib/telemetry';
 
 const queryClient = new QueryClient();
 type Page = 'home' | 'tasks' | 'workspace' | 'alarms' | 'settings';
@@ -128,30 +130,11 @@ function CyberFxToggle() {
   return <button type="button" className={`cyber-fx-toggle ${enabled ? 'is-on' : ''}`} role="switch" aria-checked={enabled} aria-label={`Cyber FX: ${enabled ? 'ON' : 'OFF'}`} onClick={toggle} data-testid="toggle-cyber-fx"><Sparkles size={13} /><span>Cyber FX: {enabled ? 'ON' : 'OFF'}</span><i aria-hidden="true" /></button>;
 }
 
-function timeAgo(value?: string) {
-  if (!value) return 'Just now';
-  const timestamp = new Date(value).getTime();
-  if (!Number.isFinite(timestamp)) return 'Just now';
-  const minutes = Math.max(0, Math.floor((Date.now() - timestamp) / 60000));
-  if (minutes < 1) return 'Just now';
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  return `${Math.floor(hours / 24)}d ago`;
-}
-
 function formatDate(value?: string) {
   if (!value) return '—';
   const date = new Date(value);
   if (!Number.isFinite(date.getTime())) return '—';
   return new Intl.DateTimeFormat('en', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }).format(date);
-}
-
-function formatClock(value?: string) {
-  if (!value) return 'TIME N/A';
-  const date = new Date(value);
-  if (!Number.isFinite(date.getTime())) return 'TIME N/A';
-  return new Intl.DateTimeFormat('en', { hour: '2-digit', minute: '2-digit', second: '2-digit' }).format(date);
 }
 
 function formatSize(bytes: number) {
@@ -805,14 +788,9 @@ function SystemTelemetry() {
   const messageChars = messages.reduce((total, message) => total + message.content.length, 0);
   const estimatedTokens = Math.ceil(messageChars / 4);
   const meterWidth = Math.min(100, Math.max(0, (estimatedTokens / 16000) * 100));
-  const timestampValue = (value?: string | null) => {
-    const parsed = Date.parse(value ?? '');
-    return Number.isFinite(parsed) ? parsed : 0;
-  };
-  const recentFiles = [...(files.data ?? [])].sort((a, b) => timestampValue(b.createdAt) - timestampValue(a.createdAt)).slice(0, 4);
-  const recentNotes = [...(notes.data ?? [])].sort((a, b) => timestampValue(b.updatedAt ?? b.createdAt) - timestampValue(a.updatedAt ?? a.createdAt)).slice(0, 4);
-  const recentLogs = (tasks.data ?? []).flatMap((task) => task.logs.map((log) => ({ ...log, objective: task.objective, taskId: task.id })))
-    .sort((a, b) => timestampValue(b.createdAt) - timestampValue(a.createdAt)).slice(0, 10);
+  const recentFiles = getRecentFiles(files.data);
+  const recentNotes = getRecentNotes(notes.data);
+  const recentLogs = getRecentTaskLogs(tasks.data);
   const searchEngines = settings.data ? [
     { id: 'tavily', label: 'TAVILY', configured: settings.data.hasTavilyKey, selected: settings.data.searchMode === 'api' && settings.data.searchApiProvider === 'tavily' },
     { id: 'serper', label: 'SERPER', configured: settings.data.hasSerperKey, selected: settings.data.searchMode === 'api' && settings.data.searchApiProvider === 'serper' },
@@ -855,16 +833,16 @@ function SystemTelemetry() {
     <section className="telemetry-section workspace-recents">
       <div className="telemetry-section-head"><span className="telemetry-section-mark"><HardDrive size={14} /></span><div><span className="telemetry-kicker">LOCAL WORKSPACE</span><h3>Memory &amp; recent files</h3></div></div>
       <div className="telemetry-resource-group"><div className="telemetry-subhead"><FileText size={13} /><span>FILES</span><span className="telemetry-count">{files.data?.length ?? (files.isLoading ? '…' : '—')}</span></div>
-        {files.isLoading ? <div className="telemetry-skeleton"><i /><i /></div> : files.isError ? <div className="telemetry-error"><span>Files unavailable.</span><button type="button" onClick={() => files.refetch()}>Retry</button></div> : recentFiles.length ? recentFiles.map((file) => <div className="telemetry-resource" key={file.id} data-testid={`telemetry-file-${file.id}`}><FileText size={13} /><span title={file.name}>{file.name}</span><time>{timeAgo(file.createdAt)}</time></div>) : <p className="telemetry-empty">No workspace files yet.</p>}
+        {files.isLoading ? <div className="telemetry-skeleton"><i /><i /></div> : files.isError ? <div className="telemetry-error"><span>Files unavailable.</span><button type="button" onClick={() => files.refetch()}>Retry</button></div> : recentFiles.length ? <RecentFileRows files={recentFiles} /> : <p className="telemetry-empty">No workspace files yet.</p>}
       </div>
       <div className="telemetry-resource-group"><div className="telemetry-subhead"><BookOpen size={13} /><span>NOTES</span><span className="telemetry-count">{notes.data?.length ?? (notes.isLoading ? '…' : '—')}</span></div>
-        {notes.isLoading ? <div className="telemetry-skeleton"><i /><i /></div> : notes.isError ? <div className="telemetry-error"><span>Notes unavailable.</span><button type="button" onClick={() => notes.refetch()}>Retry</button></div> : recentNotes.length ? recentNotes.map((note) => <div className="telemetry-resource" key={note.id} data-testid={`telemetry-note-${note.id}`}><BookOpen size={13} /><span title={note.title}>{note.title}</span><time>{timeAgo(note.updatedAt)}</time></div>) : <p className="telemetry-empty">No workspace notes yet.</p>}
+        {notes.isLoading ? <div className="telemetry-skeleton"><i /><i /></div> : notes.isError ? <div className="telemetry-error"><span>Notes unavailable.</span><button type="button" onClick={() => notes.refetch()}>Retry</button></div> : recentNotes.length ? <RecentNoteRows notes={recentNotes} /> : <p className="telemetry-empty">No workspace notes yet.</p>}
       </div>
     </section>
 
     <section className="telemetry-section execution-log">
       <div className="telemetry-section-head"><span className="telemetry-section-mark"><Clock3 size={14} /></span><div><span className="telemetry-kicker">TASK LOGS</span><h3>Recent execution events</h3></div></div>
-      {tasks.isLoading ? <div className="telemetry-skeleton"><i /><i /><i /></div> : tasks.isError ? <div className="telemetry-error"><span>Task logs unavailable.</span><button type="button" onClick={() => tasks.refetch()}>Retry</button></div> : recentLogs.length ? <div className="telemetry-log-list">{recentLogs.map((log) => <article className="telemetry-log-entry" key={`${log.taskId}-${log.id}`} data-testid={`telemetry-log-${log.id}`}><i className={`telemetry-log-dot ${log.kind}`} /><div><div className="telemetry-log-meta"><strong>{log.kind}</strong><time dateTime={log.createdAt}>{formatClock(log.createdAt)}</time></div><span className="telemetry-log-task">{log.objective}</span><p>{log.message}</p></div></article>)}</div> : <p className="telemetry-empty">No task log entries recorded yet.</p>}
+      {tasks.isLoading ? <div className="telemetry-skeleton"><i /><i /><i /></div> : tasks.isError ? <div className="telemetry-error"><span>Task logs unavailable.</span><button type="button" onClick={() => tasks.refetch()}>Retry</button></div> : recentLogs.length ? <div className="telemetry-log-list"><RecentTaskLogRows logs={recentLogs} /></div> : <p className="telemetry-empty">No task log entries recorded yet.</p>}
     </section>
     <div className="telemetry-safety-note"><span className="telemetry-safety-indicator" /><span>Local-first operations · Python execution and preview behavior unchanged</span></div>
   </div>;

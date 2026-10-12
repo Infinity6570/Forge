@@ -3,3 +3,4 @@
 - [Provider turn history](provider-turn-history.md) — replay opaque model metadata intact; keep paired tool results ordered and repair only missing Gemini signatures.
 - [Conversation UI boundary](conversation-ui-boundary.md) — Preferences stays inline; task submission never auto-opens diagnostics, while explicit model-picker popovers remain allowed.
 - [Conversation isolation](conversation-isolation.md) — chat histories stay isolated; serialize runs per chat, retain Task Activity on deletion, and never auto-replay interrupted actions.
+- [Standalone TSX tests](standalone-tsx-tests.md) — Node `tsx --test` may use classic JSX; test-rendered TSX components need a React namespace import.
