@@ -43,8 +43,8 @@ import {
 import type { AssistantFile, AssistantNote, AssistantSettings, AssistantSettingsInput, AssistantTask, AssistantTimer, WorkspacePreviewApp } from '@workspace/api-client-react';
 import {
   Activity, AlertCircle, ArrowDownToLine, ArrowRight, Bell, BookOpen, Check, CheckCircle2,
-  ChevronDown, ChevronRight, CircleHelp, Clock3, Copy, ExternalLink, FileText, FolderOpen, Gauge, HardDrive, Layers3, Moon, Sun,
-  KeyRound, LoaderCircle, LockKeyhole, Menu, MoreHorizontal, Plus, RefreshCw, Search,
+  ChevronDown, ChevronRight, CircleHelp, Clock3, Copy, ExternalLink, FileText, FolderOpen, Gauge, Layers3, Moon, Sun,
+  KeyRound, LoaderCircle, LockKeyhole, Menu, Plus, RefreshCw, Search,
   Send, Settings2, ShieldCheck, Sparkles, StopCircle, Trash2, Upload, X, Zap, PanelRight, GripVertical,
 } from 'lucide-react';
 import { ConversationProvider, useConversations } from '@/components/conversation-provider';
@@ -149,6 +149,14 @@ function formatSize(bytes: number) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+function modelDisplayName(provider?: string | null, model?: string | null) {
+  if (provider === 'deepseek' && model === 'deepseek-reasoner') return 'DeepSeek Reasoner';
+  if (provider === 'gemini' && model === 'gemini-2.5-pro') return 'Gemini 2.5 Pro';
+  if (provider === 'openrouter' && model === 'anthropic/claude-3.7-sonnet') return 'Claude 3.7 Sonnet';
+  if (provider === 'openai' && model === 'gpt-4.1') return 'GPT-4.1';
+  return model || 'recommended model';
+}
+
 function statusTone(status: string) {
   if (status === 'running' || status === 'processing' || status === 'queued' || status === 'awaiting_confirmation' || status === 'awaiting_approval' || status === 'active') return 'live';
   if (status === 'completed' || status === 'fired') return 'done';
@@ -159,14 +167,6 @@ function statusTone(status: string) {
 function StatusPill({ status }: { status: string }) {
   const label = status === 'awaiting_confirmation' ? 'awaiting confirmation' : status === 'awaiting_approval' ? 'approval needed' : status;
   return <span className={`status-pill ${statusTone(status)}`} data-testid={`status-${status}`}>{label}</span>;
-}
-
-function modelDisplayName(provider?: string | null, model?: string | null) {
-  if (provider === 'deepseek' && model === 'deepseek-reasoner') return 'DeepSeek Reasoner';
-  if (provider === 'gemini' && model === 'gemini-2.5-pro') return 'Gemini 2.5 Pro';
-  if (provider === 'openrouter' && model === 'anthropic/claude-3.7-sonnet') return 'Claude 3.7 Sonnet';
-  if (provider === 'openai' && model === 'gpt-4.1') return 'GPT-4.1';
-  return model || 'recommended model';
 }
 
 function Skeleton({ rows = 3 }: { rows?: number }) {
@@ -247,7 +247,7 @@ function AppShell({ children, page }: { children: ReactNode; page: Page }) {
   const renderNavItem = ({ href, label, icon: Icon }: typeof navItems[number]) => <Link key={href} href={href} className={`nav-link ${current === (href === '/' ? 'home' : href.slice(1)) ? 'active' : ''}`} onClick={() => setMobileOpen(false)} aria-label={label} title={sidebarCollapsed ? label : undefined} data-testid={`link-nav-${href === '/' ? 'home' : href.slice(1)}`}><Icon size={17} /><span>{label}</span>{href === '/tasks' && <span className="nav-trailing"><span className="nav-dot" /></span>}</Link>;
   return <div className={`app-frame shell-noise ${inspectorOpen ? 'inspector-open' : 'inspector-closed'} ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`} style={{ '--inspector-width': `${displayedInspectorWidth}px`, ...(sidebarCollapsed && viewportWidth > 900 ? { '--sidebar-w': '64px' } : {}) } as CSSProperties}>
     <aside className={`sidebar ${sidebarCollapsed ? 'sidebar-collapsed' : ''} ${mobileOpen ? 'mobile-open' : ''}`}>
-      <div className="brand"><div className="brand-mark" aria-hidden="true"><svg viewBox="0 0 32 32" fill="none"><path d="M5 9.5 16 4l11 5.5-4.7 2.35L16 9l-6.3 2.85L5 9.5Z" /><path d="m5 9.5 2.8 12L16 27l8.2-5.5L27 9.5" /><path d="m9.7 11.85 1.55 7.1L16 22l4.75-3.05 1.55-7.1" /><path d="m11.25 18.95 4.75-2.6 4.75 2.6M16 9v7.35" /></svg></div><div className="brand-copy"><div className="brand-name">Forge</div><div className="brand-caption">LOCAL OPERATIONS</div></div><span className="runtime-ready-dot" aria-label="Local runtime ready" title="Local runtime ready" /><button type="button" className="sidebar-collapse-toggle icon-button" onClick={() => setSidebarCollapsed((collapsed) => !collapsed)} aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'} aria-expanded={!sidebarCollapsed} title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'} data-testid="button-toggle-sidebar"><ChevronRight size={16} className={sidebarCollapsed ? '' : 'is-expanded'} /></button><button className="sidebar-close icon-button" onClick={() => setMobileOpen(false)} aria-label="Close navigation"><X size={17} /></button></div>
+      <div className="brand"><div className="brand-mark" aria-hidden="true"><svg viewBox="0 0 32 32" fill="none"><path d="M5 9.5 16 4l11 5.5-4.7 2.35L16 9l-6.3 2.85L5 9.5Z" /><path d="m5 9.5 2.8 12L16 27l8.2-5.5L27 9.5" /><path d="m9.7 11.85 1.55 7.1L16 22l4.75-3.05 1.55-7.1" /><path d="m11.25 18.95 4.75-2.6 4.75 2.6M16 9v7.35" /></svg></div><div className="brand-copy"><div className="brand-name">Forge</div><div className="brand-caption">LOCAL OPERATIONS</div></div><span className="runtime-ready-dot" aria-label="Local runtime ready" title="Local runtime ready" /><button className="sidebar-close icon-button" onClick={() => setMobileOpen(false)} aria-label="Close navigation"><X size={17} /></button></div>
       <NewChatAction collapsed={sidebarCollapsed} onPicked={() => setMobileOpen(false)} />
       <div className="workspace-label">YOUR WORKSPACE</div>
       <nav className="side-nav" aria-label="Main navigation">
@@ -256,36 +256,15 @@ function AppShell({ children, page }: { children: ReactNode; page: Page }) {
         {navItems.slice(1).map(renderNavItem)}
       </nav>
       <div className="sidebar-spacer" />
-      <div className="side-divider" />
-      <div className="sidebar-section-title">QUICK STATUS</div>
-      <QuickSidebarStatus />
       <div className="agent-card"><div className="agent-orbit"><span /><i /></div><div className="agent-card-copy"><strong>Your agent is ready</strong><span>Waiting for direction</span></div><span className="ready-indicator" /></div>
-      <div className="sidebar-bottom"><div className="user-avatar">F</div><div className="user-meta"><strong>My workspace</strong><span>Personal account</span></div><button className="icon-button user-menu" aria-label="Account options" onClick={() => window.dispatchEvent(new Event('morrow:account'))}><MoreHorizontal size={18} /></button></div>
     </aside>
     {mobileOpen && <button className="mobile-scrim" onClick={() => setMobileOpen(false)} aria-label="Close menu" />}
     <main className="main-area">
-      <header className={`topbar ${current === 'home' ? 'topbar-command-center' : ''}`}><button className="mobile-menu icon-button" aria-label="Open navigation" onClick={() => setMobileOpen(true)} data-testid="button-open-navigation"><Menu size={20} /></button><div className="breadcrumbs"><span>Workspace</span><span className="crumb-slash">/</span><strong>{navItems.find((n) => (n.href === '/' ? 'home' : n.href.slice(1)) === current)?.label ?? 'Overview'}</strong></div><div className="topbar-right"><span className="ops-tagline">LOCAL OPS // 6570</span><div className="system-online"><span className="online-pip" />All systems operational</div><ThemeChooser /><CyberFxToggle /><button className="inspector-toggle icon-button" aria-label={inspectorOpen ? 'Close workspace inspector' : 'Open workspace inspector'} aria-expanded={inspectorOpen} onClick={() => setInspectorOpen((open) => !open)} data-testid="button-toggle-inspector"><PanelRight size={17} /></button><button className="topbar-icon" aria-label="Help" onClick={() => window.alert('Your agent can help with documents, reminders, research, and code-related work.')} data-testid="button-help"><CircleHelp size={18} /></button><div className="topbar-avatar">F</div></div></header>
+      <header className={`topbar ${current === 'home' ? 'topbar-command-center' : ''}`}><button className="mobile-menu icon-button" aria-label="Open navigation" onClick={() => setMobileOpen(true)} data-testid="button-open-navigation"><Menu size={20} /></button><div className="breadcrumbs"><span>Workspace</span><span className="crumb-slash">/</span><strong>{navItems.find((n) => (n.href === '/' ? 'home' : n.href.slice(1)) === current)?.label ?? 'Overview'}</strong></div><div className="topbar-right"><span className="ops-tagline">LOCAL OPS // 6570</span><div className="system-online"><span className="online-pip" />All systems operational</div><ThemeChooser /><CyberFxToggle /><button type="button" className="sidebar-collapse-toggle icon-button" onClick={() => setSidebarCollapsed((collapsed) => !collapsed)} aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'} aria-expanded={!sidebarCollapsed} title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'} data-testid="button-toggle-sidebar"><ChevronRight size={16} className={sidebarCollapsed ? '' : 'is-expanded'} /></button></div></header>
       <div className={`center-pane ${page === 'home' ? 'center-pane-home' : ''}`}><div className="page-wrap">{children}</div><footer className="app-footer"><span>Made for thoughtful delegation.</span><span className="footer-build">FORGE <span>·</span> LOCAL COMMAND CENTER</span></footer></div>
     </main>
     {inspectorOpen && <div className="inspector-resize" role="separator" aria-orientation="vertical" aria-label="Resize workspace inspector" aria-valuemin={range.min} aria-valuemax={range.max} aria-valuenow={displayedInspectorWidth} tabIndex={0} onPointerDown={(event) => { event.preventDefault(); setResizingInspector(true); }} onKeyDown={(event) => { if (event.key === 'ArrowLeft') setInspectorWidth(Math.min(range.max, displayedInspectorWidth + 10)); if (event.key === 'ArrowRight') setInspectorWidth(Math.max(range.min, displayedInspectorWidth - 10)); }} data-testid="separator-inspector"><GripVertical size={14} /></div>}
     {inspectorOpen && <InspectorPanel onClose={() => setInspectorOpen(false)} />}
-  </div>;
-}
-
-function QuickSidebarStatus() {
-  const { data, isLoading, isError } = useGetAssistantDashboard();
-  const settings = useGetAssistantSettings();
-  const files = useListAssistantFiles();
-  const timers = useListAssistantTimers();
-  const activeModel = settings.isLoading ? 'Loading model…' : settings.isError ? 'Unavailable' : modelDisplayName(settings.data?.provider, settings.data?.modelId);
-  const storage = (files.data ?? []).reduce((total, file) => total + file.sizeBytes, 0);
-  const runningCount = data?.activeTasks ?? 0;
-  const systemState = isLoading ? 'Online' : isError ? 'Offline' : runningCount ? `Running · ${runningCount}` : 'Idle';
-  return <div className="quick-status">
-    <div data-testid="system-status" title={`System status: ${systemState}`}><span className="quick-status-icon"><Activity size={14} /></span><span>System status</span><strong>{systemState}</strong></div>
-    <div data-testid="active-model" title={`Active model: ${activeModel}`}><span className="quick-status-icon"><Zap size={14} /></span><span>Active model</span><strong className="model-name">{activeModel}</strong></div>
-    <div title="Active alarms"><span className="quick-status-icon amber"><Bell size={14} /></span><span>Active alarms</span><strong>{timers.isLoading ? '—' : (timers.data ?? []).filter((timer) => timer.status === 'active').length}</strong></div>
-    <div className="sidebar-storage" title={`Workspace storage: ${files.isLoading ? 'Loading' : formatSize(storage)}`}><span className="quick-status-icon"><HardDrive size={14} /></span><span>Workspace storage</span><strong>{files.isLoading ? '—' : formatSize(storage)}</strong></div>
   </div>;
 }
 
