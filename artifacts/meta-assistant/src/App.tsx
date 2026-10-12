@@ -410,6 +410,10 @@ function Dashboard() {
   const [uploadingAttachment, setUploadingAttachment] = useState(false);
   const [attachmentError, setAttachmentError] = useState('');
   const [modelMode, setModelMode] = useState('configured');
+  const [cyberFxActive, setCyberFxActive] = useState(() => {
+    const root = document.documentElement;
+    return root.dataset.theme === 'scifi' && root.dataset.cyberFx === 'on';
+  });
   const attachmentInput = useRef<HTMLInputElement>(null);
   const objectiveInput = useRef<HTMLTextAreaElement>(null);
   useEffect(() => {
@@ -423,6 +427,18 @@ function Dashboard() {
     const syncModel = () => setModelMode('configured');
     window.addEventListener('forge:model-applied', syncModel);
     return () => window.removeEventListener('forge:model-applied', syncModel);
+  }, []);
+  useEffect(() => {
+    const syncCyberFx = () => {
+      const root = document.documentElement;
+      setCyberFxActive(root.dataset.theme === 'scifi' && root.dataset.cyberFx === 'on');
+    };
+    window.addEventListener('morrow:cyber-fx', syncCyberFx);
+    window.addEventListener('morrow:theme', syncCyberFx);
+    return () => {
+      window.removeEventListener('morrow:cyber-fx', syncCyberFx);
+      window.removeEventListener('morrow:theme', syncCyberFx);
+    };
   }, []);
   const details = useGetAssistantTask(selectedTaskId ?? '', { query: { enabled: !!selectedTaskId, queryKey: getGetAssistantTaskQueryKey(selectedTaskId ?? ''), refetchInterval: (query) => {
     const task = query.state.data;
@@ -457,6 +473,7 @@ function Dashboard() {
   const referenceModel = [...tasks].reverse().find((task) => task.modelId);
   const isPending = createTask.isPending;
   const isGenerating = activeExecution || isPending;
+  const thinkingAura = cyberFxActive && isGenerating;
   const threadBusy = !!threadId && (!threadDetail.data || !!threadDetail.data.activeTaskId);
   const submit = (event: FormEvent) => {
     event.preventDefault();
@@ -504,7 +521,7 @@ function Dashboard() {
   };
   return <AppShell page="home"><div className="dashboard-page command-center enter" data-task-active={activeExecution ? 'true' : 'false'} data-testid="dashboard-command-center">
     {summary.isError && <QueryProblem retry={() => summary.refetch()} message="Your overview is temporarily unavailable." />}
-    <section className="activity-panel execution-panel" data-task-active={activeExecution ? 'true' : 'false'}><div className="activity-panel-heading">
+    <section className={`activity-panel execution-panel${thinkingAura ? ' cyber-thinking-aura' : ''}`} data-task-active={isGenerating ? 'true' : 'false'}><div className="activity-panel-heading">
       <div className="stream-heading-main">{isGenerating && <span className="status-indicator live live-label" data-testid="status-streaming" aria-live="polite"><span className="online-pip working" />STREAMING</span>}<h2 className="thread-title" title={streamTitle} data-testid="text-thread-title">{streamTitle}</h2></div>
       <div className="stream-heading-right"><div className="command-status" data-testid="status-agent-state"><span className="stream-model-badge">{settingsQuery.data ? modelDisplayName(settingsQuery.data.provider, settingsQuery.data.modelId) : 'Configured model'}</span><span className="stream-status-badge"><span className={`online-pip ${isGenerating ? 'working' : ''}`} />{summary.isLoading ? 'Connecting' : isGenerating ? 'Running' : 'Idle'}</span></div><Link href="/tasks" className="text-link" data-testid="link-all-tasks">Task activity <ArrowRight size={14} /></Link></div>
     </div>

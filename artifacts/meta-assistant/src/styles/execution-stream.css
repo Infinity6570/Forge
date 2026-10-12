@@ -104,7 +104,6 @@ html[data-theme="scifi"][data-cyber-fx="on"] .dashboard-page.command-center[data
 html[data-theme="scifi"][data-cyber-fx="off"] .app-frame *,
 html[data-theme="scifi"][data-cyber-fx="off"] .app-frame *::before,
 html[data-theme="scifi"][data-cyber-fx="off"] .app-frame *::after { animation:none!important; }
-html[data-theme="scifi"][data-cyber-fx="on"] .execution-panel[data-task-active="true"]::after { animation:none; content:none; }
 @media (prefers-reduced-motion:reduce) {
   html[data-theme] .exec-task, html[data-theme] .exec-task::before, html[data-theme] .exec-task::after, html[data-theme] .exec-dot { animation:none!important; }
   html[data-theme] .exec-stream { scroll-behavior:auto; }
