@@ -2083,7 +2083,7 @@ html[data-theme] .right-inspector {
 }
 @media (min-width:1500px) {
   html[data-theme] .app-frame.inspector-open:not(.preview-maximized) {
-    grid-template-columns:var(--sidebar-w,260px) minmax(600px,1fr) 8px minmax(500px,var(--inspector-width,45vw));
+    grid-template-columns:var(--sidebar-w,260px) minmax(600px,1fr) 8px minmax(500px,var(--inspector-width,45vw))!important;
   }
   html[data-theme] .main-area { min-width:600px; }
   html[data-theme] .right-inspector { min-width:500px;max-width:none; }

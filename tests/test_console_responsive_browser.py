@@ -150,7 +150,8 @@ class ResponsiveConsoleBrowserTests(unittest.TestCase):
                         self.assertIsNotNone(panel_box)
                         self.assertGreater(panel_box["width"], 0)
                         self.assertLessEqual(panel_box["x"] + panel_box["width"], viewport["width"])
-                        self.assertEqual(inspector.evaluate("(el) => getComputedStyle(el).position"), "fixed")
+                        expected_position = "relative" if viewport["width"] >= 1500 else "fixed"
+                        self.assertEqual(inspector.evaluate("(el) => getComputedStyle(el).position"), expected_position)
 
                         market_radar = page.get_by_test_id("section-market-radar")
                         market_radar.wait_for(state="visible")
@@ -194,7 +195,10 @@ class ResponsiveConsoleBrowserTests(unittest.TestCase):
                         chat_after = page.locator(".center-pane").bounding_box()
                         self.assertIsNotNone(chat_after)
                         self.assertAlmostEqual(chat_after["x"], chat_before["x"], delta=1)
-                        self.assertAlmostEqual(chat_after["width"], chat_before["width"], delta=1)
+                        if starts_open:
+                            self.assertGreater(chat_after["width"], chat_before["width"])
+                        else:
+                            self.assertAlmostEqual(chat_after["width"], chat_before["width"], delta=1)
                         self.assertEqual(page_errors, [])
                         context.close()
             finally:
