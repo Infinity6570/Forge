@@ -456,6 +456,7 @@ function Dashboard() {
   const streamTitle = activeExecution ? liveStreamTask?.objective ?? threadTitle : threadTitle;
   const referenceModel = [...tasks].reverse().find((task) => task.modelId);
   const isPending = createTask.isPending;
+  const isGenerating = activeExecution || isPending;
   const threadBusy = !!threadId && (!threadDetail.data || !!threadDetail.data.activeTaskId);
   const submit = (event: FormEvent) => {
     event.preventDefault();
@@ -504,8 +505,8 @@ function Dashboard() {
   return <AppShell page="home"><div className="dashboard-page command-center enter" data-task-active={activeExecution ? 'true' : 'false'} data-testid="dashboard-command-center">
     {summary.isError && <QueryProblem retry={() => summary.refetch()} message="Your overview is temporarily unavailable." />}
     <section className="activity-panel execution-panel" data-task-active={activeExecution ? 'true' : 'false'}><div className="activity-panel-heading">
-      <div className="stream-heading-main"><span className="live-label"><span className="online-pip" />LIVE STREAM</span><h2 className="thread-title" title={streamTitle} data-testid="text-thread-title">{streamTitle}</h2></div>
-      <div className="stream-heading-right"><div className="command-status" data-testid="status-agent-state"><span className="stream-status-badge"><span className={`online-pip ${activeExecution ? 'working' : ''}`} />{summary.isLoading ? 'Connecting' : activeExecution ? 'Running' : 'Idle'}</span><span className="stream-model-badge">{settingsQuery.data ? modelDisplayName(settingsQuery.data.provider, settingsQuery.data.modelId) : 'Configured model'}</span></div><Link href="/tasks" className="text-link" data-testid="link-all-tasks">Task activity <ArrowRight size={14} /></Link></div>
+      <div className="stream-heading-main">{isGenerating && <span className="status-indicator live live-label" data-testid="status-streaming" aria-live="polite"><span className="online-pip working" />STREAMING</span>}<h2 className="thread-title" title={streamTitle} data-testid="text-thread-title">{streamTitle}</h2></div>
+      <div className="stream-heading-right"><div className="command-status" data-testid="status-agent-state"><span className="stream-model-badge">{settingsQuery.data ? modelDisplayName(settingsQuery.data.provider, settingsQuery.data.modelId) : 'Configured model'}</span><span className="stream-status-badge"><span className={`online-pip ${isGenerating ? 'working' : ''}`} />{summary.isLoading ? 'Connecting' : isGenerating ? 'Running' : 'Idle'}</span></div><Link href="/tasks" className="text-link" data-testid="link-all-tasks">Task activity <ArrowRight size={14} /></Link></div>
     </div>
       {threadId && threadDetail.isError && !threadStale && !threadDetail.data ? <QueryProblem retry={() => threadDetail.refetch()} message="This chat could not be loaded." /> : <ActivityStream key={threadId ?? 'new'} tasks={tasks} messages={threadMessages} loading={!!threadId && threadDetail.isLoading} onOpen={(task) => setSelectedTaskId(task.id)} />}
     </section>
