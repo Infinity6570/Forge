@@ -1179,6 +1179,14 @@ function SettingsPage() {
   const [appPreviewsEnabled, setAppPreviewsEnabled] = useState(false);
   const [providerError, setProviderError] = useState('');
   const [providerSaved, setProviderSaved] = useState(false);
+  const [backupPassword, setBackupPassword] = useState('');
+  const [backupPasswordConfirm, setBackupPasswordConfirm] = useState('');
+  const [restorePassword, setRestorePassword] = useState('');
+  const [restoreFile, setRestoreFile] = useState<File | null>(null);
+  const [restoreConfirmed, setRestoreConfirmed] = useState(false);
+  const [vaultBackupBusy, setVaultBackupBusy] = useState(false);
+  const [vaultBackupMessage, setVaultBackupMessage] = useState('');
+  const [vaultBackupError, setVaultBackupError] = useState('');
   const [vaultExpanded, setVaultExpanded] = useState<Record<string, boolean>>({ core: true, search: false, market: false });
   const [modelApplied, setModelApplied] = useState('');
   const [confirmBeforeActions, setConfirmBeforeActions] = useState(true);
@@ -1259,6 +1267,75 @@ function SettingsPage() {
       },
       onError: () => setProviderError('Vault settings could not be saved. Check the connection and try again.'),
     });
+  };
+  const backupRequestError = async (response: Response) => {
+    const result = await response.json().catch(() => null) as { detail?: unknown } | null;
+    return typeof result?.detail === 'string' ? result.detail : 'The vault backup could not be processed.';
+  };
+  const exportVaultBackup = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setVaultBackupError('');
+    setVaultBackupMessage('');
+    if (backupPassword !== backupPasswordConfirm) {
+      setVaultBackupError('The backup passwords do not match.');
+      return;
+    }
+    setVaultBackupBusy(true);
+    try {
+      const response = await fetch('/api/vault/backup', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: backupPassword }),
+      });
+      if (!response.ok) throw new Error(await backupRequestError(response));
+      const fileUrl = URL.createObjectURL(await response.blob());
+      const download = document.createElement('a');
+      download.href = fileUrl;
+      download.download = 'forge-vault-backup.forgevault';
+      document.body.appendChild(download);
+      download.click();
+      download.remove();
+      window.setTimeout(() => URL.revokeObjectURL(fileUrl), 1000);
+      setBackupPassword('');
+      setBackupPasswordConfirm('');
+      setVaultBackupMessage('Encrypted vault backup downloaded. Keep the file and its password somewhere safe.');
+    } catch (error) {
+      setVaultBackupError(error instanceof Error ? error.message : 'The vault backup could not be created.');
+    } finally {
+      setVaultBackupBusy(false);
+    }
+  };
+  const importVaultBackup = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setVaultBackupError('');
+    setVaultBackupMessage('');
+    if (!restoreFile || !restoreConfirmed) return;
+    setVaultBackupBusy(true);
+    try {
+      const body = new FormData();
+      body.append('backup_file', restoreFile);
+      body.append('password', restorePassword);
+      const response = await fetch('/api/vault/restore', {
+        method: 'POST',
+        credentials: 'include',
+        body,
+      });
+      if (!response.ok) throw new Error(await backupRequestError(response));
+      const result = await response.json() as { restored_entries?: number };
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: getGetVaultKeysQueryKey() }),
+        qc.invalidateQueries({ queryKey: getGetAssistantSettingsQueryKey() }),
+      ]);
+      setRestorePassword('');
+      setRestoreFile(null);
+      setRestoreConfirmed(false);
+      setVaultBackupMessage(`Vault restored. ${result.restored_entries ?? 0} saved credential${result.restored_entries === 1 ? '' : 's'} are available.`);
+    } catch (error) {
+      setVaultBackupError(error instanceof Error ? error.message : 'The vault backup could not be restored.');
+    } finally {
+      setVaultBackupBusy(false);
+    }
   };
   const applyWorkingModel = () => {
     setProviderError('');
@@ -1343,6 +1420,23 @@ function SettingsPage() {
         {providerSaved && <p className="save-state" role="status" data-testid="status-provider-saved"><CheckCircle2 size={15} /> Vault settings saved. Key values remain hidden.</p>}
         <div className="settings-save-row"><span className="settings-footnote">Keys and local URL save independently. Use Apply Model to activate a model.</span><button type="submit" className="button button-primary" disabled={!credentialStatus?.providerSettingsAllowed || saveVault.isPending || applyModel.isPending || updateSettings.isPending || vaultStatusQuery.isLoading || (vaultLocked && (!confirmVaultReset || !Object.entries(apiKeys).some(([, value]) => typeof value === 'string' && value.trim())))} data-testid="button-save-provider">{saveVault.isPending ? <LoaderCircle className="spin" size={15} /> : <Check size={15} />} {saveVault.isPending ? 'Saving…' : vaultLocked ? 'Reset & Save New Keys' : 'Save Vault'}</button></div>
       </form>
+      <div id="vault-backup" className="vault-backup-panel" data-testid="panel-vault-backup">
+        <div className="vault-backup-heading"><strong>Move or back up this vault</strong><span>Export creates a password-encrypted file containing the encrypted credentials and the local key needed to unlock them. The key is never sent back to this screen.</span></div>
+        <form className="vault-backup-form" onSubmit={exportVaultBackup}>
+          <label className="form-label">Backup password <span className="optional-label">At least 12 characters</span><input type="password" autoComplete="new-password" value={backupPassword} onChange={(event) => setBackupPassword(event.target.value)} minLength={12} required data-testid="input-vault-backup-password" /></label>
+          <label className="form-label">Confirm backup password<input type="password" autoComplete="new-password" value={backupPasswordConfirm} onChange={(event) => setBackupPasswordConfirm(event.target.value)} minLength={12} required data-testid="input-vault-backup-password-confirm" /></label>
+          <button type="submit" className="button button-quiet" disabled={!credentialStatus?.providerSettingsAllowed || vaultLocked || vaultBackupBusy} data-testid="button-export-vault-backup">{vaultBackupBusy ? <LoaderCircle className="spin" size={15} /> : <ArrowDownToLine size={15} />} Download encrypted backup</button>
+        </form>
+        <form className="vault-backup-form vault-restore-form" onSubmit={importVaultBackup}>
+          <label className="form-label">Restore backup file<input type="file" accept=".forgevault,application/octet-stream" onChange={(event) => { setRestoreFile(event.currentTarget.files?.[0] ?? null); setRestoreConfirmed(false); }} required data-testid="input-vault-restore-file" /></label>
+          <label className="form-label">Backup password<input type="password" autoComplete="current-password" value={restorePassword} onChange={(event) => setRestorePassword(event.target.value)} minLength={12} required data-testid="input-vault-restore-password" /></label>
+          <label className="vault-restore-confirm"><input type="checkbox" checked={restoreConfirmed} onChange={(event) => setRestoreConfirmed(event.target.checked)} data-testid="checkbox-confirm-vault-restore" /><span>Replace the current saved credentials with the credentials in this backup. Other app data will stay unchanged.</span></label>
+          <button type="submit" className="button button-quiet" disabled={!credentialStatus?.providerSettingsAllowed || !restoreFile || !restoreConfirmed || vaultBackupBusy} data-testid="button-restore-vault-backup">{vaultBackupBusy ? <LoaderCircle className="spin" size={15} /> : <Upload size={15} />} Restore encrypted backup</button>
+        </form>
+        {vaultBackupError && <p className="field-error" role="alert" data-testid="status-vault-backup-error">{vaultBackupError}</p>}
+        {vaultBackupMessage && <p className="save-state" role="status" data-testid="status-vault-backup-result"><CheckCircle2 size={15} /> {vaultBackupMessage}</p>}
+        <p className="settings-footnote"><LockKeyhole size={13} /> Store the backup file and password separately. Losing either prevents recovery. Restoring replaces saved vault entries.</p>
+      </div>
     </section>
     <SearchSettingsPanel settings={credentialStatus} loading={settingsQuery.isLoading} />
     <section className="settings-section safety-section"><div className="settings-section-heading"><div className="section-symbol amber"><ShieldCheck size={18} /></div><div><h2>Local code runner</h2><p>Optional Python execution in the local workspace, disabled by default.</p></div></div>

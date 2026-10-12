@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import ipaddress
 import json
 import math
@@ -28,8 +29,10 @@ import httpx
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from bs4 import BeautifulSoup
 from cryptography.fernet import Fernet, InvalidToken
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from dotenv import load_dotenv, set_key
-from fastapi import FastAPI, File, HTTPException, Request, Response, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, File, Form, HTTPException, Request, Response, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -68,6 +71,10 @@ DATABASE = WORKSPACE / "assistant.db"
 PREVIEW_MANAGER = WorkspacePreviewManager(WORKSPACE)
 MAX_UPLOAD_BYTES = 20 * 1024 * 1024
 MAX_EXTRACTED_CHARS = 400_000
+MAX_VAULT_BACKUP_BYTES = 2 * 1024 * 1024
+VAULT_BACKUP_MAGIC = b"FORGE-VAULT-BACKUP\x00\x01"
+VAULT_BACKUP_KDF_ITERATIONS = 600_000
+VAULT_BACKUP_MIN_PASSWORD_LENGTH = 12
 load_dotenv(ENV_FILE, override=True)
 
 DB_LOCK = threading.RLock()
@@ -495,6 +502,176 @@ def db_run(sql: str, values: tuple[Any, ...] = ()) -> int:
 
 class VaultLockedError(RuntimeError):
     """Raised when encrypted entries exist but the local encryption key cannot unlock them."""
+
+
+def _vault_backup_cipher(password: str, salt: bytes) -> Fernet:
+    derived = PBKDF2HMAC(
+        algorithm=hashes.SHA256(),
+        length=32,
+        salt=salt,
+        iterations=VAULT_BACKUP_KDF_ITERATIONS,
+    ).derive(password.encode("utf-8"))
+    return Fernet(base64.urlsafe_b64encode(derived))
+
+
+def create_vault_backup(password: str) -> bytes:
+    if len(password.strip()) < VAULT_BACKUP_MIN_PASSWORD_LENGTH:
+        raise ValueError("Use a backup password with at least 12 characters.")
+    with DB_LOCK:
+        if vault_is_locked():
+            raise VaultLockedError("Unlock the local vault before creating a backup.")
+        cipher = _vault_fernet(create_if_missing=True)
+        key = os.getenv("VAULT_ENCRYPTION_KEY", "").strip()
+        try:
+            rows = db_all(
+                "SELECT key_name,key_value,category,is_active,updated_at FROM vault_secrets"
+            )
+        except sqlite3.OperationalError as error:
+            if "no such table: vault_secrets" not in str(error).lower():
+                raise
+            rows = []
+        entries = []
+        for row in rows:
+            try:
+                cipher.decrypt(row["key_value"].encode("ascii")).decode("utf-8")
+            except (InvalidToken, UnicodeDecodeError, UnicodeEncodeError) as error:
+                raise VaultLockedError("Unlock the local vault before creating a backup.") from error
+            entries.append(dict(row))
+        payload = json.dumps(
+            {"version": 1, "vault_key": key, "entries": entries},
+            separators=(",", ":"),
+        ).encode("utf-8")
+    salt = os.urandom(16)
+    encrypted = _vault_backup_cipher(password, salt).encrypt(payload)
+    backup = VAULT_BACKUP_MAGIC + salt + encrypted
+    if len(backup) > MAX_VAULT_BACKUP_BYTES:
+        raise ValueError("The vault backup exceeds the supported size.")
+    return backup
+
+
+def _read_vault_backup(backup: bytes, password: str) -> tuple[str, list[dict[str, Any]]]:
+    header_size = len(VAULT_BACKUP_MAGIC) + 16
+    if len(backup) > MAX_VAULT_BACKUP_BYTES or not backup.startswith(VAULT_BACKUP_MAGIC) or len(backup) <= header_size:
+        raise ValueError("The backup is invalid, corrupted, or the password is incorrect.")
+    salt = backup[len(VAULT_BACKUP_MAGIC):header_size]
+    try:
+        decoded = _vault_backup_cipher(password, salt).decrypt(backup[header_size:])
+        payload = json.loads(decoded.decode("utf-8"))
+    except (InvalidToken, UnicodeDecodeError, json.JSONDecodeError, ValueError) as error:
+        raise ValueError("The backup is invalid, corrupted, or the password is incorrect.") from error
+    if not isinstance(payload, dict) or payload.get("version") != 1:
+        raise ValueError("The backup is invalid, corrupted, or the password is incorrect.")
+    key = payload.get("vault_key")
+    entries = payload.get("entries")
+    if not isinstance(key, str) or not isinstance(entries, list) or len(entries) > len(VAULT_KEY_CATEGORIES):
+        raise ValueError("The backup is invalid, corrupted, or the password is incorrect.")
+    try:
+        vault_cipher = Fernet(key.encode("ascii"))
+    except (ValueError, UnicodeEncodeError) as error:
+        raise ValueError("The backup is invalid, corrupted, or the password is incorrect.") from error
+
+    clean_entries: list[dict[str, Any]] = []
+    names: set[str] = set()
+    for entry in entries:
+        if not isinstance(entry, dict):
+            raise ValueError("The backup is invalid, corrupted, or the password is incorrect.")
+        key_name = entry.get("key_name")
+        value = entry.get("key_value")
+        category = entry.get("category")
+        active = entry.get("is_active")
+        updated_at = entry.get("updated_at")
+        if (
+            key_name not in VAULT_KEY_CATEGORIES
+            or key_name in names
+            or category != VAULT_KEY_CATEGORIES[key_name]
+            or not isinstance(value, str)
+            or not isinstance(updated_at, str)
+            or len(updated_at) > 100
+            or type(active) is not int
+            or active not in (0, 1)
+        ):
+            raise ValueError("The backup is invalid, corrupted, or the password is incorrect.")
+        try:
+            vault_cipher.decrypt(value.encode("ascii")).decode("utf-8")
+        except (InvalidToken, UnicodeDecodeError, UnicodeEncodeError) as error:
+            raise ValueError("The backup is invalid, corrupted, or the password is incorrect.") from error
+        clean_entries.append({
+            "key_name": key_name,
+            "key_value": value,
+            "category": category,
+            "is_active": active,
+            "updated_at": updated_at,
+        })
+        names.add(key_name)
+    return key, clean_entries
+
+
+def _persist_vault_encryption_key(key: str | None) -> None:
+    ENV_FILE.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=f".{ENV_FILE.name}.",
+        suffix=".tmp",
+        dir=ENV_FILE.parent,
+    )
+    os.close(descriptor)
+    temporary_path = Path(temporary_name)
+    try:
+        if ENV_FILE.is_file():
+            shutil.copyfile(ENV_FILE, temporary_path)
+        else:
+            temporary_path.write_text("", encoding="utf-8")
+        os.chmod(temporary_path, 0o600)
+        set_key(
+            str(temporary_path),
+            "VAULT_ENCRYPTION_KEY",
+            key or "",
+            quote_mode="never",
+        )
+        os.chmod(temporary_path, 0o600)
+        os.replace(temporary_path, ENV_FILE)
+        os.chmod(ENV_FILE, 0o600)
+    finally:
+        temporary_path.unlink(missing_ok=True)
+
+
+def restore_vault_backup(backup: bytes, password: str) -> int:
+    if len(password.strip()) < VAULT_BACKUP_MIN_PASSWORD_LENGTH:
+        raise ValueError("Use the password that was set when the backup was created.")
+    key, entries = _read_vault_backup(backup, password)
+    previous_key = os.getenv("VAULT_ENCRYPTION_KEY")
+    with DB_LOCK:
+        connection = connect_db()
+        try:
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS vault_secrets (
+                  key_name TEXT PRIMARY KEY,
+                  key_value TEXT NOT NULL,
+                  category TEXT NOT NULL,
+                  is_active INTEGER NOT NULL DEFAULT 1,
+                  updated_at TEXT NOT NULL
+                )
+                """
+            )
+            try:
+                _persist_vault_encryption_key(key)
+                connection.execute("DELETE FROM vault_secrets")
+                connection.executemany(
+                    """
+                    INSERT INTO vault_secrets(key_name,key_value,category,is_active,updated_at)
+                    VALUES(:key_name,:key_value,:category,:is_active,:updated_at)
+                    """,
+                    entries,
+                )
+                connection.commit()
+            except Exception:
+                connection.rollback()
+                _persist_vault_encryption_key(previous_key)
+                raise
+        finally:
+            connection.close()
+        os.environ["VAULT_ENCRYPTION_KEY"] = key
+    return len(entries)
 
 
 def _vault_rows() -> list[sqlite3.Row]:
@@ -1067,6 +1244,10 @@ class ProviderKeysInput(BaseModel):
 
 class VaultKeysInput(ProviderKeysInput):
     recoverLockedVault: bool = False
+
+
+class VaultBackupPasswordInput(BaseModel):
+    password: str = Field(min_length=VAULT_BACKUP_MIN_PASSWORD_LENGTH, max_length=1024)
 
 
 class SearchSettingsInput(BaseModel):
@@ -3151,6 +3332,51 @@ async def write_vault_keys(body: VaultKeysInput, request: Request) -> dict[str, 
         os.chmod(ENV_FILE, 0o600)
         load_dotenv(ENV_FILE, override=True)
     return vault_key_statuses()
+
+
+@app.post("/api/vault/backup")
+async def export_vault_backup(
+    body: VaultBackupPasswordInput,
+    request: Request,
+) -> Response:
+    if not can_manage_provider_settings(request):
+        raise HTTPException(status_code=403, detail="Vault backups are only available from this app's preview or a local copy.")
+    try:
+        backup = create_vault_backup(body.password)
+    except VaultLockedError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    return Response(
+        content=backup,
+        media_type="application/octet-stream",
+        headers={
+            "Content-Disposition": 'attachment; filename="forge-vault-backup.forgevault"',
+            "Cache-Control": "no-store",
+            "Pragma": "no-cache",
+        },
+    )
+
+
+@app.post("/api/vault/restore")
+async def import_vault_backup(
+    request: Request,
+    backup_file: UploadFile = File(...),
+    password: str = Form(..., min_length=VAULT_BACKUP_MIN_PASSWORD_LENGTH, max_length=1024),
+) -> dict[str, Any]:
+    if not can_manage_provider_settings(request):
+        raise HTTPException(status_code=403, detail="Vault backups are only available from this app's preview or a local copy.")
+    try:
+        backup = await backup_file.read(MAX_VAULT_BACKUP_BYTES + 1)
+    finally:
+        await backup_file.close()
+    if len(backup) > MAX_VAULT_BACKUP_BYTES:
+        raise HTTPException(status_code=413, detail="The vault backup exceeds the supported size.")
+    try:
+        restored_count = restore_vault_backup(backup, password)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    return {"vault_status": "ready", "restored_entries": restored_count}
 
 
 @app.patch("/api/assistant/settings/search")

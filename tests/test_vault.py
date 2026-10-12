@@ -197,6 +197,85 @@ class LocalVaultTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status_code, 400, response.text)
         self.assertEqual(main.vault_key_statuses()["vault_status"], "locked")
 
+    async def test_password_encrypted_backup_restores_vault_into_a_copied_app(self) -> None:
+        secret = "portable-vault-test-secret"
+        password = "correct-horse-battery-staple"
+        main.save_vault_values({"GEMINI_API_KEY": secret})
+        source_key = os.environ["VAULT_ENCRYPTION_KEY"]
+
+        exported = await self.request(
+            "POST",
+            "/api/vault/backup",
+            json={"password": password},
+        )
+        self.assertEqual(exported.status_code, 200, exported.text)
+        self.assertEqual(
+            exported.headers["content-disposition"],
+            'attachment; filename="forge-vault-backup.forgevault"',
+        )
+        self.assertEqual(exported.headers["cache-control"], "no-store")
+        self.assertNotIn(secret.encode(), exported.content)
+        self.assertNotIn(source_key.encode(), exported.content)
+
+        copied_root = Path(self.temp_dir.name) / "copied-app"
+        copied_workspace = copied_root / "workspace"
+        copied_database = copied_workspace / "assistant.db"
+        copied_env = copied_root / ".env"
+        with (
+            patch.object(main, "WORKSPACE", copied_workspace),
+            patch.object(main, "DATABASE", copied_database),
+            patch.object(main, "ENV_FILE", copied_env),
+        ):
+            os.environ.pop("VAULT_ENCRYPTION_KEY", None)
+            main.init_db()
+            main.db_run(
+                "INSERT INTO notes(id,title,content,tags_json,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                ("copy-note", "Keep this note", "Restore must not replace app data.", "[]", "now", "now"),
+            )
+            main.save_vault_values({"GEMINI_API_KEY": "destination-only-secret"})
+
+            wrong_password = await self.request(
+                "POST",
+                "/api/vault/restore",
+                files={"backup_file": ("vault.forgevault", exported.content, "application/octet-stream")},
+                data={"password": "not-the-backup-password"},
+            )
+            self.assertEqual(wrong_password.status_code, 400, wrong_password.text)
+            self.assertEqual(main.get_vault_secret("GEMINI_API_KEY"), "destination-only-secret")
+
+            restored = await self.request(
+                "POST",
+                "/api/vault/restore",
+                files={"backup_file": ("vault.forgevault", exported.content, "application/octet-stream")},
+                data={"password": password},
+            )
+            self.assertEqual(restored.status_code, 200, restored.text)
+            self.assertEqual(restored.json(), {"vault_status": "ready", "restored_entries": 1})
+            self.assertEqual(main.get_vault_secret("GEMINI_API_KEY"), secret)
+            self.assertEqual(os.environ["VAULT_ENCRYPTION_KEY"], source_key)
+            self.assertEqual(copied_env.stat().st_mode & 0o777, 0o600)
+            self.assertIsNotNone(main.db_one("SELECT id FROM notes WHERE id='copy-note'"))
+
+            status = await self.request("GET", "/api/vault/keys")
+            self.assertEqual(status.json()["vault_status"], "ready")
+            self.assertNotIn(source_key, status.text)
+            self.assertNotIn(secret, status.text)
+
+    async def test_backup_refuses_a_locked_vault_without_changing_it(self) -> None:
+        secret = "locked-backup-vault-secret"
+        main.save_vault_values({"TAVILY_API_KEY": secret})
+        os.environ["VAULT_ENCRYPTION_KEY"] = Fernet.generate_key().decode("ascii")
+
+        response = await self.request(
+            "POST",
+            "/api/vault/backup",
+            json={"password": "correct-horse-battery-staple"},
+        )
+
+        self.assertEqual(response.status_code, 409, response.text)
+        self.assertNotIn(secret, response.text)
+        self.assertNotIn(os.environ["VAULT_ENCRYPTION_KEY"], response.text)
+
     async def test_market_quote_tool_normalizes_quote_fields_without_network(self) -> None:
         ticker = unittest.mock.Mock()
         ticker.fast_info = {

@@ -2,6 +2,7 @@
 - [Provider model availability](provider-model-availability.md) — portable personal-key clients; verify live model IDs and never silently change saved or task-level selections.
 - [Market-feed freshness](market-feed-freshness.md) — distinguish API response time from source freshness; disclose stale or unknown quotes.
 - [Provider turn history](provider-turn-history.md) — replay opaque model metadata intact; keep paired tool results ordered and repair only missing Gemini signatures.
+- [Vault migration backups](vault-migration-backups.md) — migration backups must password-encrypt the matching local vault key and restore only after validating every encrypted entry.
 - [Conversation UI boundary](conversation-ui-boundary.md) — Preferences stays inline; task submission never auto-opens diagnostics, while explicit model-picker popovers remain allowed.
 - [Conversation isolation](conversation-isolation.md) — chat histories stay isolated; serialize runs per chat, retain Task Activity on deletion, and never auto-replay interrupted actions.
 - [Standalone TSX tests](standalone-tsx-tests.md) — Node `tsx --test` may use classic JSX; test-rendered TSX components need a React namespace import.
