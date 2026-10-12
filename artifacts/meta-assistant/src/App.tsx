@@ -43,7 +43,7 @@ import {
 import type { AssistantFile, AssistantNote, AssistantSettings, AssistantSettingsInput, AssistantTask, AssistantTimer, WorkspacePreviewApp } from '@workspace/api-client-react';
 import {
   Activity, AlertCircle, ArrowDownToLine, ArrowRight, Bell, BookOpen, Check, CheckCircle2,
-  ChevronDown, ChevronRight, CircleHelp, Clock3, Copy, ExternalLink, FileText, FolderOpen, Gauge, Layers3, Moon, Sun,
+  ChevronDown, ChevronRight, CircleHelp, Clock3, Copy, Cpu, ExternalLink, FileText, FolderOpen, Gauge, HardDrive, Layers3, Moon, Sun,
   KeyRound, LoaderCircle, LockKeyhole, Menu, Plus, RefreshCw, Search,
   Send, Settings2, ShieldCheck, Sparkles, StopCircle, Trash2, Upload, X, Zap, PanelRight, GripVertical,
 } from 'lucide-react';
@@ -130,7 +130,9 @@ function CyberFxToggle() {
 
 function timeAgo(value?: string) {
   if (!value) return 'Just now';
-  const minutes = Math.max(0, Math.floor((Date.now() - new Date(value).getTime()) / 60000));
+  const timestamp = new Date(value).getTime();
+  if (!Number.isFinite(timestamp)) return 'Just now';
+  const minutes = Math.max(0, Math.floor((Date.now() - timestamp) / 60000));
   if (minutes < 1) return 'Just now';
   if (minutes < 60) return `${minutes}m ago`;
   const hours = Math.floor(minutes / 60);
@@ -140,7 +142,16 @@ function timeAgo(value?: string) {
 
 function formatDate(value?: string) {
   if (!value) return '—';
-  return new Intl.DateTimeFormat('en', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }).format(new Date(value));
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return '—';
+  return new Intl.DateTimeFormat('en', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }).format(date);
+}
+
+function formatClock(value?: string) {
+  if (!value) return 'TIME N/A';
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return 'TIME N/A';
+  return new Intl.DateTimeFormat('en', { hour: '2-digit', minute: '2-digit', second: '2-digit' }).format(date);
 }
 
 function formatSize(bytes: number) {
@@ -203,8 +214,8 @@ function AppShell({ children, page }: { children: ReactNode; page: Page }) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     try { return localStorage.getItem('forge-sidebar-collapsed') === 'true'; } catch { return false; }
   });
-  const [inspectorOpen, setInspectorOpen] = useState(() => typeof window !== 'undefined' && window.innerWidth > 1100);
-  const [inspectorWidth, setInspectorWidth] = useState(410);
+  const [inspectorOpen, setInspectorOpen] = useState(() => typeof window !== 'undefined' && window.innerWidth >= 1600);
+  const [inspectorWidth, setInspectorWidth] = useState(450);
   const [viewportWidth, setViewportWidth] = useState(() => typeof window === 'undefined' ? 1400 : window.innerWidth);
   const range = inspectorRange(viewportWidth);
   const displayedInspectorWidth = Math.max(range.min, Math.min(range.max, inspectorWidth));
@@ -216,15 +227,13 @@ function AppShell({ children, page }: { children: ReactNode; page: Page }) {
     try { localStorage.setItem('forge-sidebar-collapsed', String(sidebarCollapsed)); } catch { /* Persistence is optional when storage is blocked. */ }
   }, [sidebarCollapsed]);
   useEffect(() => {
-    const viewport = window.matchMedia('(max-width: 900px)');
+    const viewport = window.matchMedia('(min-width: 1600px)');
     const syncViewport = () => setViewportWidth(window.innerWidth);
-    const closeInspectorOnNarrowViewport = (event: MediaQueryListEvent) => {
-      if (event.matches) setInspectorOpen(false);
-    };
-    viewport.addEventListener('change', closeInspectorOnNarrowViewport);
+    const setDefaultDockForBreakpoint = (event: MediaQueryListEvent) => setInspectorOpen(event.matches);
+    viewport.addEventListener('change', setDefaultDockForBreakpoint);
     window.addEventListener('resize', syncViewport);
     return () => {
-      viewport.removeEventListener('change', closeInspectorOnNarrowViewport);
+      viewport.removeEventListener('change', setDefaultDockForBreakpoint);
       window.removeEventListener('resize', syncViewport);
     };
   }, []);
@@ -260,11 +269,11 @@ function AppShell({ children, page }: { children: ReactNode; page: Page }) {
     </aside>
     {mobileOpen && <button className="mobile-scrim" onClick={() => setMobileOpen(false)} aria-label="Close menu" />}
     <main className="main-area">
-      <header className={`topbar ${current === 'home' ? 'topbar-command-center' : ''}`}><button className="mobile-menu icon-button" aria-label="Open navigation" onClick={() => setMobileOpen(true)} data-testid="button-open-navigation"><Menu size={20} /></button><div className="breadcrumbs"><span>Workspace</span><span className="crumb-slash">/</span><strong>{navItems.find((n) => (n.href === '/' ? 'home' : n.href.slice(1)) === current)?.label ?? 'Overview'}</strong></div><div className="topbar-right"><span className="ops-tagline">LOCAL OPS // 6570</span><div className="system-online"><span className="online-pip" />All systems operational</div><ThemeChooser /><CyberFxToggle /><button type="button" className="sidebar-collapse-toggle icon-button" onClick={() => setSidebarCollapsed((collapsed) => !collapsed)} aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'} aria-expanded={!sidebarCollapsed} title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'} data-testid="button-toggle-sidebar"><ChevronRight size={16} className={sidebarCollapsed ? '' : 'is-expanded'} /></button></div></header>
+      <header className={`topbar ${current === 'home' ? 'topbar-command-center' : ''}`}><button className="mobile-menu icon-button" aria-label="Open navigation" onClick={() => setMobileOpen(true)} data-testid="button-open-navigation"><Menu size={20} /></button><div className="breadcrumbs"><span>Workspace</span><span className="crumb-slash">/</span><strong>{navItems.find((n) => (n.href === '/' ? 'home' : n.href.slice(1)) === current)?.label ?? 'Overview'}</strong></div><div className="topbar-right"><span className="ops-tagline">LOCAL OPS // 6570</span><div className="system-online"><span className="online-pip" />All systems operational</div><ThemeChooser /><CyberFxToggle /><button type="button" className="icon-button console-toggle" onClick={() => setInspectorOpen((open) => !open)} aria-label={inspectorOpen ? 'Close telemetry and workspace console' : 'Open telemetry and workspace console'} aria-expanded={inspectorOpen} title={inspectorOpen ? 'Close system console' : 'Open system console'} data-testid="button-toggle-console"><PanelRight size={16} /><span>Console</span></button><button type="button" className="sidebar-collapse-toggle icon-button" onClick={() => setSidebarCollapsed((collapsed) => !collapsed)} aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'} aria-expanded={!sidebarCollapsed} title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'} data-testid="button-toggle-sidebar"><ChevronRight size={16} className={sidebarCollapsed ? '' : 'is-expanded'} /></button></div></header>
       <div className={`center-pane ${page === 'home' ? 'center-pane-home' : ''}`}><div className="page-wrap">{children}</div><footer className="app-footer"><span>Made for thoughtful delegation.</span><span className="footer-build">FORGE <span>·</span> LOCAL COMMAND CENTER</span></footer></div>
     </main>
     {inspectorOpen && <div className="inspector-resize" role="separator" aria-orientation="vertical" aria-label="Resize workspace inspector" aria-valuemin={range.min} aria-valuemax={range.max} aria-valuenow={displayedInspectorWidth} tabIndex={0} onPointerDown={(event) => { event.preventDefault(); setResizingInspector(true); }} onKeyDown={(event) => { if (event.key === 'ArrowLeft') setInspectorWidth(Math.min(range.max, displayedInspectorWidth + 10)); if (event.key === 'ArrowRight') setInspectorWidth(Math.max(range.min, displayedInspectorWidth - 10)); }} data-testid="separator-inspector"><GripVertical size={14} /></div>}
-    {inspectorOpen && <InspectorPanel onClose={() => setInspectorOpen(false)} />}
+    {inspectorOpen && <InspectorPanel onClose={() => setInspectorOpen(false)} defaultTab={current === 'home' ? 'telemetry' : 'preview'} />}
   </div>;
 }
 
@@ -784,20 +793,98 @@ function WorkspaceInspector() {
   </div>;
 }
 
-function InspectorPanel({ onClose }: { onClose: () => void }) {
-  const [tab, setTab] = useState<'preview' | 'files'>('preview');
+function SystemTelemetry() {
+  const dashboard = useGetAssistantDashboard({ query: { queryKey: getGetAssistantDashboardQueryKey(), refetchInterval: 4000 } });
+  const settings = useGetAssistantSettings();
+  const files = useListAssistantFiles();
+  const notes = useListAssistantNotes();
+  const tasks = useListAssistantTasks({ query: { queryKey: getListAssistantTasksQueryKey(), refetchInterval: 4000 } });
+  const { selectedId } = useConversations();
+  const thread = useGetConversationThread(selectedId ?? '', { query: { enabled: !!selectedId, queryKey: getGetConversationThreadQueryKey(selectedId ?? ''), refetchInterval: 2000 } });
+  const messages = thread.data?.messages ?? [];
+  const messageChars = messages.reduce((total, message) => total + message.content.length, 0);
+  const estimatedTokens = Math.ceil(messageChars / 4);
+  const meterWidth = Math.min(100, Math.max(0, (estimatedTokens / 16000) * 100));
+  const timestampValue = (value?: string | null) => {
+    const parsed = Date.parse(value ?? '');
+    return Number.isFinite(parsed) ? parsed : 0;
+  };
+  const recentFiles = [...(files.data ?? [])].sort((a, b) => timestampValue(b.createdAt) - timestampValue(a.createdAt)).slice(0, 4);
+  const recentNotes = [...(notes.data ?? [])].sort((a, b) => timestampValue(b.updatedAt ?? b.createdAt) - timestampValue(a.updatedAt ?? a.createdAt)).slice(0, 4);
+  const recentLogs = (tasks.data ?? []).flatMap((task) => task.logs.map((log) => ({ ...log, objective: task.objective, taskId: task.id })))
+    .sort((a, b) => timestampValue(b.createdAt) - timestampValue(a.createdAt)).slice(0, 10);
+  const searchEngines = settings.data ? [
+    { id: 'tavily', label: 'TAVILY', configured: settings.data.hasTavilyKey, selected: settings.data.searchMode === 'api' && settings.data.searchApiProvider === 'tavily' },
+    { id: 'serper', label: 'SERPER', configured: settings.data.hasSerperKey, selected: settings.data.searchMode === 'api' && settings.data.searchApiProvider === 'serper' },
+    { id: 'google', label: 'GOOGLE', configured: settings.data.hasGeminiKey, selected: settings.data.searchMode === 'native' && settings.data.provider === 'gemini' },
+    { id: 'brave', label: 'BRAVE', configured: settings.data.hasBraveKey, selected: settings.data.searchMode === 'api' && settings.data.searchApiProvider === 'brave' },
+  ] : [];
+  return <div className="telemetry-console" data-testid="panel-system-telemetry">
+    <section className="telemetry-section system-readout">
+      <div className="telemetry-section-head"><span className="telemetry-section-mark"><Cpu size={14} /></span><div><span className="telemetry-kicker">SYSTEM READOUT</span><h3>Runtime overview</h3></div><span className="telemetry-live-tag">LOCAL</span></div>
+      {dashboard.isLoading ? <div className="telemetry-skeleton" aria-label="Loading system telemetry"><i /><i /><i /></div> : dashboard.isError ? <div className="telemetry-error"><span>Runtime summary unavailable.</span><button type="button" onClick={() => dashboard.refetch()} data-testid="button-retry-telemetry">Retry</button></div> : <div className="telemetry-stats">
+        <div><span>Active tasks</span><strong data-testid="text-telemetry-active-tasks">{dashboard.data?.activeTasks ?? '—'}</strong></div>
+        <div><span>Completed</span><strong>{dashboard.data?.completedTasks ?? '—'}</strong></div>
+        <div><span>Active timers</span><strong>{dashboard.data?.activeTimers ?? '—'}</strong></div>
+      </div>}
+      <div className="telemetry-model">
+        <span className="telemetry-kicker">ACTIVE MODEL · SETTINGS</span>
+        {settings.isLoading ? <div className="telemetry-skeleton model-skeleton"><i /></div> : settings.isError ? <div className="telemetry-error"><span>Model configuration unavailable.</span><button type="button" onClick={() => settings.refetch()}>Retry</button></div> : <strong data-testid="text-telemetry-model">{modelDisplayName(settings.data?.provider, settings.data?.modelId)}</strong>}
+        {settings.data && <span className="telemetry-model-id">{settings.data.provider} / {settings.data.modelId}</span>}
+      </div>
+      {settings.data && <div className="telemetry-search" data-testid="status-search-provider">
+        <div className="telemetry-search-heading"><span className="telemetry-kicker">SEARCH FALLBACK ENGINES</span><span className="telemetry-search-mode">{settings.data.searchMode ?? 'not set'}</span></div>
+        <div className="telemetry-provider-list">{searchEngines.map((engine) => <span key={engine.id} className={`telemetry-provider-chip ${engine.configured ? 'ready' : 'missing'} ${engine.selected ? 'selected' : ''}`} data-testid={`telemetry-provider-${engine.id}`} title={`${engine.label}: ${engine.configured ? 'key configured' : 'key not configured'}${engine.selected ? ', selected search mode' : ''}`}>
+          <i aria-hidden="true" /><span>{engine.label}</span><strong>{engine.configured ? engine.selected ? 'ACTIVE' : 'READY' : 'NO KEY'}</strong>
+        </span>)}</div>
+        {settings.data.searchMode === 'chromium' && <span className={`telemetry-provider-chip ${settings.data.chromiumAvailable ? 'ready' : 'missing'}`} data-testid="telemetry-provider-chromium"><i aria-hidden="true" /><span>CHROMIUM</span><strong>{settings.data.chromiumAvailable ? 'AVAILABLE' : 'UNAVAILABLE'}</strong></span>}
+        <p className="telemetry-search-disclaimer">Configuration status only; no live connectivity probe.</p>
+      </div>}
+    </section>
+
+    <section className="telemetry-section context-meter">
+      <div className="telemetry-section-head"><span className="telemetry-section-mark"><Activity size={14} /></span><div><span className="telemetry-kicker">SELECTED THREAD</span><h3>Conversation footprint</h3></div></div>
+      {!selectedId ? <p className="telemetry-empty">Select a conversation to estimate its message text.</p> : thread.isLoading ? <div className="telemetry-skeleton"><i /><i /></div> : thread.isError ? <div className="telemetry-error"><span>Thread messages unavailable.</span><button type="button" onClick={() => thread.refetch()}>Retry</button></div> : <>
+        <div className="context-meter-value"><strong data-testid="text-context-estimate">~{estimatedTokens.toLocaleString()}</strong><span>estimated tokens</span></div>
+        <div className="context-meter-track" role="meter" aria-label="Estimated message text footprint" aria-valuemin={0} aria-valuemax={16000} aria-valuenow={Math.min(16000, estimatedTokens)}><i style={{ transform: `scaleX(${meterWidth / 100})` }} /></div>
+        <div className="context-meter-caption"><span>{messages.length} messages · {messageChars.toLocaleString()} characters</span><span>visual scale only</span></div>
+        <p className="telemetry-footnote">Approximation from selected-thread message characters (about 4 characters per token). Not provider-measured usage; excludes hidden instructions and provider-side context.</p>
+      </>}
+    </section>
+
+    <section className="telemetry-section workspace-recents">
+      <div className="telemetry-section-head"><span className="telemetry-section-mark"><HardDrive size={14} /></span><div><span className="telemetry-kicker">LOCAL WORKSPACE</span><h3>Memory &amp; recent files</h3></div></div>
+      <div className="telemetry-resource-group"><div className="telemetry-subhead"><FileText size={13} /><span>FILES</span><span className="telemetry-count">{files.data?.length ?? (files.isLoading ? '…' : '—')}</span></div>
+        {files.isLoading ? <div className="telemetry-skeleton"><i /><i /></div> : files.isError ? <div className="telemetry-error"><span>Files unavailable.</span><button type="button" onClick={() => files.refetch()}>Retry</button></div> : recentFiles.length ? recentFiles.map((file) => <div className="telemetry-resource" key={file.id} data-testid={`telemetry-file-${file.id}`}><FileText size={13} /><span title={file.name}>{file.name}</span><time>{timeAgo(file.createdAt)}</time></div>) : <p className="telemetry-empty">No workspace files yet.</p>}
+      </div>
+      <div className="telemetry-resource-group"><div className="telemetry-subhead"><BookOpen size={13} /><span>NOTES</span><span className="telemetry-count">{notes.data?.length ?? (notes.isLoading ? '…' : '—')}</span></div>
+        {notes.isLoading ? <div className="telemetry-skeleton"><i /><i /></div> : notes.isError ? <div className="telemetry-error"><span>Notes unavailable.</span><button type="button" onClick={() => notes.refetch()}>Retry</button></div> : recentNotes.length ? recentNotes.map((note) => <div className="telemetry-resource" key={note.id} data-testid={`telemetry-note-${note.id}`}><BookOpen size={13} /><span title={note.title}>{note.title}</span><time>{timeAgo(note.updatedAt)}</time></div>) : <p className="telemetry-empty">No workspace notes yet.</p>}
+      </div>
+    </section>
+
+    <section className="telemetry-section execution-log">
+      <div className="telemetry-section-head"><span className="telemetry-section-mark"><Clock3 size={14} /></span><div><span className="telemetry-kicker">TASK LOGS</span><h3>Recent execution events</h3></div></div>
+      {tasks.isLoading ? <div className="telemetry-skeleton"><i /><i /><i /></div> : tasks.isError ? <div className="telemetry-error"><span>Task logs unavailable.</span><button type="button" onClick={() => tasks.refetch()}>Retry</button></div> : recentLogs.length ? <div className="telemetry-log-list">{recentLogs.map((log) => <article className="telemetry-log-entry" key={`${log.taskId}-${log.id}`} data-testid={`telemetry-log-${log.id}`}><i className={`telemetry-log-dot ${log.kind}`} /><div><div className="telemetry-log-meta"><strong>{log.kind}</strong><time dateTime={log.createdAt}>{formatClock(log.createdAt)}</time></div><span className="telemetry-log-task">{log.objective}</span><p>{log.message}</p></div></article>)}</div> : <p className="telemetry-empty">No task log entries recorded yet.</p>}
+    </section>
+    <div className="telemetry-safety-note"><span className="telemetry-safety-indicator" /><span>Local-first operations · Python execution and preview behavior unchanged</span></div>
+  </div>;
+}
+
+function InspectorPanel({ onClose, defaultTab }: { onClose: () => void; defaultTab: 'telemetry' | 'preview' }) {
+  const [tab, setTab] = useState<'telemetry' | 'preview' | 'files'>(defaultTab);
   useEffect(() => {
     const showPreview = () => setTab('preview');
     window.addEventListener('morrow:show-preview', showPreview);
     return () => window.removeEventListener('morrow:show-preview', showPreview);
   }, []);
-  return <aside className="right-inspector" aria-label="Workspace inspector" data-testid="right-inspector">
-    <div className="inspector-heading"><div><span className="eyebrow">INSPECTOR</span><strong>Workspace</strong></div><button className="icon-button" onClick={onClose} aria-label="Close inspector" data-testid="button-close-inspector"><X size={16} /></button></div>
-    <div className="inspector-tabs" role="tablist" aria-label="Inspector views">
+  return <aside className="right-inspector" aria-label="Telemetry and workspace console" data-testid="right-inspector">
+    <div className="inspector-heading"><div><span className="eyebrow">// TELEMETRY &amp; ACTIVE SYSTEM RUNTIME</span><strong>Forge Console</strong></div><button className="icon-button" onClick={onClose} aria-label="Close inspector" data-testid="button-close-inspector"><X size={16} /></button></div>
+    <div className="inspector-tabs" role="tablist" aria-label="Console views">
+      <button role="tab" aria-selected={tab === 'telemetry'} className={tab === 'telemetry' ? 'active' : ''} onClick={() => setTab('telemetry')} data-testid="tab-inspector-telemetry">Telemetry</button>
       <button role="tab" aria-selected={tab === 'preview'} className={tab === 'preview' ? 'active' : ''} onClick={() => setTab('preview')} data-testid="tab-inspector-live-preview">Live Preview</button>
-      <button role="tab" aria-selected={tab === 'files'} className={tab === 'files' ? 'active' : ''} onClick={() => setTab('files')} data-testid="tab-workspace-inspector">Workspace Inspector</button>
+      <button role="tab" aria-label="Workspace Inspector" title="Workspace Inspector" aria-selected={tab === 'files'} className={tab === 'files' ? 'active' : ''} onClick={() => setTab('files')} data-testid="tab-workspace-inspector">Workspace</button>
     </div>
-    <div className="inspector-content">{tab === 'preview' ? <WorkspacePreview /> : <WorkspaceInspector />}</div>
+    <div className="inspector-content">{tab === 'telemetry' ? <SystemTelemetry /> : tab === 'preview' ? <WorkspacePreview /> : <WorkspaceInspector />}</div>
   </aside>;
 }
 

@@ -63,10 +63,10 @@ html[data-theme] :is(.exec-text,.exec-user-text) { min-width:0; }
   html[data-theme] .nav-link { gap:8px; }
   html[data-theme] .command-metrics > span { padding:3px 6px; }
 }
-/* 901-1100px: inspector becomes an overlay so the conversation keeps its width */
-@media (max-width:1100px) and (min-width:901px) {
+/* Below the wide-cockpit breakpoint, the console is a drawer so chat retains its full lane. */
+@media (max-width:1599px) and (min-width:901px) {
   html[data-theme] .app-frame, html[data-theme] .app-frame.inspector-open, html[data-theme] .app-frame.inspector-closed { grid-template-columns:var(--sidebar-w) minmax(0,1fr)!important; }
-  html[data-theme] .app-frame.inspector-open .right-inspector { position:fixed; z-index:45; top:52px; right:8px; bottom:8px; grid-column:auto; height:auto; width:min(420px,calc(100vw - var(--sidebar-w) - 24px)); box-shadow:0 15px 55px #0009; border:1px solid var(--border); }
+  html[data-theme] .app-frame.inspector-open .right-inspector { position:fixed; z-index:45; top:52px; right:8px; bottom:8px; grid-column:auto; height:auto; width:min(450px,calc(100vw - var(--sidebar-w) - 24px)); box-shadow:0 15px 55px #0009; border:1px solid var(--border); }
   html[data-theme] .app-frame.inspector-open .inspector-resize { display:none!important; }
 }
 @media (max-width:900px) {
@@ -113,6 +113,8 @@ html[data-theme] :is(.exec-text,.exec-user-text) { min-width:0; }
 }
 @media (min-width:1600px) {
   html[data-theme] { --sidebar-w:260px; --stream-max:64rem; --type-body:14px; --type-control:13px; --type-micro:12px; }
+  html[data-theme] .app-frame.inspector-open { grid-template-columns:var(--sidebar-w) minmax(0,1fr) 8px clamp(380px,var(--inspector-width,410px),450px)!important; }
+  html[data-theme] .app-frame.inspector-closed { grid-template-columns:var(--sidebar-w) minmax(0,1fr)!important; }
 }
 
 /* Bounded attachments and approval dock; composer never leaves the viewport */
@@ -267,4 +269,110 @@ html[data-theme] .execution-panel .exec-result .exec-rich :is(h1,h2,h3,h4) { lin
   html[data-theme] .stream-heading-main .thread-title { width:100%; }
   html[data-theme] .stream-model-badge { max-width:135px; }
   html[data-theme] .activity-panel .exec-stream { padding-inline:8px; }
+}
+
+/* System Telemetry & Workspace Console */
+html[data-theme] .console-toggle {
+  display:inline-flex; align-items:center; justify-content:center; gap:6px; width:auto; min-width:32px;
+  padding-inline:8px; color:var(--accent); border:1px solid color-mix(in srgb,var(--accent) 34%,var(--border));
+  background:color-mix(in srgb,var(--accent) 7%,var(--bg-card)); font:10px var(--font-mono); letter-spacing:.06em;
+}
+html[data-theme] .console-toggle:hover,
+html[data-theme] .console-toggle[aria-expanded="true"] { background:color-mix(in srgb,var(--accent) 13%,var(--bg-card)); }
+html[data-theme] .inspector-heading { min-width:0; }
+html[data-theme] .inspector-heading > div { min-width:0; }
+html[data-theme] .inspector-heading .eyebrow { max-width:calc(100vw - 490px); white-space:nowrap; }
+html[data-theme] .inspector-tabs { flex:none; gap:2px; padding:7px 8px; }
+html[data-theme] .inspector-tabs button { padding:7px 3px; font-size:9px!important; white-space:nowrap; }
+html[data-theme] .telemetry-console {
+  display:flex; min-height:100%; flex-direction:column; gap:10px; padding:12px;
+  color:var(--text-primary); font-family:var(--font-mono);
+}
+html[data-theme] .telemetry-section {
+  min-width:0; padding:11px; border:1px solid color-mix(in srgb,var(--border) 84%,var(--accent));
+  background:color-mix(in srgb,var(--bg-card) 92%,transparent);
+}
+html[data-theme] .telemetry-section-head { display:flex; align-items:center; gap:8px; margin-bottom:10px; }
+html[data-theme] .telemetry-section-mark {
+  display:grid; width:26px; height:26px; flex:none; place-items:center; border:1px solid color-mix(in srgb,var(--accent) 36%,var(--border));
+  color:var(--accent); background:color-mix(in srgb,var(--accent) 8%,var(--bg-panel));
+}
+html[data-theme] .telemetry-section-head > div { min-width:0; flex:1; }
+html[data-theme] .telemetry-kicker { display:block; color:var(--text-muted); font-size:9px; letter-spacing:.11em; }
+html[data-theme] .telemetry-section-head h3 { overflow:hidden; margin:2px 0 0; color:var(--text-primary); font-size:12px; font-weight:600; text-overflow:ellipsis; white-space:nowrap; }
+html[data-theme] .telemetry-live-tag {
+  padding:2px 5px; border:1px solid color-mix(in srgb,var(--accent) 34%,var(--border)); color:var(--accent);
+  font-size:8px; letter-spacing:.1em;
+}
+html[data-theme] .telemetry-stats { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:5px; }
+html[data-theme] .telemetry-stats > div { display:grid; gap:4px; min-width:0; padding:7px; border-left:1px solid var(--border); background:color-mix(in srgb,var(--bg-panel) 65%,transparent); }
+html[data-theme] .telemetry-stats span { color:var(--text-muted); font-size:9px; }
+html[data-theme] .telemetry-stats strong { color:var(--accent); font-size:17px; font-weight:500; }
+html[data-theme] .telemetry-model { display:grid; gap:4px; margin-top:9px; padding-top:8px; border-top:1px solid var(--border); }
+html[data-theme] .telemetry-model > strong { overflow-wrap:anywhere; color:var(--text-primary); font-size:13px; font-weight:600; }
+html[data-theme] .telemetry-model-id { overflow-wrap:anywhere; color:var(--text-muted); font-size:9px; }
+html[data-theme] .telemetry-search { display:grid; gap:7px; margin-top:8px; padding-top:7px; border-top:1px solid var(--border); }
+html[data-theme] .telemetry-search-heading { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+html[data-theme] .telemetry-search-mode { color:var(--accent); font-size:8px; text-transform:uppercase; }
+html[data-theme] .telemetry-provider-list { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:5px; }
+html[data-theme] .telemetry-provider-chip { display:flex; min-width:0; align-items:center; gap:5px; padding:5px 6px; border:1px solid var(--border); color:var(--text-muted); font-size:8px; }
+html[data-theme] .telemetry-provider-chip > i,
+html[data-theme] .telemetry-safety-indicator { width:6px; height:6px; flex:none; border-radius:50%; background:var(--text-muted); }
+html[data-theme] .telemetry-provider-chip.ready > i { background:var(--status-done,#5be0a2); box-shadow:0 0 6px color-mix(in srgb,var(--status-done,#5be0a2) 55%,transparent); }
+html[data-theme] .telemetry-provider-chip.missing > i { background:var(--error); }
+html[data-theme] .telemetry-provider-chip.selected { border-color:color-mix(in srgb,var(--accent) 55%,var(--border)); color:var(--text-primary); background:color-mix(in srgb,var(--accent) 7%,var(--bg-panel)); }
+html[data-theme] .telemetry-provider-chip > span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+html[data-theme] .telemetry-provider-chip > strong { margin-left:auto; color:var(--text-muted); font-size:7px; font-weight:500; white-space:nowrap; }
+html[data-theme] .telemetry-provider-chip.ready > strong { color:var(--status-done,#5be0a2); }
+html[data-theme] .telemetry-provider-chip.selected > strong { color:var(--accent); }
+html[data-theme] .telemetry-search > .telemetry-provider-chip { width:max-content; }
+html[data-theme] .telemetry-search-disclaimer { margin:0; color:var(--text-muted); font-size:8px; line-height:1.35; }
+html[data-theme] .telemetry-safety-indicator { background:var(--text-muted); }
+html[data-theme] .context-meter-value { display:flex; align-items:baseline; gap:6px; }
+html[data-theme] .context-meter-value strong { color:var(--accent); font-size:19px; font-weight:500; }
+html[data-theme] .context-meter-value span { color:var(--text-muted); font-size:10px; }
+html[data-theme] .context-meter-track { height:6px; margin:8px 0 5px; overflow:hidden; border:1px solid var(--border); background:var(--bg-panel); }
+html[data-theme] .context-meter-track i { display:block; width:100%; height:100%; transform-origin:left center; background:var(--accent); }
+html[data-theme] .context-meter-caption { display:flex; justify-content:space-between; gap:8px; color:var(--text-muted); font-size:8px; }
+html[data-theme] .telemetry-footnote { margin:7px 0 0; color:var(--text-muted); font-size:9px; line-height:1.45; }
+html[data-theme] .telemetry-resource-group + .telemetry-resource-group { margin-top:10px; padding-top:9px; border-top:1px solid var(--border); }
+html[data-theme] .telemetry-subhead { display:flex; align-items:center; gap:6px; margin-bottom:4px; color:var(--accent); font-size:9px; letter-spacing:.08em; }
+html[data-theme] .telemetry-count { margin-left:auto; color:var(--text-muted); }
+html[data-theme] .telemetry-resource { display:flex; min-width:0; align-items:center; gap:7px; padding:5px 1px; color:var(--text-muted); }
+html[data-theme] .telemetry-resource > svg { flex:none; color:var(--accent); }
+html[data-theme] .telemetry-resource > span { min-width:0; flex:1; overflow:hidden; color:var(--text-primary); font-size:10px; text-overflow:ellipsis; white-space:nowrap; }
+html[data-theme] .telemetry-resource time { flex:none; color:var(--text-muted); font-size:8px; }
+html[data-theme] .telemetry-empty { margin:5px 0 0; color:var(--text-muted); font-size:10px; }
+html[data-theme] .telemetry-error { display:flex; align-items:center; justify-content:space-between; gap:8px; color:var(--error); font-size:10px; }
+html[data-theme] .telemetry-error button { padding:3px 6px; border:1px solid var(--border); color:var(--accent); background:var(--bg-panel); font:9px var(--font-mono); cursor:pointer; }
+html[data-theme] .telemetry-skeleton { display:grid; gap:6px; }
+html[data-theme] .telemetry-skeleton i { display:block; height:17px; background:linear-gradient(90deg,var(--surface-raised),color-mix(in srgb,var(--accent) 10%,var(--surface-raised)),var(--surface-raised)); animation:telemetry-shimmer 1.8s ease-in-out infinite; }
+html[data-theme] .telemetry-skeleton i:nth-child(2) { width:78%; }
+html[data-theme] .telemetry-skeleton i:nth-child(3) { width:58%; }
+html[data-theme] .telemetry-skeleton.model-skeleton i { height:24px; width:72%; }
+@keyframes telemetry-shimmer { 50% { opacity:.45; } }
+html[data-theme] .telemetry-log-list { display:grid; }
+html[data-theme] .telemetry-log-entry { display:grid; grid-template-columns:7px minmax(0,1fr); gap:8px; padding:8px 0; border-top:1px solid color-mix(in srgb,var(--border) 70%,transparent); }
+html[data-theme] .telemetry-log-dot { width:6px; height:6px; margin-top:4px; border-radius:50%; background:var(--text-muted); }
+html[data-theme] .telemetry-log-dot.error { background:var(--error); }
+html[data-theme] .telemetry-log-dot.warning { background:var(--warn); }
+html[data-theme] .telemetry-log-dot.success,
+html[data-theme] .telemetry-log-dot.result { background:var(--accent); }
+html[data-theme] .telemetry-log-entry > div { min-width:0; }
+html[data-theme] .telemetry-log-meta { display:flex; align-items:center; justify-content:space-between; gap:8px; color:var(--accent); font-size:9px; text-transform:uppercase; }
+html[data-theme] .telemetry-log-meta time { flex:none; color:var(--text-muted); font-size:8px; text-transform:none; }
+html[data-theme] .telemetry-log-task { display:block; overflow:hidden; margin-top:3px; color:var(--text-muted); font-size:9px; text-overflow:ellipsis; white-space:nowrap; }
+html[data-theme] .telemetry-log-entry p { margin:4px 0 0; color:var(--text-primary); font-size:10px; line-height:1.45; overflow-wrap:anywhere; white-space:pre-wrap; }
+html[data-theme] .telemetry-safety-note { display:flex; align-items:flex-start; gap:7px; padding:8px 2px 2px; color:var(--text-muted); font-size:9px; line-height:1.45; }
+html[data-theme] .telemetry-safety-indicator { margin-top:4px; background:var(--accent); }
+@media (max-width:600px) {
+  html[data-theme] .console-toggle { width:30px; padding:0; }
+  html[data-theme] .console-toggle span { display:none; }
+  html[data-theme] .inspector-heading .eyebrow { max-width:calc(100vw - 80px); font-size:7px!important; letter-spacing:.06em; }
+  html[data-theme] .telemetry-console { padding:9px; }
+  html[data-theme] .inspector-tabs button { font-size:8px!important; }
+}
+@media (prefers-reduced-motion:reduce) {
+  html[data-theme] .telemetry-skeleton i,
+  html[data-theme] .context-meter-track i { animation:none!important; }
 }
