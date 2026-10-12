@@ -313,6 +313,7 @@ export const WorkspacePreviewAppFramework = {
   streamlit: 'streamlit',
   flask: 'flask',
   fastapi: 'fastapi',
+  vite: 'vite',
 } as const;
 
 export type WorkspacePreviewAppStatus = typeof WorkspacePreviewAppStatus[keyof typeof WorkspacePreviewAppStatus];
@@ -344,6 +345,8 @@ export interface WorkspacePreviewStatus {
   /** @nullable */
   staticPreviewUrl: string | null;
   pythonPreviewsEnabled: boolean;
+  /** Whether local Python and Vite app previews are enabled; always false in Replit Cloud. */
+  localAppPreviewsEnabled: boolean;
   /** @minimum 1 */
   pythonPreviewRuntimeLimitSeconds: number;
   apps: WorkspacePreviewApp[];

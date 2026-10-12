@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import shutil
 import tempfile
 import unittest
 from pathlib import Path
@@ -10,6 +11,7 @@ from unittest.mock import patch
 import httpx
 
 import main
+from tools.agent_tools import prepare_terminal_argv
 
 
 class WorkspaceSafetyTests(unittest.IsolatedAsyncioTestCase):
@@ -86,6 +88,104 @@ class WorkspaceSafetyTests(unittest.IsolatedAsyncioTestCase):
         for command in blocked:
             with self.subTest(command=command), self.assertRaises(PermissionError):
                 main.parse_workspace_command(command)
+
+    def test_local_terminal_commands_require_exact_local_approval(self) -> None:
+        with (
+            patch.object(main, "is_replit_runtime", return_value=False),
+            patch.object(main, "local_code_runner_available", return_value=True),
+        ):
+            staged = main.workspace_action_requiring_approval(
+                "run_terminal_command",
+                {"command": "python -m pytest", "cwd": "."},
+            )
+        self.assertEqual(
+            staged,
+            (
+                "terminal_command",
+                {"command": "python -m pytest", "cwd": "."},
+                "Run local terminal command: python -m pytest",
+            ),
+        )
+        for command in (
+            "python -m pytest && echo bypass",
+            "python -c print(1)",
+            "rmdir /s /q workspace",
+            "sudo python main.py",
+        ):
+            with self.subTest(command=command), self.assertRaises(PermissionError):
+                main.validate_terminal_command(command)
+        with patch.object(main, "is_replit_runtime", return_value=True):
+            with self.assertRaises(PermissionError):
+                main.workspace_action_requiring_approval(
+                    "run_terminal_command",
+                    {"command": "python -m pytest", "cwd": "."},
+                )
+        self.assertEqual(
+            main.validate_terminal_command('npm install --prefix "web app"', windows=True),
+            ["npm", "install", "--prefix", "web app"],
+        )
+        self.assertEqual(
+            main.validate_terminal_command(r'python "C:\Users\me\app.py"', windows=True),
+            ["python", r"C:\Users\me\app.py"],
+        )
+
+    def test_windows_npm_batch_shim_is_replaced_with_node_cli(self) -> None:
+        node = self.root / "node.exe"
+        npm = self.root / "npm.cmd"
+        cli = self.root / "node_modules" / "npm" / "bin" / "npm-cli.js"
+        node.touch()
+        npm.touch()
+        cli.parent.mkdir(parents=True)
+        cli.touch()
+        with patch(
+            "tools.agent_tools.shutil.which",
+            side_effect=lambda name: str(node) if name in {"node.exe", "node"}
+            else str(npm) if name in {"npm.cmd", "npm"}
+            else None,
+        ):
+            prepared = prepare_terminal_argv(
+                ["npm", "install", "--prefix", "web app"],
+                windows=True,
+            )
+        self.assertEqual(prepared, [str(node), str(cli), "install", "--prefix", "web app"])
+
+    def test_approved_terminal_runner_uses_workspace_and_scrubs_secrets(self) -> None:
+        script = self.workspace / "runner_probe.py"
+        script.write_text(
+            "import os\n"
+            "print(os.getcwd())\n"
+            "print(os.getenv('OPENAI_API_KEY', 'missing'))\n",
+            encoding="utf-8",
+        )
+        with patch.dict(
+            "os.environ",
+            {"PATH": __import__("os").environ.get("PATH", ""), "OPENAI_API_KEY": "test-only-secret"},
+            clear=True,
+        ):
+            result = main.run_approved_terminal_command(self.workspace, "python runner_probe.py")
+        self.assertEqual(result["returnCode"], 0, result["stderr"])
+        self.assertEqual(result["stdout"].splitlines(), [str(self.workspace.resolve()), "missing"])
+
+    def test_write_file_supports_project_source_and_existing_files_need_approval(self) -> None:
+        created = main.write_workspace_source_file(
+            self.workspace,
+            "web/src/App.tsx",
+            "export default function App() { return <main />; }\n",
+        )
+        self.assertEqual(created["path"], "web/src/App.tsx")
+        required = main.workspace_action_requiring_approval(
+            "write_file",
+            {"path": "web/src/App.tsx", "content": "replacement\n"},
+        )
+        self.assertIsNotNone(required)
+        action, payload, _summary = required
+        self.assertEqual(action, "write_source_file")
+        result = main.parse_json(main.apply_approved_workspace_action(action, payload), {})
+        self.assertTrue(result["approved"])
+        self.assertEqual((self.workspace / "web/src/App.tsx").read_text(encoding="utf-8"), "replacement\n")
+        with self.assertRaises((PermissionError, main.WorkspacePreviewError)):
+            main.write_workspace_source_file(self.workspace, "../outside.py", "blocked\n")
+        self.assertEqual(main.list_workspace_directory(".")["path"], ".")
 
     async def test_static_preview_is_available_and_python_previews_are_disabled_by_default(self) -> None:
         manager = main.WorkspacePreviewManager(self.workspace)
@@ -246,6 +346,45 @@ class WorkspaceSafetyTests(unittest.IsolatedAsyncioTestCase):
             finally:
                 manager.stop_all()
 
+    @unittest.skipUnless(shutil.which("node"), "Node.js is unavailable")
+    async def test_local_vite_preview_uses_registered_loopback_port_and_stops(self) -> None:
+        project = self.workspace / "site"
+        vite_entry = project / "node_modules" / "vite" / "bin" / "vite.js"
+        vite_entry.parent.mkdir(parents=True)
+        (project / "package.json").write_text(
+            json.dumps({"scripts": {"dev": "vite"}, "devDependencies": {"vite": "*"}}),
+            encoding="utf-8",
+        )
+        vite_entry.write_text(
+            "const http=require('http');\n"
+            "const args=process.argv.slice(2);\n"
+            "const port=Number(args[args.indexOf('--port')+1]);\n"
+            "const base=args[args.indexOf('--base')+1];\n"
+            "http.createServer((req,res)=>{res.writeHead(200,{'content-type':'text/plain'});res.end('vite:'+base);})"
+            ".listen(port,'127.0.0.1');\n",
+            encoding="utf-8",
+        )
+        manager = main.WorkspacePreviewManager(self.workspace)
+        with patch.dict(
+            "os.environ",
+            {
+                "RUN_LOCAL_APP_PREVIEWS": "true",
+                "REPL_ID": "",
+                "REPLIT_DEV_DOMAIN": "",
+                "REPLIT_DOMAINS": "",
+            },
+        ):
+            try:
+                launched = await manager.launch("vite", "site")
+                async with httpx.AsyncClient(timeout=5) as client:
+                    response = await client.get(launched["localUrl"])
+                self.assertEqual(response.status_code, 200, response.text)
+                self.assertIn(launched["previewUrl"], response.text)
+                self.assertEqual(manager.stop_all(), 1)
+                self.assertEqual(manager.list_apps(), [])
+            finally:
+                manager.stop_all()
+
     async def _create_pending_task(self, approval_id: str, action: str, payload: dict[str, str]) -> str:
         task_id = f"task-{approval_id}"
         now = main.utc_now()
@@ -398,6 +537,68 @@ class WorkspaceSafetyTests(unittest.IsolatedAsyncioTestCase):
         task = main.db_one("SELECT status,pending_approval_kind FROM tasks WHERE id=?", (task_id,))
         self.assertEqual(task["status"], "queued")
         self.assertIsNone(task["pending_approval_kind"])
+
+    async def test_local_terminal_command_runs_only_after_approval(self) -> None:
+        approval_id = "approval-terminal"
+        task_id = await self._create_pending_task(
+            approval_id,
+            "terminal_command",
+            {"command": "python -m pytest", "cwd": "."},
+        )
+
+        async def fake_worker(*_args: object) -> None:
+            return None
+
+        with (
+            patch.object(main, "is_replit_runtime", return_value=False),
+            patch.object(main, "local_code_runner_available", return_value=True),
+            patch.object(
+                main,
+                "run_approved_terminal_command",
+                return_value={
+                    "returnCode": 0,
+                    "timedOut": False,
+                    "stdout": "2 tests passed",
+                    "stderr": "",
+                },
+            ) as terminal_runner,
+            patch.object(main, "run_agent_task", new=fake_worker),
+        ):
+            response = await self._choose_approval(task_id, approval_id, True)
+            self.assertEqual(response.status_code, 200, response.text)
+            for _ in range(50):
+                pending = main.db_one("SELECT status FROM pending_approvals WHERE id=?", (approval_id,))
+                if pending["status"] != "processing":
+                    break
+                await asyncio.sleep(0.01)
+        terminal_runner.assert_called_once_with(self.workspace, "python -m pytest", ".")
+        self.assertEqual(pending["status"], "approved")
+        task = main.db_one("SELECT status,pending_approval_kind,messages_json FROM tasks WHERE id=?", (task_id,))
+        self.assertEqual(task["status"], "queued")
+        self.assertIsNone(task["pending_approval_kind"])
+        self.assertIn("2 tests passed", task["messages_json"])
+
+    async def test_rejected_local_terminal_command_never_runs(self) -> None:
+        approval_id = "approval-terminal-reject"
+        task_id = await self._create_pending_task(
+            approval_id,
+            "terminal_command",
+            {"command": "python -m pytest", "cwd": "."},
+        )
+
+        async def fake_worker(*_args: object) -> None:
+            return None
+
+        with (
+            patch.object(main, "run_approved_terminal_command") as terminal_runner,
+            patch.object(main, "run_agent_task", new=fake_worker),
+        ):
+            response = await self._choose_approval(task_id, approval_id, False)
+            await asyncio.sleep(0)
+        self.assertEqual(response.status_code, 200, response.text)
+        terminal_runner.assert_not_called()
+        pending = main.db_one("SELECT status FROM pending_approvals WHERE id=?", (approval_id,))
+        self.assertEqual(pending["status"], "rejected")
 
 
 if __name__ == "__main__":

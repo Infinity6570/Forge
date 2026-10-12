@@ -34,6 +34,7 @@ BLOCKED_SOURCE_NAMES = {
     ".env", "credentials.json", "secrets.json", "id_rsa", "id_ed25519",
 }
 BLOCKED_SOURCE_SUFFIXES = {".pem", ".key", ".p12", ".pfx", ".crt", ".cer", ".db", ".sqlite"}
+GENERATED_SOURCE_DIRS = {"node_modules", "__pycache__", ".agent-packages", ".venv", "venv"}
 MAX_PREVIEW_FILE_BYTES = 2 * 1024 * 1024
 MAX_RUNNING_APPS = 3
 STARTUP_TIMEOUT_SECONDS = 30
@@ -139,6 +140,7 @@ def resolve_workspace_source_file(workspace: Path, relative_path: str, *, allow_
         not resolved_parts
         or resolved_parts[0].lower() in {"uploads", "notes", "preview-runtime"}
         or any(part.startswith(".") for part in resolved_parts)
+        or any(part.lower() in GENERATED_SOURCE_DIRS for part in resolved_parts)
         or path.name.casefold() in BLOCKED_SOURCE_NAMES
         or path.suffix.lower() in BLOCKED_SOURCE_SUFFIXES
         or path.suffix.lower() not in SOURCE_SUFFIXES
@@ -150,9 +152,12 @@ def resolve_workspace_source_file(workspace: Path, relative_path: str, *, allow_
 
 
 def resolve_workspace_vite_project(workspace: Path, relative_path: str) -> Path:
-    parts = _safe_relative_parts(relative_path)
-    target = resolve_workspace_path(workspace, Path(*parts))
     root = workspace.resolve()
+    if relative_path == ".":
+        target = root
+    else:
+        parts = _safe_relative_parts(relative_path)
+        target = resolve_workspace_path(workspace, Path(*parts))
     if target.is_file() and target.name == "package.json":
         project = target.parent
     elif target.is_dir():
@@ -164,6 +169,7 @@ def resolve_workspace_vite_project(workspace: Path, relative_path: str) -> Path:
         not relative_project.parts
         or relative_project.parts[0].lower() in {"uploads", "notes", "preview-runtime"}
         or any(part.startswith(".") for part in relative_project.parts)
+        or any(part.lower() in GENERATED_SOURCE_DIRS for part in relative_project.parts)
     ):
         raise WorkspacePreviewError("Vite projects must be inside a visible workspace folder.")
     package_file = project / "package.json"
@@ -377,6 +383,9 @@ class WorkspacePreviewManager:
         home_dir.mkdir(parents=True, exist_ok=True)
         temp_dir.mkdir(parents=True, exist_ok=True)
         python_paths = [str(self.workspace)]
+        package_target = self.workspace / ".agent-packages"
+        if package_target.is_dir():
+            python_paths.append(str(package_target))
         python_paths.extend(
             value
             for value in sys.path

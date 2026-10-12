@@ -901,7 +901,7 @@ components:
         id: { type: string, format: uuid }
         framework:
           type: string
-          enum: [streamlit, flask, fastapi]
+          enum: [streamlit, flask, fastapi, vite]
         entryPath: { type: string }
         port: { type: integer, minimum: 1, maximum: 65535 }
         localUrl: { type: string, format: uri }
@@ -912,12 +912,13 @@ components:
         startedAt: { type: string, format: date-time }
     WorkspacePreviewStatus:
       type: object
-      required: [staticAvailable, staticEntryPath, staticPreviewUrl, pythonPreviewsEnabled, pythonPreviewRuntimeLimitSeconds, apps]
+      required: [staticAvailable, staticEntryPath, staticPreviewUrl, pythonPreviewsEnabled, localAppPreviewsEnabled, pythonPreviewRuntimeLimitSeconds, apps]
       properties:
         staticAvailable: { type: boolean }
         staticEntryPath: { type: ["string", "null"] }
         staticPreviewUrl: { type: ["string", "null"] }
         pythonPreviewsEnabled: { type: boolean }
+        localAppPreviewsEnabled: { type: boolean, description: "Whether local Python and Vite app previews are enabled; always false in Replit Cloud." }
         pythonPreviewRuntimeLimitSeconds: { type: integer, minimum: 1 }
         apps:
           type: array

@@ -397,11 +397,14 @@ function TaskActionDock({ task }: { task?: AssistantTask }) {
     retry.mutate({ id: task.id, data: { retry: shouldRetry } }, { onSuccess: update, onError: () => setError('The specialist retry could not be started. Please try again.') });
   };
   const recommended = modelDisplayName(task.recommendedProvider, task.recommendedModelId);
+  const isTerminalCommand = task.pendingApprovalKind === 'terminal_command';
   return <section className="action-dock" aria-label="Task decisions" data-testid="task-action-dock">
     <div className="dock-heading"><span className="dock-alert" /><strong>Waiting for your decision</strong><span>{task.objective}</span></div>
-    {needsApproval && <div className={`dock-card ${isElevated ? 'security-warning' : ''}`} data-testid={isElevated ? 'dock-elevated-approval' : 'dock-workspace-approval'}>
-      {isElevated ? <><strong>Administrative Privilege Requested:</strong><p>The agent is requesting permission to execute:</p><code>{task.approvalSummary}</code><span> with elevated system permissions.</span><p>Nothing runs until you approve. The invocation will be recorded in <code>logs/elevated_audit.log</code>.</p><p>If pkexec is unavailable, the sudo fallback requires an already-authorized non-interactive sudo session and fails closed otherwise.</p></> : <><strong>Workspace action needs your approval</strong><p>{task.approvalSummary} The agent is paused; no change has been made yet.</p></>}
-      <div className="model-recommendation-actions"><button className="button button-primary" onClick={() => decide(true)} disabled={approval.isPending} data-testid="button-dock-approve">{approval.isPending ? 'Applying…' : isElevated ? 'Approve & Run with UAC' : 'Approve and continue'}</button><button className="button button-quiet" onClick={() => decide(false)} disabled={approval.isPending} data-testid="button-dock-reject">{isElevated ? 'Reject Action' : 'Reject and continue'}</button></div>
+    {needsApproval && <div className={`dock-card ${isElevated || isTerminalCommand ? 'security-warning' : ''}`} data-testid={isElevated ? 'dock-elevated-approval' : isTerminalCommand ? 'dock-terminal-approval' : 'dock-workspace-approval'}>
+      {isElevated ? <><strong>Administrative Privilege Requested:</strong><p>The agent is requesting permission to execute:</p><code>{task.approvalSummary}</code><span> with elevated system permissions.</span><p>Nothing runs until you approve. The invocation will be recorded in <code>logs/elevated_audit.log</code>.</p><p>If pkexec is unavailable, the sudo fallback requires an already-authorized non-interactive sudo session and fails closed otherwise.</p></>
+        : isTerminalCommand ? <><strong>Local terminal command needs approval</strong><p>The agent requests to run this exact command with your normal local-user permissions:</p><code>{task.approvalSummary}</code><p>It runs from workspace/ with a cleaned environment and a 30-second limit. It is not elevated, but can still change local files or data. No command has run yet.</p></>
+          : <><strong>Workspace action needs your approval</strong><p>{task.approvalSummary} The agent is paused; no change has been made yet.</p></>}
+      <div className="model-recommendation-actions"><button className="button button-primary" onClick={() => decide(true)} disabled={approval.isPending} data-testid="button-dock-approve">{approval.isPending ? 'Applying…' : isElevated ? 'Approve & Run with UAC' : isTerminalCommand ? 'Approve & Run' : 'Approve and continue'}</button><button className="button button-quiet" onClick={() => decide(false)} disabled={approval.isPending} data-testid="button-dock-reject">{isElevated ? 'Reject Action' : isTerminalCommand ? 'Reject Command' : 'Reject and continue'}</button></div>
     </div>}
     {needsModel && <div className="dock-card" data-testid="dock-model-recommendation"><strong>Recommendation:</strong><p>This task involves {task.recommendationReason}. Running on a high-capability model like {recommended} may produce better results. Would you like to switch for this task?</p><div className="model-recommendation-actions"><button className="button button-primary" onClick={() => choose(true)} disabled={model.isPending} data-testid="button-dock-switch-model">{model.isPending ? 'Saving choice…' : 'Switch to Recommended Model'}</button><button className="button button-quiet" onClick={() => choose(false)} disabled={model.isPending} data-testid="button-dock-stay-model">Stay on Current Model</button></div></div>}
     {needsFallback && <div className="dock-card security-warning" data-testid="dock-fallback-recommendation"><strong>Task encountered persistent errors on the current model.</strong><p>Would you like to retry this step with {recommended}?</p><div className="model-recommendation-actions"><button className="button button-primary" onClick={() => retryStep(true)} disabled={retry.isPending} data-testid="button-dock-retry-model">{retry.isPending ? 'Starting retry…' : 'Retry this step with Recommended Pro Model'}</button><button className="button button-quiet" onClick={() => retryStep(false)} disabled={retry.isPending} data-testid="button-dock-dismiss-retry">Not now</button></div></div>}
@@ -691,25 +694,31 @@ function TaskDetailDialog({ task, loading, error, retry, close, abort, aborting 
     });
   };
   const elevatedApproval = task?.pendingApprovalKind === 'elevated_command';
+  const terminalCommandApproval = task?.pendingApprovalKind === 'terminal_command';
   const elevationButtonLabel = typeof navigator !== 'undefined' && navigator.platform.toLowerCase().startsWith('win')
     ? 'Approve & Run with UAC'
     : 'Approve & Run with OS elevation';
   return <Modal title="Task details" onClose={close}>{loading ? <Skeleton rows={5} /> : error || !task ? <QueryProblem retry={retry} /> : <div className="detail-content"><div className="detail-objective"><StatusPill status={task.status} /><h3>{task.objective}</h3><p>Started {formatDate(task.createdAt)} <span>·</span> Updated {timeAgo(task.updatedAt)}</p></div>
     <p className="settings-footnote">Model used: <strong>{task.modelId}</strong></p>
-    {task.requiresApproval && task.pendingApprovalId && <section className={`model-recommendation approval-recommendation ${elevatedApproval ? 'elevated-approval' : ''}`} aria-live="polite" data-testid={elevatedApproval ? 'task-elevated-approval' : 'task-workspace-approval'}>
+    {task.requiresApproval && task.pendingApprovalId && <section className={`model-recommendation approval-recommendation ${elevatedApproval || terminalCommandApproval ? 'elevated-approval' : ''}`} aria-live="polite" data-testid={elevatedApproval ? 'task-elevated-approval' : terminalCommandApproval ? 'task-terminal-approval' : 'task-workspace-approval'}>
       {elevatedApproval ? <>
         <strong>Administrative Privilege Requested</strong>
         <p>The agent is requesting permission to execute this command with elevated system permissions:</p>
         <code className="elevated-command" data-testid="text-elevated-command">{task.approvalSummary}</code>
         <p>Nothing runs until you approve. The invocation will be recorded in <code>logs/elevated_audit.log</code>.</p>
         <p>If pkexec is unavailable, the sudo fallback requires an already-authorized non-interactive sudo session and fails closed otherwise.</p>
+      </> : terminalCommandApproval ? <>
+        <strong>Local terminal command needs approval</strong>
+        <p>The agent requests to run this exact command with your normal local-user permissions:</p>
+        <code className="elevated-command" data-testid="text-terminal-command">{task.approvalSummary}</code>
+        <p>It runs from workspace/ with a cleaned environment and a 30-second limit. It is not elevated, but can still change local files or data. Nothing has run yet.</p>
       </> : <>
         <strong>Workspace action needs your approval</strong>
         <p>{task.approvalSummary} The agent is paused; no change has been made yet.</p>
       </>}
       <div className="model-recommendation-actions">
-        <button className="button button-primary" onClick={() => decideApproval(true)} disabled={resolveApproval.isPending} data-testid="button-approve-workspace-action">{resolveApproval.isPending ? 'Applying…' : elevatedApproval ? elevationButtonLabel : 'Approve and continue'}</button>
-        <button className="button button-quiet" onClick={() => decideApproval(false)} disabled={resolveApproval.isPending} data-testid="button-reject-workspace-action">{elevatedApproval ? 'Reject Action' : 'Reject and continue'}</button>
+        <button className="button button-primary" onClick={() => decideApproval(true)} disabled={resolveApproval.isPending} data-testid="button-approve-workspace-action">{resolveApproval.isPending ? 'Applying…' : elevatedApproval ? elevationButtonLabel : terminalCommandApproval ? 'Approve & Run' : 'Approve and continue'}</button>
+        <button className="button button-quiet" onClick={() => decideApproval(false)} disabled={resolveApproval.isPending} data-testid="button-reject-workspace-action">{elevatedApproval ? 'Reject Action' : terminalCommandApproval ? 'Reject Command' : 'Reject and continue'}</button>
       </div>
     </section>}
     {task.requiresModelConfirmation && <section className="model-recommendation" aria-live="polite" data-testid="task-model-recommendation"><strong>Recommendation:</strong><p>This task involves {task.recommendationReason}. Running on a high-capability model like {recommendedName} may produce better results. Would you like to switch for this task?</p><div className="model-recommendation-actions"><button className="button button-primary" onClick={() => choose(true)} disabled={chooseModel.isPending} data-testid="button-switch-recommended-model">{chooseModel.isPending ? 'Saving choice…' : 'Switch to Recommended Model'}</button><button className="button button-quiet" onClick={() => choose(false)} disabled={chooseModel.isPending} data-testid="button-stay-current-model">Stay on Current Model</button></div></section>}
@@ -720,7 +729,7 @@ function TaskDetailDialog({ task, loading, error, retry, close, abort, aborting 
     {task.error && <div className="error-box"><strong><AlertCircle size={16} /> What happened</strong><p>{task.error}</p></div>}
     <div className="log-heading"><strong>Execution log</strong><span>{task.logs?.length ?? 0} entries</span></div>
     <div className="log-list">{task.logs?.length ? task.logs.map((log) => <div className="log-item" key={log.id}><span className={`log-dot ${log.kind}`} /><div><div className="log-meta"><strong>{log.kind}</strong><time>{formatDate(log.createdAt)}</time></div><span className="terminal-prefix" aria-hidden="true">{log.kind === 'tool' ? '[OP_RUNNER]' : 'FORGE://SYS_OUT >'}</span><p>{log.message}</p></div></div>) : <div className="log-empty">No execution updates yet. This view refreshes while your task is active.</div>}</div>
-    <div className="modal-actions"><button className="button button-quiet" onClick={close}>Close</button>{['queued', 'running'].includes(task.status) && task.currentStep !== 'Running approved command; waiting for operating-system elevation' && <button className="button button-danger" onClick={() => abort(task.id)} disabled={aborting} data-testid="button-abort-task"><StopCircle size={15} />{aborting ? 'Stopping…' : 'Stop task'}</button>}</div>
+    <div className="modal-actions"><button className="button button-quiet" onClick={close}>Close</button>{['queued', 'running'].includes(task.status) && !['Running approved command; waiting for operating-system elevation', 'Running approved local command (normal user permissions)'].includes(task.currentStep ?? '') && <button className="button button-danger" onClick={() => abort(task.id)} disabled={aborting} data-testid="button-abort-task"><StopCircle size={15} />{aborting ? 'Stopping…' : 'Stop task'}</button>}</div>
   </div>}</Modal>;
 }
 
@@ -747,13 +756,19 @@ function TasksPage() {
   </div></AppShell>;
 }
 
-function safePreviewUrl(value?: string | null) {
+function safePreviewUrl(value?: string | null, allowLocalPort = false, expectedPort?: number) {
   if (!value) return '';
   try {
     const parsed = new URL(value, window.location.origin);
     const previewPath = parsed.pathname.startsWith('/api/workspace/preview/static/')
       || parsed.pathname.startsWith('/api/workspace/preview/server/');
-    return parsed.origin === window.location.origin
+    const localPortPath = parsed.pathname.startsWith('/api/workspace/preview/server/');
+    const loopback = allowLocalPort
+      && localPortPath
+      && !!expectedPort
+      && parsed.port === String(expectedPort)
+      && ['localhost', '127.0.0.1', '[::1]'].includes(parsed.hostname);
+    return (parsed.origin === window.location.origin || loopback)
       && (parsed.protocol === 'http:' || parsed.protocol === 'https:')
       && !parsed.username
       && !parsed.password
@@ -772,24 +787,34 @@ function WorkspacePreview({ isMaximized, onToggleMaximized }: { isMaximized: boo
   });
   const stopApp = useStopWorkspacePreviewApp();
   const [selectedId, setSelectedId] = useState('static');
+  const [previewMode, setPreviewMode] = useState<'static' | 'server'>('static');
   const [refreshKey, setRefreshKey] = useState(0);
   const [navigatedUrl, setNavigatedUrl] = useState('');
   const [addressValue, setAddressValue] = useState('');
   const [addressError, setAddressError] = useState(false);
   const preview = previewQuery.data;
   const apps = preview?.apps ?? [];
-  const selectionExists = selectedId === 'static' ? !!preview?.staticAvailable : apps.some((app) => app.id === selectedId);
-  const activeId = selectionExists ? selectedId : preview?.staticAvailable ? 'static' : apps[0]?.id ?? '';
+  const localPortPreviewsEnabled = preview?.localAppPreviewsEnabled ?? preview?.pythonPreviewsEnabled ?? false;
+  const selectedApp = apps.find((app) => app.id === selectedId) ?? apps[0];
+  const activeId = previewMode === 'static' ? (preview?.staticAvailable ? 'static' : '') : selectedApp?.id ?? '';
   const activeApp = apps.find((app) => app.id === activeId);
-  const rawUrl = activeId === 'static' ? preview?.staticPreviewUrl : activeApp?.previewUrl;
-  const iframeUrl = safePreviewUrl(navigatedUrl || rawUrl);
+  const rawUrl = activeId === 'static'
+    ? preview?.staticPreviewUrl
+    : localPortPreviewsEnabled ? activeApp?.localUrl : activeApp?.previewUrl;
+  const iframeUrl = safePreviewUrl(navigatedUrl || rawUrl, localPortPreviewsEnabled, activeApp?.port);
   const label = activeId === 'static' ? 'Workspace preview' : activeApp?.entryPath ?? 'Running app';
   useEffect(() => {
-    const nextUrl = safePreviewUrl(rawUrl);
+    const nextUrl = safePreviewUrl(rawUrl, localPortPreviewsEnabled, activeApp?.port);
     setNavigatedUrl(nextUrl);
     setAddressValue(nextUrl);
     setAddressError(false);
-  }, [activeId, rawUrl]);
+  }, [activeId, rawUrl, localPortPreviewsEnabled, activeApp?.port]);
+  useEffect(() => {
+    if (!preview?.staticAvailable && apps.length > 0 && previewMode === 'static') {
+      setPreviewMode('server');
+      setSelectedId(apps[0].id);
+    }
+  }, [preview?.staticAvailable, apps, previewMode]);
   useEffect(() => {
     const stopRunningPreviews = () => {
       if (!navigator.sendBeacon) return;
@@ -804,7 +829,7 @@ function WorkspacePreview({ isMaximized, onToggleMaximized }: { isMaximized: boo
   }, []);
   const navigateToAddress = (event: FormEvent) => {
     event.preventDefault();
-    const nextUrl = safePreviewUrl(addressValue);
+    const nextUrl = safePreviewUrl(addressValue, localPortPreviewsEnabled, activeApp?.port);
     if (!nextUrl) {
       setAddressError(true);
       return;
@@ -819,7 +844,8 @@ function WorkspacePreview({ isMaximized, onToggleMaximized }: { isMaximized: boo
     stopApp.mutate({ data: { appId: app.id } }, {
       onSuccess: async (status) => {
         qc.setQueryData(getGetWorkspacePreviewQueryKey(), status);
-        setSelectedId(status.staticAvailable ? 'static' : status.apps[0]?.id ?? '');
+        setSelectedId(status.apps[0]?.id ?? 'static');
+        setPreviewMode(status.apps.length > 0 ? 'server' : 'static');
         await qc.invalidateQueries({ queryKey: getGetWorkspacePreviewQueryKey() });
       },
       onError: () => undefined,
@@ -837,31 +863,44 @@ function WorkspacePreview({ isMaximized, onToggleMaximized }: { isMaximized: boo
     </div>
     {previewQuery.isLoading ? <div className="preview-loading" aria-label="Loading previews"><div className="preview-loading-bar" /><div className="preview-loading-stage" /></div>
       : previewQuery.isError ? <div className="preview-state preview-error"><div className="preview-state-icon"><AlertCircle size={20} /></div><strong>Preview status is unavailable</strong><p>We couldn’t reach the workspace preview service.</p><button className="button button-primary button-small" onClick={() => void previewQuery.refetch()} data-testid="button-retry-preview"><RefreshCw size={14} /> Try again</button></div>
-        : !preview?.staticAvailable && apps.length === 0 ? <div className="preview-state preview-empty"><div className="preview-empty-art"><span /><span /><span /><div className="preview-holo-terminal" aria-hidden="true"><i /><i /><i /><i /></div></div><strong>No preview yet</strong><p>{preview?.pythonPreviewsEnabled ? 'Create a Python web app in the workspace and launch it with the assistant to preview it here.' : 'Create workspace/index.html for a static preview. Local Python app previews can be enabled in Preferences; they are always disabled in Replit.'}</p></div>
-      : <>
-        <div className="preview-controls">
-          <div className="preview-choices" role="group" aria-label="Choose a preview">
-            {preview?.staticAvailable && <button className={`preview-choice ${activeId === 'static' ? 'selected' : ''}`} onClick={() => setSelectedId('static')} aria-pressed={activeId === 'static'} data-testid="preview-choice-static"><span className="choice-symbol">S</span><span><strong>Workspace</strong><small>{preview.staticEntryPath || 'Static site'}</small></span></button>}
-            {apps.map((app) => <div className={`preview-choice-wrap ${activeId === app.id ? 'selected' : ''}`} key={app.id}>
-              <button className={`preview-choice ${activeId === app.id ? 'selected' : ''}`} onClick={() => setSelectedId(app.id)} aria-pressed={activeId === app.id} data-testid={`preview-choice-app-${app.id}`}><span className="choice-symbol app-symbol">{app.framework.slice(0, 1).toUpperCase()}</span><span><strong>{app.framework}</strong><small>{app.entryPath}</small></span></button>
-              <button className="preview-stop" aria-label={`Stop ${app.framework} preview`} title="Stop app" disabled={stopApp.isPending} onClick={() => onStop(app)} data-testid={`button-stop-preview-${app.id}`}><StopCircle size={15} /></button>
-            </div>)}
+        : <>
+          <div className="preview-mode-switcher" role="tablist" aria-label="Preview mode">
+            <button role="tab" aria-selected={previewMode === 'static'} className={previewMode === 'static' ? 'selected' : ''} onClick={() => { setPreviewMode('static'); setSelectedId('static'); }} data-testid="tab-preview-static">STATIC FILE</button>
+            <button role="tab" aria-selected={previewMode === 'server'} className={previewMode === 'server' ? 'selected' : ''} onClick={() => setPreviewMode('server')} data-testid="tab-preview-server">LOCALHOST PORT TUNNEL <span>{apps.length}</span></button>
+            <small>{localPortPreviewsEnabled ? 'LOCAL RUNTIME ENABLED' : 'LOCAL RUNTIME DISABLED'}</small>
           </div>
-          {activeApp && <div className="preview-app-meta"><span className="preview-status-dot" /> Running on port {activeApp.port} <span className="preview-meta-divider" /> Started {timeAgo(activeApp.startedAt)}</div>}
-        </div>
-        <div className="preview-address-row">
-          <form className="preview-address" onSubmit={navigateToAddress} data-testid="form-preview-address">
-            <span className="address-lock"><ShieldCheck size={14} /></span>
-            <input aria-label="Preview address" aria-invalid={addressError} value={addressValue} onChange={(event) => { setAddressValue(event.target.value); setAddressError(false); }} spellCheck={false} data-testid="input-preview-address" />
-            <button type="submit" data-testid="button-go-preview">Go</button>
-          </form>
-        </div>
-        {addressError && <p className="preview-address-error" role="alert" data-testid="status-preview-address-error">Enter a same-origin workspace preview URL.</p>}
-        <div className="preview-frame-shell" data-testid="preview-frame-shell">
-          {iframeUrl ? <iframe key={`${activeId}-${refreshKey}-${iframeUrl}`} title={`${label} live preview`} className="preview-frame" src={iframeUrl} sandbox="allow-scripts allow-forms" referrerPolicy="same-origin" data-testid="iframe-live-preview" />
-            : <div className="preview-state preview-unavailable"><div className="preview-state-icon"><LockKeyhole size={19} /></div><strong>This preview address can’t be opened safely</strong><p>Only workspace addresses on this site can be loaded here.</p></div>}
-        </div>
-      </>}
+          {previewMode === 'static' && preview?.staticAvailable && <div className="preview-controls">
+            <div className="preview-choices" role="group" aria-label="Static preview source">
+              <button className="preview-choice selected" onClick={() => setSelectedId('static')} aria-pressed="true" data-testid="preview-choice-static"><span className="choice-symbol">S</span><span><strong>Workspace</strong><small>{preview.staticEntryPath || 'Static site'}</small></span></button>
+            </div>
+            <div className="preview-app-meta"><span className="preview-status-dot" /> Static workspace file</div>
+          </div>}
+          {previewMode === 'server' && apps.length > 0 && <div className="preview-controls">
+            <div className="preview-choices" role="group" aria-label="Choose a running local app">
+              {apps.map((app) => <div className={`preview-choice-wrap ${activeId === app.id ? 'selected' : ''}`} key={app.id}>
+                <button className={`preview-choice ${activeId === app.id ? 'selected' : ''}`} onClick={() => setSelectedId(app.id)} aria-pressed={activeId === app.id} data-testid={`preview-choice-app-${app.id}`}><span className="choice-symbol app-symbol">{app.framework.slice(0, 1).toUpperCase()}</span><span><strong>{app.framework}</strong><small>{app.entryPath}</small></span></button>
+                <button className="preview-stop" aria-label={`Stop ${app.framework} preview`} title="Stop app" disabled={stopApp.isPending} onClick={() => onStop(app)} data-testid={`button-stop-preview-${app.id}`}><StopCircle size={15} /></button>
+              </div>)}
+            </div>
+            {activeApp && <div className="preview-app-meta"><span className="preview-status-dot" /> Running on port {activeApp.port} <span className="preview-meta-divider" /> Started {timeAgo(activeApp.startedAt)}</div>}
+          </div>}
+          {previewMode === 'static' && !preview?.staticAvailable && <div className="preview-state preview-empty"><div className="preview-empty-art"><span /><span /><span /><div className="preview-holo-terminal" aria-hidden="true"><i /><i /><i /><i /></div></div><strong>No static entry file</strong><p>Create a requested static page in workspace/ or select the localhost port tunnel for a running Flask, Streamlit, FastAPI, or Vite app.</p></div>}
+          {previewMode === 'server' && apps.length === 0 && <div className="preview-state preview-empty"><div className="preview-empty-art"><span /><span /><span /><div className="preview-holo-terminal" aria-hidden="true"><i /><i /><i /><i /></div></div><strong>No local app is running</strong><p>{localPortPreviewsEnabled ? 'Ask Forge to build and launch a Python or Vite app. The process will appear here on an ephemeral localhost port.' : 'Enable Local App Previews in Preferences in an exported local copy. Dynamic process previews are always disabled in Replit Cloud.'}</p></div>}
+          {((previewMode === 'static' && !!preview?.staticAvailable) || (previewMode === 'server' && !!activeApp)) && <>
+            <div className="preview-address-row">
+              <form className="preview-address" onSubmit={navigateToAddress} data-testid="form-preview-address">
+                <span className="address-lock"><ShieldCheck size={14} /></span>
+                <input aria-label="Preview address" aria-invalid={addressError} value={addressValue} onChange={(event) => { setAddressValue(event.target.value); setAddressError(false); }} spellCheck={false} data-testid="input-preview-address" />
+                <button type="submit" data-testid="button-go-preview">Go</button>
+              </form>
+            </div>
+            {addressError && <p className="preview-address-error" role="alert" data-testid="status-preview-address-error">Enter a workspace preview URL or an enabled localhost app URL.</p>}
+            <div className="preview-frame-shell" data-testid="preview-frame-shell">
+              {iframeUrl ? <iframe key={`${activeId}-${refreshKey}-${iframeUrl}`} title={`${label} live preview`} className="preview-frame" src={iframeUrl} sandbox={activeApp && localPortPreviewsEnabled ? 'allow-scripts allow-forms allow-same-origin' : 'allow-scripts allow-forms'} referrerPolicy="same-origin" data-testid="iframe-live-preview" />
+                : <div className="preview-state preview-unavailable"><div className="preview-state-icon"><LockKeyhole size={19} /></div><strong>This preview address can’t be opened safely</strong><p>Only workspace previews and enabled localhost app ports can be loaded here.</p></div>}
+            </div>
+          </>}
+        </>}
     {stopApp.isError && <div className="preview-stop-error" role="alert" data-testid="status-stop-preview-error">The app could not be stopped. Refresh the preview list and try again.</div>}
   </section>;
 }
@@ -1439,11 +1478,11 @@ function SettingsPage() {
       </div>
     </section>
     <SearchSettingsPanel settings={credentialStatus} loading={settingsQuery.isLoading} />
-    <section className="settings-section safety-section"><div className="settings-section-heading"><div className="section-symbol amber"><ShieldCheck size={18} /></div><div><h2>Local code runner</h2><p>Optional Python execution in the local workspace, disabled by default.</p></div></div>
-      <div className="setting-row"><div className="setting-row-icon"><KeyRound size={16} /></div><div className="setting-copy"><strong>Allow safe workspace commands</strong><span>Local-only and off by default. Only read-only commands are supported, restricted to workspace files, and limited to 30 seconds.</span></div><button className={`switch ${codeRunnerEnabled ? 'on' : ''}`} role="switch" aria-checked={codeRunnerEnabled} disabled={!credentialStatus?.localSetupAllowed} onClick={() => { setCodeRunnerEnabled(!codeRunnerEnabled); setProviderSaved(false); }} aria-label="Allow safe workspace commands" data-testid="switch-local-code-runner"><span /></button></div>
-      <div className="setting-row"><div className="setting-row-icon"><ShieldCheck size={16} /></div><div className="setting-copy"><strong>Enable Local App Previews (Unrestricted Workspace Execution)</strong><span>When enabled on localhost, Flask, Streamlit, and FastAPI apps can run from workspace/ with a cleaned environment and a one-hour runtime limit. Closing the Live Preview tab stops the child processes.</span><p className="settings-footnote" role="note">Running generated Python apps executes code with standard local user permissions.</p></div><button className={`switch ${appPreviewsEnabled ? 'on' : ''}`} role="switch" aria-checked={appPreviewsEnabled} disabled={!credentialStatus?.localSetupAllowed} onClick={() => { setAppPreviewsEnabled(!appPreviewsEnabled); setProviderSaved(false); }} aria-label="Enable Local App Previews (Unrestricted Workspace Execution)" data-testid="switch-local-app-previews"><span /></button></div>
+    <section className="settings-section safety-section"><div className="settings-section-heading"><div className="section-symbol amber"><ShieldCheck size={18} /></div><div><h2>Local execution</h2><p>Optional local tools, disabled by default and unavailable in Replit Cloud.</p></div></div>
+      <div className="setting-row"><div className="setting-row-icon"><KeyRound size={16} /></div><div className="setting-copy"><strong>Allow local terminal commands after approval</strong><span>Local-only and off by default. Every exact command pauses for your approval, then runs without elevation from workspace/ with a cleaned environment and a 30-second limit. Shell chaining and known destructive commands remain blocked.</span><p className="settings-footnote" role="note">Approved commands can still modify local files or data with your normal user permissions.</p></div><button className={`switch ${codeRunnerEnabled ? 'on' : ''}`} role="switch" aria-checked={codeRunnerEnabled} disabled={!credentialStatus?.localSetupAllowed} onClick={() => { setCodeRunnerEnabled(!codeRunnerEnabled); setProviderSaved(false); }} aria-label="Allow local terminal commands after approval" data-testid="switch-local-code-runner"><span /></button></div>
+      <div className="setting-row"><div className="setting-row-icon"><ShieldCheck size={16} /></div><div className="setting-copy"><strong>Enable Local App Previews (Unrestricted Workspace Execution)</strong><span>When enabled on localhost, generated Flask, Streamlit, FastAPI, and Vite apps can run from workspace/ with a cleaned environment, loopback binding, and a one-hour runtime limit. Closing the Live Preview tab stops the child processes.</span><p className="settings-footnote" role="note">Running generated Python apps executes code with standard local user permissions. Running generated Node apps also executes code with standard local user permissions.</p></div><button className={`switch ${appPreviewsEnabled ? 'on' : ''}`} role="switch" aria-checked={appPreviewsEnabled} disabled={!credentialStatus?.localSetupAllowed} onClick={() => { setAppPreviewsEnabled(!appPreviewsEnabled); setProviderSaved(false); }} aria-label="Enable Local App Previews (Unrestricted Workspace Execution)" data-testid="switch-local-app-previews"><span /></button></div>
       <div className="setting-row"><div className="setting-row-icon"><Bell size={16} /></div><div className="setting-copy"><strong>Desktop notifications</strong><span>Show browser notifications when a scheduled reminder fires.</span></div><button className="button button-quiet button-small" onClick={() => { if ('Notification' in window) void Notification.requestPermission(); }} data-testid="button-enable-notifications">Enable alerts</button></div>
-      {!credentialStatus?.localSetupAllowed && <p className="settings-footnote"><LockKeyhole size={13} /> Python app previews and workspace commands can only be enabled from a localhost copy of the app. Replit Cloud keeps Python previews disabled.</p>}
+      {!credentialStatus?.localSetupAllowed && <p className="settings-footnote"><LockKeyhole size={13} /> Local terminal commands and app previews can only be enabled from a localhost copy of the app. Replit Cloud keeps dynamic process previews disabled.</p>}
     </section>
     <section className="settings-section safety-section"><div className="settings-section-heading"><div className="section-symbol amber"><ShieldCheck size={18} /></div><div><h2>Safety &amp; permissions</h2><p>Make your boundaries explicit. Change these any time.</p></div></div>
       <div className="setting-row"><div className="setting-row-icon"><CheckCircle2 size={16} /></div><div className="setting-copy"><strong>Confirm before consequential actions</strong><span>Pause and ask before an action that changes or sends something.</span></div><button className={`switch ${confirmBeforeActions ? 'on' : ''}`} role="switch" aria-checked={confirmBeforeActions} onClick={() => onSetting(setConfirmBeforeActions, !confirmBeforeActions)} aria-label="Confirm before consequential actions" data-testid="switch-confirm-actions"><span /></button></div>

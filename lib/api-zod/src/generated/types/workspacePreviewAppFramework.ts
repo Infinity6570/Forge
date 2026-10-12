@@ -13,4 +13,5 @@ export const WorkspacePreviewAppFramework = {
   streamlit: 'streamlit',
   flask: 'flask',
   fastapi: 'fastapi',
+  vite: 'vite',
 } as const;
