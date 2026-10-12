@@ -195,3 +195,76 @@ html[data-theme] .sidebar-collapse-toggle svg.is-expanded { transform:rotate(180
   html[data-theme] .sidebar,
   html[data-theme] .sidebar-collapse-toggle svg { transition:none!important; }
 }
+
+/* Command Center: one status line, one unboxed reading stream. */
+html[data-theme] .topbar-command-center .breadcrumbs { display:none!important; }
+html[data-theme] .command-center .activity-panel {
+  width:100%; max-width:none!important; height:100%; min-height:0; flex:1;
+}
+html[data-theme] .command-center[data-task-active="true"] .command-metrics { display:none!important; }
+html[data-theme] .activity-panel-heading {
+  display:flex; flex:none; align-items:center; justify-content:space-between; gap:14px;
+  min-height:38px; margin:0 0 8px; padding:6px 12px;
+}
+html[data-theme] .stream-heading-main { display:flex; min-width:0; flex:1; align-items:center; gap:10px; }
+html[data-theme] .stream-heading-main .live-label {
+  display:inline-flex; flex:none; align-items:center; gap:6px; white-space:nowrap;
+  color:var(--accent); font:10px var(--font-mono); letter-spacing:.055em;
+}
+html[data-theme] .stream-heading-main .thread-title {
+  min-width:0; flex:1; margin:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  color:var(--text-primary); font:600 13px/1.3 var(--font-mono);
+}
+html[data-theme] .stream-heading-right { display:flex; flex:none; align-items:center; gap:12px; }
+html[data-theme] .stream-heading-right .command-status { display:flex; align-items:center; gap:6px; }
+html[data-theme] .stream-status-badge,
+html[data-theme] .stream-model-badge {
+  display:inline-flex; min-height:22px; align-items:center; gap:6px; padding:2px 7px;
+  border:1px solid var(--border); border-radius:3px; color:var(--text-muted); background:var(--bg-card);
+  font:10px var(--font-mono); white-space:nowrap;
+}
+html[data-theme] .stream-model-badge { max-width:190px; overflow:hidden; text-overflow:ellipsis; color:var(--accent); }
+html[data-theme] .stream-status-badge .online-pip { width:6px; height:6px; }
+html[data-theme] .stream-heading-right .status-divider { display:none; }
+html[data-theme] .stream-heading-right .text-link { display:inline-flex; flex:none; align-items:center; gap:5px; white-space:nowrap; }
+html[data-theme] .exec-wrap { height:100%; min-height:0; flex:1; }
+html[data-theme] .activity-panel .exec-stream {
+  display:flex; min-height:0; height:100%; flex:1; flex-direction:column;
+  overflow-x:hidden; overflow-y:auto; padding:0 12px 12px;
+}
+html[data-theme] .activity-panel .exec-inner {
+  display:flex; min-height:100%; width:100%; max-width:none; flex:1; flex-direction:column;
+  gap:0; padding:0 0 14px;
+}
+html[data-theme] .execution-panel .exec-task {
+  overflow:visible!important; padding:12px 0 16px; border:0!important; border-radius:0;
+  background:transparent!important; box-shadow:none!important;
+}
+html[data-theme] .execution-panel .exec-task + .exec-task {
+  border-top:1px solid color-mix(in srgb,var(--border) 75%,transparent)!important;
+}
+html[data-theme] .execution-panel .exec-task::before,
+html[data-theme] .execution-panel .exec-task::after { display:none!important; content:none!important; animation:none!important; }
+html[data-theme] .execution-panel .exec-user { width:100%; max-width:none; }
+html[data-theme] .execution-panel .exec-user-text { max-width:none; font-size:14.5px!important; line-height:1.65!important; }
+html[data-theme] .execution-panel .exec-result { width:100%; margin:8px 0 0; padding:0; border:0; background:transparent; }
+html[data-theme] .execution-panel .exec-result .exec-rich { width:100%; max-width:none; }
+html[data-theme] .execution-panel .exec-result .exec-rich p,
+html[data-theme] .execution-panel .exec-result .exec-rich li {
+  max-width:none; font-size:14.5px!important; line-height:1.65!important;
+}
+html[data-theme] .execution-panel .exec-result .exec-rich :is(h1,h2,h3,h4) { line-height:1.35; }
+
+@media (max-width:900px) {
+  html[data-theme] .activity-panel-heading { align-items:flex-start; flex-wrap:wrap; gap:8px; }
+  html[data-theme] .stream-heading-main { width:100%; flex:none; }
+  html[data-theme] .stream-heading-right { width:100%; justify-content:flex-end; }
+  html[data-theme] .stream-heading-right .command-status { margin-right:auto; }
+}
+@media (max-width:560px) {
+  html[data-theme] .activity-panel-heading { padding-inline:8px; }
+  html[data-theme] .stream-heading-main { align-items:flex-start; flex-direction:column; gap:4px; }
+  html[data-theme] .stream-heading-main .thread-title { width:100%; }
+  html[data-theme] .stream-model-badge { max-width:135px; }
+  html[data-theme] .activity-panel .exec-stream { padding-inline:8px; }
+}
