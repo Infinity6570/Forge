@@ -138,6 +138,16 @@ html[data-theme="scifi"][data-cyber-fx="off"] .app-frame *::after { animation:no
 html[data-theme] .exec-user { display:grid; gap:4px; max-width:min(100%,720px); }
 html[data-theme] .exec-user-text { margin:0; white-space:pre-wrap; overflow-wrap:anywhere; color:var(--text-primary); font-size:14px!important; }
 html[data-theme] .exec-user-meta { display:flex; flex-wrap:wrap; align-items:center; gap:10px; color:var(--text-muted); font:12px var(--font-mono); }
+html[data-theme] .exec-aborted {
+  display:inline-flex; align-items:center; gap:6px; width:max-content; max-width:100%;
+  margin:7px 0 0; padding:4px 8px; border:1px solid color-mix(in srgb,var(--error) 42%,transparent);
+  background:color-mix(in srgb,var(--error) 8%,var(--bg-card)); color:var(--error);
+  font:11px var(--font-mono); letter-spacing:.04em;
+}
+html[data-theme="scifi"] .exec-aborted {
+  border-color:rgba(255,0,127,.45); background:rgba(255,0,127,.08); color:#ff6ca9;
+  box-shadow:0 0 8px rgba(255,0,127,.08);
+}
 html[data-theme] .exec-view { display:inline-flex; align-items:center; gap:4px; padding:0; border:0; background:none; color:var(--accent); font:12px var(--font-mono); cursor:pointer; opacity:.8; }
 html[data-theme] .exec-view:hover, html[data-theme] .exec-view:focus-visible { opacity:1; text-decoration:underline; }
 html[data-theme] .exec-thinking { margin-top:6px; border:1px solid color-mix(in srgb,var(--border) 70%,transparent); border-radius:5px; padding:0 8px; }

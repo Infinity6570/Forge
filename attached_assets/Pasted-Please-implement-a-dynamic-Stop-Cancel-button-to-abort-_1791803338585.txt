@@ -1,0 +1,31 @@
+Please implement a dynamic Stop / Cancel button to abort running tasks immediately:
+
+1. Frontend UI Button Integration:
+   - In the input terminal / action bar (`USR@FORGE-6570:~$` bar):
+     * When a task is actively running (`isRunning`, `isStreaming`, or `isLoading` is true):
+       Replace the default "SEND" button (or add an adjacent button) with a prominent red cyber-styled "STOP" button.
+       - Styling: Red neon glow (`border: 1px solid rgba(255, 0, 85, 0.6); color: #ff0055; background: rgba(255, 0, 85, 0.1);`).
+       - Label/Icon: A square stop icon `■` or `STOP TASK [ESC]`.
+     * Bind the Escape key (`Esc`) as a keyboard shortcut to trigger the stop action while generation is running.
+
+2. Client-Side AbortController:
+   - When initiating a request (via `fetch` or SSE streaming):
+     * Instantiate an `AbortController` and store its reference in component state / ref:
+       `const abortControllerRef = useRef<AbortController | null>(null);`
+     * Pass `signal: abortController.signal` into the fetch request.
+   - When the user clicks "STOP" (or presses Esc):
+     * Call `abortControllerRef.current?.abort()`.
+     * Immediately set local state: `isRunning = false`, `isStreaming = false`.
+     * Append a clean warning badge in the stream: `[TASK ABORTED BY USER]`.
+     * Reset the cyber-thinking glowing border back to the idle state.
+
+3. Backend Task Cancellation (FastAPI / Express):
+   - Add an endpoint: `POST /api/tasks/{taskId}/cancel` (or accept client disconnect signals):
+     * When aborted, cancel the active `asyncio.Task` or break the reasoning `while` loop immediately so background Gemini API calls or tool loops do not continue burning tokens.
+   - Ensure the server closes the SSE stream cleanly.
+
+4. Verification:
+   - Run a multi-step research or reasoning query.
+   - Click "STOP":
+     * The rotating aura and thinking animations must stop immediately.
+     * The input box must re-enable for new commands without reloading the page.

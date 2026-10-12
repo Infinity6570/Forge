@@ -200,6 +200,39 @@ class ConversationTests(unittest.IsolatedAsyncioTestCase):
         history = main.THREADS.history(threads["interrupted"], "next")
         self.assertTrue(any("local server stopped" in turn.get("content", "") for turn in history))
 
+    async def test_abort_waits_for_agent_cleanup_and_returns_cancelled_task(self):
+        started = asyncio.Event()
+
+        async def waiting_runner(task_id, _file_ids, resume_messages=None):
+            main.db_run(
+                "UPDATE tasks SET status='running',current_step='Searching' WHERE id=?",
+                (task_id,),
+            )
+            started.set()
+            try:
+                await asyncio.Future()
+            except asyncio.CancelledError:
+                main.db_run(
+                    "UPDATE tasks SET status='cancelled',result=NULL,current_step='Stopped by user',updated_at=? WHERE id=?",
+                    (main.utc_now(), task_id),
+                )
+                main.log_task(task_id, "TASK ABORTED BY USER", "warning")
+                raise
+
+        with patch.object(main, "run_agent_task", new=waiting_runner):
+            created = await self.client.post("/api/assistant/tasks", json={"objective": "Stop this search"})
+            self.assertEqual(created.status_code, 201, created.text)
+            task_id = created.json()["id"]
+            await asyncio.wait_for(started.wait(), timeout=1)
+            running_task = main.ACTIVE_TASKS[task_id]
+
+            stopped = await self.client.post(f"/api/assistant/tasks/{task_id}/abort")
+
+        self.assertEqual(stopped.status_code, 200, stopped.text)
+        self.assertEqual(stopped.json()["status"], "cancelled")
+        self.assertTrue(running_task.done())
+        self.assertTrue(any(log["message"] == "TASK ABORTED BY USER" for log in stopped.json()["logs"]))
+
     async def test_approval_resume_keeps_signature_and_same_message_ids(self):
         (main.WORKSPACE / "index.html").write_text("original", encoding="utf8")
         call = SimpleNamespace(id="approval-call", type="function",

@@ -3,7 +3,7 @@ import { Children, isValidElement } from 'react';
 import type { ReactNode } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Activity, AlertCircle, ArrowDown, ArrowRight, Brain, CheckCircle2, ChevronDown, Copy, FileEdit, Globe, ListChecks, Terminal, Wrench } from 'lucide-react';
+import { Activity, AlertCircle, ArrowDown, ArrowRight, Brain, CheckCircle2, ChevronDown, Copy, FileEdit, Globe, ListChecks, StopCircle, Terminal, Wrench } from 'lucide-react';
 import { SearchPayloadView, SourcesAccordion, parseSearchPayload } from '@/components/search-sources';
 import type { AssistantTask, ConversationMessage, TaskLog } from '@workspace/api-client-react';
 
@@ -179,6 +179,7 @@ export function ActivityStream({ tasks, loading, onOpen, messages }: Props) {
             <p className="exec-user-text">{task.objective}</p>
             <div className="exec-user-meta"><span>You</span><time>{clock(task.createdAt)}</time><span className="exec-status">{String(task.status)}</span><button type="button" className="exec-view" onClick={() => onOpen(task)} data-testid={`button-stream-task-${task.id}`}>View Details<ArrowRight size={12} /></button></div>
           </div>
+          {task.status === 'cancelled' && <div className="exec-aborted" role="status" data-testid={`task-aborted-${task.id}`}><StopCircle size={13} aria-hidden="true" /><span>[TASK ABORTED BY USER]</span></div>}
           {(stepCount > 0 || (live && !task.result) || task.error) && <details className="exec-thinking" data-testid={`thinking-${task.id}`}>
             <summary><Brain size={14} /><span>Thinking ({stepCount} {stepCount === 1 ? 'step' : 'steps'})</span>{live && <span className="exec-working"><span className="exec-dot live" />Working</span>}<ChevronDown size={13} className="exec-chev" /></summary>
             <div className="exec-steps">{rows.map((r) => <Step key={r.log.id} row={r} />)}{extras.map((m) => <ToolOutput key={m.id} message={m} />)}</div>

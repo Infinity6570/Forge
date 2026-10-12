@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, FormEvent, ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
@@ -397,6 +397,8 @@ function Dashboard() {
   const settingsQuery = useGetAssistantSettings();
   const [objective, setObjective] = useState('');
   const [submitError, setSubmitError] = useState('');
+  const [stopRequestedTaskId, setStopRequestedTaskId] = useState<string>();
+  const [stoppedTaskId, setStoppedTaskId] = useState<string>();
   const [selectedTaskId, setSelectedTaskId] = useState<string>();
   const [attachments, setAttachments] = useState<AssistantFile[]>([]);
   const [uploadingAttachment, setUploadingAttachment] = useState(false);
@@ -447,6 +449,7 @@ function Dashboard() {
       setObjective(''); setAttachments([]);
     }
     adoptingSentThread.current = undefined;
+    setStopRequestedTaskId(undefined); setStoppedTaskId(undefined);
     setSubmitError(''); setAttachmentError(''); setSelectedTaskId(undefined);
   }, [threadId, resetSignal]);
   const tasks = useMemo(() => (threadId ? threadDetail.data?.tasks ?? [] : []), [threadId, threadDetail.data]);
@@ -459,14 +462,51 @@ function Dashboard() {
     const task = query.state.data;
     return task && ['queued', 'running', 'processing', 'awaiting_approval', 'awaiting_confirmation'].includes(task.status) ? 2500 : false;
   } } });
-  const activeExecution = [...tasks, details.data, actionTask.data].some((task) => task?.status === 'running' || String(task?.status) === 'processing');
+  const localStop = (task?: AssistantTask | null) => !!task && (task.id === stopRequestedTaskId || task.id === stoppedTaskId);
+  const liveTasks = [...tasks, details.data, actionTask.data];
+  const activeExecution = liveTasks.some((task) => task && ['running', 'processing', 'queued'].includes(String(task.status)) && !localStop(task));
   const liveStreamTask = [...tasks].reverse().find((task) => ['running', 'processing', 'queued', 'awaiting_approval', 'awaiting_confirmation'].includes(String(task.status)));
   const streamTitle = activeExecution ? liveStreamTask?.objective ?? threadTitle : threadTitle;
   const referenceModel = [...tasks].reverse().find((task) => task.modelId);
   const isPending = createTask.isPending;
-  const isGenerating = activeExecution || isPending;
+  const isGenerating = activeExecution || (isPending && !stopRequestedTaskId);
   const thinkingAura = cyberFxActive && isGenerating;
-  const threadBusy = !!threadId && (!threadDetail.data || !!threadDetail.data.activeTaskId);
+  const threadBusy = !!threadId && (!threadDetail.data || (!!threadDetail.data.activeTaskId && threadDetail.data.activeTaskId !== stoppedTaskId));
+  const stopTask = [...tasks].reverse().find((task) => ['running', 'processing', 'queued'].includes(String(task.status)) && !localStop(task))
+    ?? [actionTask.data, details.data].find((task) => task && ['running', 'processing', 'queued'].includes(String(task.status)) && !localStop(task));
+  const stopTargetId = stopRequestedTaskId ?? stopTask?.id;
+  const requestStop = useCallback((taskId: string) => {
+    if (abort.isPending || stopRequestedTaskId || taskId === stoppedTaskId) return;
+    setSubmitError('');
+    setStopRequestedTaskId(taskId);
+    abort.mutate({ id: taskId }, {
+      onSuccess: (stoppedTask) => {
+        setStoppedTaskId(stoppedTask.id);
+        setStopRequestedTaskId(undefined);
+        qc.setQueryData(getGetAssistantTaskQueryKey(stoppedTask.id), stoppedTask);
+        if (stoppedTask.threadId) {
+          qc.invalidateQueries({ queryKey: getGetConversationThreadQueryKey(stoppedTask.threadId) });
+        }
+        qc.invalidateQueries({ queryKey: getGetAssistantDashboardQueryKey() });
+        qc.invalidateQueries({ queryKey: getListAssistantTasksQueryKey() });
+      },
+      onError: () => {
+        setStopRequestedTaskId(undefined);
+        setSubmitError('The task could not be stopped. Try again or open Task Activity.');
+      },
+    });
+  }, [abort.isPending, abort.mutate, qc, stopRequestedTaskId, stoppedTaskId]);
+  useEffect(() => {
+    const stopTaskId = stopTask?.id;
+    if (!stopTaskId || stopRequestedTaskId) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || event.repeat || event.defaultPrevented) return;
+      event.preventDefault();
+      requestStop(stopTaskId);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [requestStop, stopRequestedTaskId, stopTask?.id]);
   const submit = (event: FormEvent) => {
     event.preventDefault();
     const text = objective.trim();
@@ -531,7 +571,8 @@ function Dashboard() {
           <ChatModelPicker value={modelMode} onChange={setModelMode} configuredLabel={settingsQuery.data ? modelDisplayName(settingsQuery.data.provider, settingsQuery.data.modelId) : 'Loading model…'} lastUsedLabel={referenceModel ? modelDisplayName(referenceModel.provider, referenceModel.modelId) : null} groups={Object.entries(models).filter(([groupProvider]) => groupProvider !== 'ollama' || settingsQuery.data?.localSetupAllowed).map(([groupProvider, items]) => ({ id: groupProvider, label: groupProvider === 'gemini' ? 'Google Gemini' : groupProvider === 'openrouter' ? 'OpenRouter' : groupProvider === 'ollama' ? 'Local · Ollama' : groupProvider === 'openai' ? 'OpenAI' : 'DeepSeek', items }))} />
           <input ref={attachmentInput} type="file" hidden onChange={(event) => { void attachFile(event.currentTarget.files?.[0]); }} data-testid="input-task-attachment" />
           <button type="button" className="button button-quiet submit-button composer-attach" title="Attach a file" aria-label={uploadingAttachment ? 'Uploading attachment' : 'Attach a file'} onClick={() => attachmentInput.current?.click()} disabled={uploadingAttachment} data-testid="button-attach-task-file">{uploadingAttachment ? <LoaderCircle className="spin" size={12} /> : <Upload size={12} />}</button>
-          <button className="button button-primary submit-button" disabled={!objective.trim() || isPending || uploadingAttachment || threadBusy} title={threadBusy ? 'Wait for this chat to finish its current task, or stop it in View Details.' : 'Send task'} data-testid="button-submit-task">{isPending ? <LoaderCircle className="spin" size={12} /> : <Send size={12} />}{isPending ? 'Sending…' : threadBusy ? 'Working' : 'Send'}</button>
+          {stopTargetId ? <button type="button" className="button submit-button button-stop-task" disabled={abort.isPending || stopRequestedTaskId === stopTargetId} title="Stop the active task (Escape)" aria-label="Stop active task" aria-keyshortcuts="Escape" onClick={() => requestStop(stopTargetId)} data-testid="button-stop-task"><StopCircle size={12} />{stopRequestedTaskId === stopTargetId ? 'Stopping…' : 'Stop task'}<kbd>Esc</kbd></button>
+            : <button className="button button-primary submit-button" disabled={!objective.trim() || isPending || uploadingAttachment || threadBusy} title={threadBusy ? 'Wait for this chat to finish its current task, or stop it here.' : 'Send task'} data-testid="button-submit-task">{isPending ? <LoaderCircle className="spin" size={12} /> : <Send size={12} />}{isPending ? 'Sending…' : threadBusy ? 'Working' : 'Send'}</button>}
         </div></div></form>
     </section>
     {selectedTaskId && <TaskDetailDialog task={details.data} loading={details.isLoading} error={details.isError} retry={() => details.refetch()} close={() => setSelectedTaskId(undefined)} abort={(id) => abort.mutate({ id }, { onSuccess: () => { qc.invalidateQueries({ queryKey: getGetAssistantDashboardQueryKey() }); qc.invalidateQueries({ queryKey: getListAssistantTasksQueryKey() }); } })} aborting={abort.isPending} />}

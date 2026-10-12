@@ -1688,7 +1688,7 @@ async def run_agent_task(
         if messages:
             messages.append({"role": "assistant", "content": "The user stopped this task before it completed."})
         db_run("UPDATE tasks SET status='cancelled',result=NULL,current_step='Stopped by user',updated_at=? WHERE id=?", (utc_now(), task_id))
-        log_task(task_id, "Task stopped by the user.", "warning")
+        log_task(task_id, "TASK ABORTED BY USER", "warning")
         raise
     except Exception as error:
         safe_message = redact_provider_keys(str(error))[:1500]
@@ -2280,8 +2280,13 @@ async def abort_task(task_id: str) -> dict[str, Any]:
     running = ACTIVE_TASKS.get(task_id)
     if running and not running.done():
         running.cancel()
+        try:
+            await running
+        except asyncio.CancelledError:
+            pass
     elif row["status"] in {"queued", "running"}:
         db_run("UPDATE tasks SET status='cancelled',current_step='Stopped by user',updated_at=? WHERE id=?", (utc_now(), task_id))
+        log_task(task_id, "TASK ABORTED BY USER", "warning")
     return task_dict(db_one("SELECT * FROM tasks WHERE id=?", (task_id,)))  # type: ignore[arg-type]
 
 

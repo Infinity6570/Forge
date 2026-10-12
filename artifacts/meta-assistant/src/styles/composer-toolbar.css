@@ -48,6 +48,28 @@ html[data-theme] .command-composer .composer-actions .submit-button {
   gap:5px; font:500 12px/20px var(--font-mono)!important;
   box-shadow:none; border-radius:3px;
 }
+html[data-theme] .command-composer .button-stop-task {
+  color:var(--error)!important;
+  background:color-mix(in srgb,var(--error) 9%,var(--bg-card))!important;
+  border:1px solid color-mix(in srgb,var(--error) 48%,transparent)!important;
+  transition:background .15s ease,box-shadow .15s ease,border-color .15s ease;
+}
+html[data-theme] .command-composer .button-stop-task:hover:not(:disabled) {
+  background:color-mix(in srgb,var(--error) 16%,var(--bg-card))!important;
+  box-shadow:0 0 12px color-mix(in srgb,var(--error) 25%,transparent)!important;
+}
+html[data-theme] .command-composer .button-stop-task:disabled { cursor:wait; opacity:.78; }
+html[data-theme] .command-composer .button-stop-task kbd {
+  padding:0 3px; border:1px solid currentColor; border-radius:2px;
+  font:9px/14px var(--font-mono); opacity:.78;
+}
+html[data-theme="scifi"] .command-composer .button-stop-task {
+  color:#ff4c98!important; background:rgba(255,0,127,.1)!important;
+  border-color:rgba(255,0,127,.65)!important; box-shadow:0 0 10px rgba(255,0,127,.16)!important;
+}
+html[data-theme="scifi"] .command-composer .button-stop-task:hover:not(:disabled) {
+  background:rgba(255,0,127,.18)!important; box-shadow:0 0 15px rgba(255,0,127,.32)!important;
+}
 html[data-theme] .command-composer .composer-actions .composer-attach {
   width:28px; padding:2px!important; border-color:transparent; background:transparent;
 }
