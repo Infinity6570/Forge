@@ -1,4 +1,5 @@
 import { AlertCircle, ExternalLink, Globe } from 'lucide-react';
+import { useId, useState } from 'react';
 
 export type SearchResult = { title?: string; url?: string; text?: string };
 export type SearchPayload = {
@@ -50,6 +51,44 @@ export function SourceList({ results, limit }: { results: SearchResult[]; limit?
   </li>)}</ul>;
 }
 
+export function SourcesAccordion({
+  results,
+  providers,
+  limit,
+}: {
+  results: SearchResult[];
+  providers: string[];
+  limit?: number;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const contentId = useId();
+  const count = Math.min(results.length, limit ?? results.length);
+  const providerLabels = [...new Set(providers)].map((provider) => engineLabel(provider).toUpperCase());
+  if (count === 0) return null;
+
+  return <section className="sources-accordion" data-expanded={expanded} data-testid="sources-accordion">
+    <button
+      type="button"
+      className="sources-accordion-toggle"
+      aria-expanded={expanded}
+      aria-controls={contentId}
+      onClick={() => setExpanded((value) => !value)}
+    >
+      <span className={`sources-accordion-chevron${expanded ? ' is-expanded' : ''}`} aria-hidden="true"><svg viewBox="0 0 16 16" focusable="false"><path d="m6 3 5 5-5 5" /></svg></span>
+      <span className="sources-accordion-title">Sources &amp; Citations ({count})</span>
+      <span className="sources-accordion-providers">{providerLabels.map((label) => <span className="sources-provider-badge" key={label}>{label}</span>)}</span>
+    </button>
+    <div
+      id={contentId}
+      className="sources-accordion-content"
+      aria-hidden={!expanded}
+      inert={!expanded}
+    >
+      <div className="sources-accordion-inner"><SourceList results={results} limit={limit} /></div>
+    </div>
+  </section>;
+}
+
 function suggestionsHtml(meta?: Record<string, unknown>): string | null {
   const entry = meta?.searchEntryPoint as { renderedContent?: unknown } | undefined;
   return typeof entry?.renderedContent === 'string' ? entry.renderedContent : null;
@@ -66,7 +105,7 @@ export function SearchPayloadView({ payload }: { payload: SearchPayload }) {
     {payload.error && <p className="search-error"><AlertCircle size={12} />{payload.error}</p>}
     {payload.warning && <p className="search-note">{payload.warning}</p>}
     {payload.answer && <p className="search-answer">{payload.answer}</p>}
-    <SourceList results={payload.results} />
+    <SourcesAccordion results={payload.results} providers={[payload.engine]} />
     {html && <iframe className="search-suggestions" title="Search suggestions" sandbox="allow-popups allow-popups-to-escape-sandbox" referrerPolicy="no-referrer" srcDoc={html} data-testid="frame-search-suggestions" />}
     <details className="search-raw"><summary>Raw search data</summary><pre>{JSON.stringify(payload, null, 2)}</pre></details>
   </div>;

@@ -68,13 +68,34 @@ html[data-theme] .search-fallback-badge { padding:2px 7px; border:1px solid colo
 html[data-theme] .search-note { margin:0; color:var(--text-muted); font-size:12px!important; }
 html[data-theme] .search-error { display:flex; align-items:center; gap:6px; margin:0; color:var(--error); font-size:12px!important; }
 html[data-theme] .search-answer { margin:0; white-space:pre-wrap; overflow-wrap:anywhere; color:var(--text-primary); }
-html[data-theme] .source-list { display:grid; gap:4px; margin:0; padding:0; list-style:none; }
+html[data-theme] .source-list { display:grid; gap:6px; margin:0; padding:0; list-style:none; }
 html[data-theme] .source-card { min-width:0; padding:5px 8px; border:1px solid var(--border); border-left:2px solid var(--accent); border-radius:3px; background:var(--surface-raised); }
 html[data-theme] .source-card a, html[data-theme] .source-plain { display:flex; align-items:center; gap:6px; min-width:0; color:var(--accent); text-decoration:none; font-size:12.5px; }
 html[data-theme] .source-card a:hover { text-decoration:underline; }
 html[data-theme] .source-title { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 html[data-theme] .source-host { flex:none; color:var(--text-muted); font:11px var(--font-mono); }
 html[data-theme] .source-card p { margin:3px 0 0; color:var(--text-muted); font-size:12px!important; overflow-wrap:anywhere; }
+html[data-theme] .sources-accordion { min-width:0; }
+html[data-theme] .sources-accordion-toggle { display:flex; align-items:center; gap:7px; width:100%; min-height:32px; padding:6px 9px; border:1px solid color-mix(in srgb, var(--accent) 30%, var(--border)); border-radius:4px; background:color-mix(in srgb, var(--accent) 4%, transparent); color:var(--accent); cursor:pointer; text-align:left; font:11.5px var(--font-mono); letter-spacing:.05em; text-transform:uppercase; transition:background-color .18s ease, border-color .18s ease; }
+html[data-theme] .sources-accordion-toggle:hover { background:color-mix(in srgb, var(--accent) 10%, transparent); border-color:color-mix(in srgb, var(--accent) 52%, var(--border)); }
+html[data-theme] .sources-accordion-chevron { display:grid; width:13px; height:13px; flex:none; transition:transform .2s ease; }
+html[data-theme] .sources-accordion-chevron svg { width:100%; height:100%; fill:none; stroke:currentColor; stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round; }
+html[data-theme] .sources-accordion-chevron.is-expanded { transform:rotate(90deg); }
+html[data-theme] .sources-accordion-title { flex:1; min-width:0; }
+html[data-theme] .sources-accordion-providers { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:4px; }
+html[data-theme] .sources-provider-badge { padding:2px 5px; border:1px solid color-mix(in srgb, var(--accent) 30%, transparent); color:var(--accent); font:10px var(--font-mono); letter-spacing:.04em; }
+html[data-theme] .sources-accordion-content { display:grid; grid-template-rows:0fr; opacity:0; transition:grid-template-rows .24s ease, opacity .2s ease; }
+html[data-theme] .sources-accordion[data-expanded="true"] .sources-accordion-content { grid-template-rows:1fr; opacity:1; }
+html[data-theme] .sources-accordion-inner { min-height:0; overflow:hidden; padding-top:0; border-top:1px dashed color-mix(in srgb, var(--accent) 20%, transparent); }
+html[data-theme] .sources-accordion[data-expanded="true"] .sources-accordion-inner { padding-top:8px; }
+html[data-theme="scifi"] .sources-accordion-toggle { border-color:rgba(0, 240, 255, .25); border-radius:6px; background:rgba(0, 240, 255, .04); color:#00f0ff; }
+html[data-theme="scifi"] .sources-accordion-toggle:hover { background:rgba(0, 240, 255, .1); }
+html[data-theme="scifi"] .sources-accordion-inner { border-top-color:rgba(0, 240, 255, .2); }
+@media (prefers-reduced-motion: reduce) {
+  html[data-theme] .sources-accordion-toggle,
+  html[data-theme] .sources-accordion-chevron,
+  html[data-theme] .sources-accordion-content { transition:none; }
+}
 html[data-theme] .search-suggestions { width:100%; height:64px; border:1px solid var(--border); border-radius:3px; background:#fff; }
 html[data-theme] .search-raw summary { cursor:pointer; color:var(--text-muted); font:11px var(--font-mono); }
 html[data-theme] .search-raw pre { max-height:200px; margin:4px 0 0; overflow:auto; padding:6px; border:1px solid var(--border); border-radius:3px; font:11px/1.5 var(--font-mono); color:var(--text-primary); white-space:pre-wrap; overflow-wrap:anywhere; }
