@@ -188,6 +188,27 @@ paths:
                 $ref: "#/components/schemas/AssistantTask"
         "404":
           description: Task not found
+  /assistant/tasks/{id}/stream:
+    get:
+      operationId: streamAssistantTaskText
+      tags: [assistant]
+      summary: Stream user-visible assistant response text as server-sent events
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Immediate response text deltas, snapshots, and terminal status events
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        "404":
+          description: Task not found
   /assistant/tasks/{id}/abort:
     post:
       operationId: abortAssistantTask

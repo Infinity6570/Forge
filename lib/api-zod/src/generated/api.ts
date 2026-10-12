@@ -376,6 +376,16 @@ export const GetAssistantTaskResponse = zod.object({
 
 
 /**
+ * @summary Stream user-visible assistant response text as server-sent events
+ */
+export const StreamAssistantTaskTextParams = zod.object({
+  "id": zod.coerce.string().uuid()
+})
+
+export const StreamAssistantTaskTextResponse = zod.unknown()
+
+
+/**
  * @summary Request an immediate stop for a running task
  */
 export const AbortAssistantTaskParams = zod.object({

@@ -29,11 +29,12 @@ from bs4 import BeautifulSoup
 from dotenv import load_dotenv, set_key
 from fastapi import FastAPI, File, HTTPException, Request, Response, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from openai import APIStatusError, AsyncOpenAI
 from llm_protocol import TextCallback, assistant_turn, collect_completion, prepare_history
 from conversation_threads import ThreadStore, thread_routers
+from task_text_stream import TaskTextStreamHub
 from pydantic import BaseModel, Field
 from websockets.asyncio.client import connect as websocket_connect
 from websockets.exceptions import ConnectionClosed
@@ -69,9 +70,11 @@ load_dotenv(ENV_FILE, override=True)
 
 DB_LOCK = threading.RLock()
 ACTIVE_TASKS: dict[str, asyncio.Task[None]] = {}
+TASK_TEXT_STREAMS = TaskTextStreamHub()
 
 
 def track_active_task(task_id: str, running: asyncio.Task[None]) -> None:
+    TASK_TEXT_STREAMS.begin(task_id)
     ACTIVE_TASKS[task_id] = running
 
     def clear_if_current(completed: asyncio.Task[None]) -> None:
@@ -1575,6 +1578,7 @@ async def run_agent_task(
 
             async def publish_text(text: str | None) -> None:
                 nonlocal last_preview_write
+                TASK_TEXT_STREAMS.publish(task_id, text)
                 now = asyncio.get_running_loop().time()
                 if text is None or now - last_preview_write >= 0.15:
                     db_run(
@@ -1702,6 +1706,13 @@ async def run_agent_task(
     finally:
         if messages:
             THREADS.checkpoint(task_id, messages, history_start)
+        stream_row = db_one("SELECT status,result FROM tasks WHERE id=?", (task_id,))
+        if stream_row:
+            TASK_TEXT_STREAMS.finish(
+                task_id,
+                str(stream_row["status"]),
+                redact_provider_keys(stream_row["result"] or ""),
+            )
 
 
 async def retry_failed_specialist_step(task_id: str) -> None:
@@ -2265,6 +2276,57 @@ async def get_task(task_id: str) -> dict[str, Any]:
     if not row:
         raise HTTPException(status_code=404, detail="Task not found.")
     return task_dict(row)
+
+
+@app.get("/api/assistant/tasks/{task_id}/stream")
+async def stream_task_text(task_id: str, request: Request) -> StreamingResponse:
+    row = db_one("SELECT status,result FROM tasks WHERE id=?", (task_id,))
+    if not row:
+        raise HTTPException(status_code=404, detail="Task not found.")
+    running = ACTIVE_TASKS.get(task_id)
+    is_active = running is not None and not running.done()
+    terminal = None if is_active else {
+        "type": "end",
+        "status": str(row["status"]),
+        "text": redact_provider_keys(row["result"] or ""),
+    }
+    queue, snapshot, ended = TASK_TEXT_STREAMS.subscribe(
+        task_id,
+        fallback_text=redact_provider_keys(row["result"] or ""),
+        terminal=terminal,
+    )
+
+    def frame(event: dict[str, str]) -> str:
+        return f"data: {json.dumps(event, ensure_ascii=False, separators=(',', ':'))}\n\n"
+
+    async def event_stream():
+        try:
+            yield frame(snapshot)
+            if ended is not None:
+                yield frame(ended)
+                return
+            while not await request.is_disconnected():
+                try:
+                    event = await asyncio.wait_for(queue.get(), timeout=15)
+                except asyncio.TimeoutError:
+                    yield ": keep-alive\n\n"
+                    continue
+                yield frame(event)
+                if event.get("type") == "end":
+                    return
+        finally:
+            TASK_TEXT_STREAMS.unsubscribe(task_id, queue)
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
 
 
 @app.post("/api/assistant/tasks/{task_id}/abort")

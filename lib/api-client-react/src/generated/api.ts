@@ -1163,6 +1163,83 @@ export function useGetAssistantTask<TData = Awaited<ReturnType<typeof getAssista
 
 
 
+export const getStreamAssistantTaskTextUrl = (id: string,) => {
+
+
+
+
+  return `/api/assistant/tasks/${id}/stream`
+}
+
+/**
+ * @summary Stream user-visible assistant response text as server-sent events
+ */
+export const streamAssistantTaskText = async (id: string, options?: Parameters<typeof customFetch>[1]): Promise<string> => {
+
+  return customFetch<string>(getStreamAssistantTaskTextUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getStreamAssistantTaskTextQueryKey = (id: string,) => {
+    return [
+    `/api/assistant/tasks/${id}/stream`
+    ] as const;
+    }
+
+
+export const getStreamAssistantTaskTextQueryOptions = <TData = Awaited<ReturnType<typeof streamAssistantTaskText>>, TError = ErrorType<void>>(id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof streamAssistantTaskText>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getStreamAssistantTaskTextQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof streamAssistantTaskText>>> = ({ signal }) => streamAssistantTaskText(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof streamAssistantTaskText>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type StreamAssistantTaskTextQueryResult = NonNullable<Awaited<ReturnType<typeof streamAssistantTaskText>>>
+export type StreamAssistantTaskTextQueryError = ErrorType<void>
+
+
+/**
+ * @summary Stream user-visible assistant response text as server-sent events
+ */
+
+export function useStreamAssistantTaskText<TData = Awaited<ReturnType<typeof streamAssistantTaskText>>, TError = ErrorType<void>>(
+ id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof streamAssistantTaskText>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getStreamAssistantTaskTextQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
 export const getAbortAssistantTaskUrl = (id: string,) => {
 
 

@@ -7,7 +7,13 @@ import { Activity, AlertCircle, ArrowDown, ArrowRight, Brain, CheckCircle2, Chev
 import { SearchPayloadView, SourcesAccordion, parseSearchPayload } from '@/components/search-sources';
 import type { AssistantTask, ConversationMessage, TaskLog } from '@workspace/api-client-react';
 
-type Props = { tasks: AssistantTask[]; loading: boolean; onOpen: (task: AssistantTask) => void; messages?: ConversationMessage[] };
+type Props = {
+  tasks: AssistantTask[];
+  loading: boolean;
+  onOpen: (task: AssistantTask) => void;
+  messages?: ConversationMessage[];
+  liveText?: { taskId: string; text: string };
+};
 
 const time = (v: string) => new Date(v).getTime() || 0;
 const isLive = (t: AssistantTask) => t.status === 'running' || String(t.status) === 'processing';
@@ -111,7 +117,7 @@ function ToolOutput({ message }: { message: ConversationMessage }) {
   </details>;
 }
 
-export function ActivityStream({ tasks, loading, onOpen, messages }: Props) {
+export function ActivityStream({ tasks, loading, onOpen, messages, liveText }: Props) {
   const scroller = useRef<HTMLDivElement>(null);
   const following = useRef(true);
   const hydrated = useRef(false);
@@ -174,6 +180,7 @@ export function ActivityStream({ tasks, loading, onOpen, messages }: Props) {
         const searchPayloads = extras.map((m) => parseSearchPayload(m.content)).filter((payload) => payload !== null);
         const sources = searchPayloads.flatMap((payload) => payload.results).filter((r, i, all) => r.url && all.findIndex((x) => x.url === r.url) === i);
         const sourceProviders = [...new Set(searchPayloads.map((payload) => payload.engine))];
+        const result = liveText?.taskId === task.id ? liveText.text : task.result;
         return <article className="stream-task exec-task" key={task.id} data-task-status={task.status} data-active={live ? 'true' : 'false'} data-testid={`stream-task-${task.id}`}>
           <div className="exec-user">
             <p className="exec-user-text">{task.objective}</p>
@@ -187,7 +194,7 @@ export function ActivityStream({ tasks, loading, onOpen, messages }: Props) {
             {task.error && !rows.some((row) => row.log.kind === 'error' && row.log.message.includes(task.error!)) && <ErrorLine error={task.error} />}
           </details>}
           {task.error && <div className="exec-failure"><AlertCircle size={14} />Task failed. Open Thinking or View Details for the cause.</div>}
-          {task.result && <div className="exec-result"><div className="exec-result-label">{live ? <><span className="exec-dot live" />Responding</> : <><CheckCircle2 size={14} />Forge</>}</div><Rich text={task.result} />{sources.length > 0 && <div className="exec-sources" data-testid={`sources-${task.id}`}><SourcesAccordion results={sources} providers={sourceProviders} limit={6} /></div>}</div>}
+          {result && <div className="exec-result"><div className="exec-result-label">{live ? <><span className="exec-dot live" />Responding</> : <><CheckCircle2 size={14} />Forge</>}</div><Rich text={result} />{sources.length > 0 && <div className="exec-sources" data-testid={`sources-${task.id}`}><SourcesAccordion results={sources} providers={sourceProviders} limit={6} /></div>}</div>}
           {!rows.length && !task.result && !task.error && !task.currentStep && !live && <p className="stream-no-events">No execution updates yet.</p>}
         </article>;
       })}

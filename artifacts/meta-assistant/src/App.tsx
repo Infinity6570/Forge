@@ -397,6 +397,7 @@ function Dashboard() {
   const settingsQuery = useGetAssistantSettings();
   const [objective, setObjective] = useState('');
   const [submitError, setSubmitError] = useState('');
+  const [liveText, setLiveText] = useState<{ taskId: string; text: string }>();
   const [stopRequestedTaskId, setStopRequestedTaskId] = useState<string>();
   const [stoppedTaskId, setStoppedTaskId] = useState<string>();
   const [selectedTaskId, setSelectedTaskId] = useState<string>();
@@ -466,6 +467,56 @@ function Dashboard() {
   const liveTasks = [...tasks, details.data, actionTask.data];
   const activeExecution = liveTasks.some((task) => task && ['running', 'processing', 'queued'].includes(String(task.status)) && !localStop(task));
   const liveStreamTask = [...tasks].reverse().find((task) => ['running', 'processing', 'queued', 'awaiting_approval', 'awaiting_confirmation'].includes(String(task.status)));
+  const streamTaskId = threadId
+    ? [...tasks].reverse().find((task) => task.threadId === threadId && ['running', 'processing', 'queued'].includes(String(task.status)))?.id
+    : undefined;
+  useEffect(() => {
+    if (!threadId || !streamTaskId) {
+      setLiveText(undefined);
+      return;
+    }
+    const taskId = streamTaskId;
+    const activeThreadId = threadId;
+    let text = '';
+    let frameId: number | undefined;
+    let disposed = false;
+    const publish = (next: string, immediate = false) => {
+      text = next;
+      const flush = () => {
+        frameId = undefined;
+        if (!disposed) setLiveText({ taskId, text });
+      };
+      if (immediate) {
+        if (frameId !== undefined) window.cancelAnimationFrame(frameId);
+        flush();
+      } else if (frameId === undefined) {
+        frameId = window.requestAnimationFrame(flush);
+      }
+    };
+    const stream = new EventSource(`/api/assistant/tasks/${encodeURIComponent(taskId)}/stream`);
+    stream.onmessage = (message) => {
+      try {
+        const event = JSON.parse(message.data) as { type?: string; text?: string; status?: string };
+        if (event.type === 'snapshot') publish(event.text ?? '');
+        else if (event.type === 'reset') publish('');
+        else if (event.type === 'delta') publish(text + (event.text ?? ''));
+        else if (event.type === 'end') {
+          publish(event.text ?? text, true);
+          stream.close();
+          void qc.invalidateQueries({ queryKey: getGetConversationThreadQueryKey(activeThreadId) });
+          void qc.invalidateQueries({ queryKey: getGetAssistantTaskQueryKey(taskId) });
+          void qc.invalidateQueries({ queryKey: getListAssistantTasksQueryKey() });
+        }
+      } catch {
+        // Ignore malformed event frames; EventSource reconnects if the connection drops.
+      }
+    };
+    return () => {
+      disposed = true;
+      stream.close();
+      if (frameId !== undefined) window.cancelAnimationFrame(frameId);
+    };
+  }, [threadId, streamTaskId, qc]);
   const streamTitle = activeExecution ? liveStreamTask?.objective ?? threadTitle : threadTitle;
   const referenceModel = [...tasks].reverse().find((task) => task.modelId);
   const isPending = createTask.isPending;
@@ -557,7 +608,7 @@ function Dashboard() {
       <div className="stream-heading-main">{isGenerating && <span className="status-indicator live live-label" data-testid="status-streaming" aria-live="polite"><span className="online-pip working" />STREAMING</span>}<h2 className="thread-title" title={streamTitle} data-testid="text-thread-title">{streamTitle}</h2></div>
       <div className="stream-heading-right"><div className="command-status" data-testid="status-agent-state"><span className="stream-model-badge">{settingsQuery.data ? modelDisplayName(settingsQuery.data.provider, settingsQuery.data.modelId) : 'Configured model'}</span><span className="stream-status-badge"><span className={`online-pip ${isGenerating ? 'working' : ''}`} />{summary.isLoading ? 'Connecting' : isGenerating ? 'Running' : 'Idle'}</span></div><Link href="/tasks" className="text-link" data-testid="link-all-tasks">Task activity <ArrowRight size={14} /></Link></div>
     </div>
-      {threadId && threadDetail.isError && !threadStale && !threadDetail.data ? <QueryProblem retry={() => threadDetail.refetch()} message="This chat could not be loaded." /> : <ActivityStream key={threadId ?? 'new'} tasks={tasks} messages={threadMessages} loading={!!threadId && threadDetail.isLoading} onOpen={(task) => setSelectedTaskId(task.id)} />}
+      {threadId && threadDetail.isError && !threadStale && !threadDetail.data ? <QueryProblem retry={() => threadDetail.refetch()} message="This chat could not be loaded." /> : <ActivityStream key={threadId ?? 'new'} tasks={tasks} messages={threadMessages} liveText={liveText} loading={!!threadId && threadDetail.isLoading} onOpen={(task) => setSelectedTaskId(task.id)} />}
     </section>
     <TaskActionDock task={actionTask.data} />
     <section className="composer-panel command-composer">
