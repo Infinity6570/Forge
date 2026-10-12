@@ -1537,14 +1537,17 @@ html[data-theme="scifi"] .execution-panel.cyber-thinking-aura ~ .command-compose
   position:relative;z-index:10;
 }
 html[data-theme="scifi"] .execution-panel.cyber-thinking-aura::before {
-  content:"";position:absolute;inset:0;z-index:0;box-sizing:border-box;padding:2px;
+  content:"";position:absolute;inset:0;top:0;right:0;bottom:0;left:0;
+  width:auto;height:auto;min-width:0;min-height:0;
+  z-index:0;box-sizing:border-box;padding:2px;transform:none;transform-origin:50% 50%;
   border-radius:inherit;
   background:conic-gradient(from var(--cyber-aura-angle,0deg),#00f0ff,#7000ff,#ff007f,#00f0ff);
+  background-position:center;background-size:100% 100%;
   -webkit-mask:linear-gradient(#fff 0 0) content-box,linear-gradient(#fff 0 0);
   -webkit-mask-composite:xor;
   mask:linear-gradient(#fff 0 0) content-box,linear-gradient(#fff 0 0);
   mask-composite:exclude;
-  transform:none;opacity:1;animation:cyber-spin-gpu 4s linear infinite;
+  opacity:1;animation:cyber-spin-gpu 4s linear infinite;
   pointer-events:none;
 }
 html[data-theme="scifi"] .execution-panel.cyber-thinking-aura::after {

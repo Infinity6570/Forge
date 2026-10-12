@@ -99,7 +99,7 @@ html[data-theme] :is(.exec-text,.exec-user-text) { min-width:0; }
 @media (max-height:800px) and (min-width:901px) {
   html[data-theme] .agent-card, html[data-theme] .app-footer { display:none; }
   html[data-theme] .center-pane-home .command-metrics { display:none; }
-  html[data-theme] .dashboard-page.command-center { gap:6px; }
+  html[data-theme] .dashboard-page.command-center { gap:8px; }
   html[data-theme] .brand { padding-bottom:18px; }
   html[data-theme] .chat-list { max-height:min(16vh,120px); }
   html[data-theme] .sidebar-spacer { min-height:12px; }
@@ -237,7 +237,7 @@ html[data-theme] .stream-heading-right .text-link { display:inline-flex; flex:no
 html[data-theme] .exec-wrap { height:100%; min-height:0; flex:1; }
 html[data-theme] .activity-panel .exec-stream {
   display:flex; min-height:0; height:100%; flex:1; flex-direction:column;
-  overflow-x:hidden; overflow-y:auto; padding:0 12px 12px;
+  overflow-x:hidden; overflow-y:auto; padding:0 16px 12px 12px; scrollbar-gutter:stable;
 }
 html[data-theme] .activity-panel .exec-inner {
   display:flex; min-height:100%; width:100%; max-width:none; flex:1; flex-direction:column;
@@ -273,7 +273,7 @@ html[data-theme] .execution-panel .exec-result .exec-rich :is(h1,h2,h3,h4) { lin
   html[data-theme] .stream-heading-main { align-items:flex-start; flex-direction:column; gap:4px; }
   html[data-theme] .stream-heading-main .thread-title { width:100%; }
   html[data-theme] .stream-model-badge { max-width:135px; }
-  html[data-theme] .activity-panel .exec-stream { padding-inline:8px; }
+  html[data-theme] .activity-panel .exec-stream { padding-left:8px; padding-right:12px; }
 }
 
 /* System Telemetry & Workspace Console */
