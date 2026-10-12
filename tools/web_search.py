@@ -1,7 +1,9 @@
 """Portable search routing: Gemini native grounding, personal APIs, or Chromium."""
 from __future__ import annotations
 
+import asyncio
 import os
+import random
 from typing import Any, Callable
 from urllib.parse import urlparse
 import httpx
@@ -12,9 +14,52 @@ SEARCH_KEY_NAMES = {"tavily": "TAVILY_API_KEY", "serper": "SERPER_API_KEY", "bra
 
 
 class SearchError(RuntimeError):
-    def __init__(self, message: str, *, quota: bool = False):
+    def __init__(self, message: str, *, quota: bool = False, status_code: int | None = None):
         super().__init__(message)
         self.quota = quota
+        self.status_code = status_code
+
+
+class _GroundingThrottle:
+    """Pace consecutive grounding calls made by the same agent task."""
+
+    def __init__(self):
+        self._states: dict[str, dict[str, Any]] = {}
+        self._states_lock = asyncio.Lock()
+
+    async def run(self, task_id: str, operation: Callable[[], Any]):
+        async with self._states_lock:
+            now = asyncio.get_running_loop().time()
+            if len(self._states) >= 512:
+                stale = [
+                    key for key, entry in self._states.items()
+                    if not entry["lock"].locked()
+                    and entry["last_completed"] is not None
+                    and now - entry["last_completed"] >= 60
+                ]
+                for key in stale:
+                    self._states.pop(key, None)
+                    if len(self._states) < 512:
+                        break
+            state = self._states.setdefault(task_id, {
+                "lock": asyncio.Lock(), "last_completed": None, "consecutive": 0,
+            })
+        async with state["lock"]:
+            now = asyncio.get_running_loop().time()
+            previous = state["last_completed"]
+            if previous is not None and now - previous < 60:
+                state["consecutive"] = min(state["consecutive"] + 1, 5)
+                delay = min(1.5 * (2 ** (state["consecutive"] - 2)), 12.0)
+                await asyncio.sleep(delay * random.uniform(0.9, 1.1))
+            else:
+                state["consecutive"] = 1
+            try:
+                return await operation()
+            finally:
+                state["last_completed"] = asyncio.get_running_loop().time()
+
+
+_grounding_throttle = _GroundingThrottle()
 
 
 def search_settings() -> dict[str, Any]:
@@ -35,9 +80,9 @@ def check_response(response: httpx.Response, engine: str) -> dict[str, Any]:
         payload = response.json()
     except ValueError as exc:
         raise SearchError(f"{engine} returned a non-JSON response (HTTP {response.status_code}).",
-                          quota=response.status_code in {402, 429}) from exc
+                          quota=response.status_code in {402, 429}, status_code=response.status_code) from exc
     if not isinstance(payload, dict):
-        raise SearchError(f"{engine} returned an unexpected response shape.")
+        raise SearchError(f"{engine} returned an unexpected response shape.", status_code=response.status_code)
     if response.is_error or payload.get("error"):
         # Keep credentials and arbitrary provider bodies out of task logs.
         details = str(payload.get("error", payload.get("message", ""))).lower()
@@ -47,7 +92,8 @@ def check_response(response: httpx.Response, engine: str) -> dict[str, Any]:
             )
         )
         raise SearchError(f"{engine} search failed (HTTP {response.status_code}). "
-                          + ("Quota/rate limit exhausted." if quota else "Check the key, model support, and provider access."), quota=quota)
+                          + ("Quota/rate limit exhausted." if quota else "Check the key, model support, and provider access."),
+                          quota=quota, status_code=response.status_code)
     return payload
 
 
@@ -143,7 +189,57 @@ async def search_api(query: str, engine: str) -> dict[str, Any]:
     return {"engine": engine, "results": results}
 
 
-async def routed_search(query: str, provider: str, model: str, validate_url: Callable[[str], str]) -> dict[str, Any]:
+async def _fallback_from_google_rate_limit(
+    query: str,
+    validate_url: Callable[[str], str],
+    settings: dict[str, Any],
+) -> dict[str, Any]:
+    attempted: list[str] = []
+    failures: list[str] = []
+    for engine in ("tavily", "serper", "brave"):
+        if not os.getenv(SEARCH_KEY_NAMES[engine]):
+            continue
+        attempted.append(engine)
+        try:
+            result = await search_api(query, engine)
+            result.update(
+                fallbackFrom="google-grounding",
+                fallbackAttempted=attempted,
+                warning=f"Google grounding was rate-limited; search results came from {engine.title()} instead.",
+            )
+            return result
+        except SearchError:
+            # A saved key may itself be rate-limited, invalid, or out of credits.
+            # Continue in the configured fallback order without exposing provider details.
+            failures.append(engine)
+
+    if settings["searchChromiumFallback"]:
+        result = await BrowserRunner(validate_url).search(query)
+        result.update(
+            fallbackFrom="google-grounding",
+            fallbackAttempted=attempted,
+            warning="Google grounding was rate-limited and saved API fallbacks were unavailable; Chromium was used.",
+        )
+        return result
+
+    if not attempted:
+        reason = "No Tavily, Serper, or Brave API key is saved in the API Keys Vault."
+    else:
+        reason = f"Configured search fallbacks were unavailable ({', '.join(failures)})."
+    raise SearchError(
+        f"Google grounding hit HTTP 429. {reason} Save a search API key or enable Chromium fallback.",
+        quota=True,
+        status_code=429,
+    )
+
+
+async def routed_search(
+    query: str,
+    provider: str,
+    model: str,
+    validate_url: Callable[[str], str],
+    throttle_key: str | None = None,
+) -> dict[str, Any]:
     query = query.strip()[:500]
     if not query:
         raise SearchError("Search query cannot be empty.")
@@ -158,8 +254,14 @@ async def routed_search(query: str, provider: str, model: str, validate_url: Cal
         result["warning"] = "This provider has no native search or saved selected search API key; Chromium was used."
         return result
     try:
-        return await GeminiGroundingAdapter().search(query, model) if route == "google-grounding" else await search_api(query, engine)
+        if route == "google-grounding":
+            adapter = GeminiGroundingAdapter()
+            operation = lambda: adapter.search(query, model)
+            return await _grounding_throttle.run(throttle_key, operation) if throttle_key else await operation()
+        return await search_api(query, engine)
     except SearchError as exc:
+        if route == "google-grounding" and exc.status_code == 429:
+            return await _fallback_from_google_rate_limit(query, validate_url, settings)
         if not exc.quota or not settings["searchChromiumFallback"]:
             raise
         result = await browser.search(query)

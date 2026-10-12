@@ -104,6 +104,46 @@ class SearchRoutingTests(unittest.IsolatedAsyncioTestCase):
                     await routed_search("query", "deepseek", "deepseek-chat", lambda u: u)
                 browser.assert_not_awaited()
 
+    async def test_google_429_falls_back_in_tavily_serper_brave_order(self):
+        calls = []
+
+        async def fallback(query, engine):
+            calls.append(engine)
+            if engine == "tavily":
+                raise SearchError("rate limited", quota=True, status_code=429)
+            if engine == "serper":
+                raise SearchError("bad saved key", status_code=401)
+            return {"engine": engine, "results": [{"title": "Brave result"}]}
+
+        with patch.object(GeminiGroundingAdapter, "search", new_callable=AsyncMock,
+                          side_effect=SearchError("Google grounding 429", quota=True, status_code=429)):
+            with patch("tools.web_search.search_api", new_callable=AsyncMock, side_effect=fallback):
+                result = await routed_search("query", "gemini", "gemini-3.8-flash", lambda u: u)
+
+        self.assertEqual(calls, ["tavily", "serper", "brave"])
+        self.assertEqual(result["engine"], "brave")
+        self.assertEqual(result["fallbackFrom"], "google-grounding")
+        self.assertEqual(result["fallbackAttempted"], calls)
+        self.assertIn("Brave", result["warning"])
+
+    async def test_google_non_429_does_not_switch_search_providers(self):
+        with patch.object(GeminiGroundingAdapter, "search", new_callable=AsyncMock,
+                          side_effect=SearchError("Google unavailable", status_code=503)):
+            with patch("tools.web_search.search_api", new_callable=AsyncMock) as api:
+                with self.assertRaisesRegex(SearchError, "Google unavailable"):
+                    await routed_search("query", "gemini", "gemini-3.8-flash", lambda u: u)
+        api.assert_not_awaited()
+
+    async def test_consecutive_grounding_calls_back_off_exponentially_per_task(self):
+        with patch.object(GeminiGroundingAdapter, "search", new_callable=AsyncMock,
+                          return_value={"engine": "google-grounding"}):
+            with patch("tools.web_search.asyncio.sleep", new_callable=AsyncMock) as sleep:
+                with patch("tools.web_search.random.uniform", return_value=1.0):
+                    for _ in range(3):
+                        await routed_search("query", "gemini", "gemini-3.8-flash", lambda u: u,
+                                            throttle_key="grounding-backoff-test")
+        self.assertEqual([call.args[0] for call in sleep.await_args_list], [1.5, 3.0])
+
     async def test_bad_keys_and_server_errors_never_trigger_quota_fallback(self):
         os.environ.update(WEB_SEARCH_MODE="api", WEB_SEARCH_CHROMIUM_FALLBACK="true")
         for status in [401, 403, 503]:
@@ -151,6 +191,7 @@ class SearchRoutingTests(unittest.IsolatedAsyncioTestCase):
         with patch("main.routed_search", new_callable=AsyncMock, return_value={"engine": "google-grounding"}) as routed:
             await main.execute_tool("web_search", {"query": "news"}, "gemini", {"model": "gemini-2.5-pro"}, "", "test")
         self.assertEqual(routed.await_args.args[1:3], ("gemini", "gemini-2.5-pro"))
+        self.assertEqual(routed.await_args.kwargs["throttle_key"], "test")
 
     async def test_browser_refuses_private_urls_before_launch(self):
         with self.assertRaisesRegex(ValueError, "Local addresses"):

@@ -987,10 +987,16 @@ async def fire_timer(timer_id: str) -> None:
     schedule_timer(next_id, next_iso)
 
 
-async def web_search(query: str, provider: str | None = None, model: str | None = None) -> str:
+async def web_search(
+    query: str,
+    provider: str | None = None,
+    model: str | None = None,
+    task_id: str | None = None,
+) -> str:
     settings = get_settings(False, False)
     result = await routed_search(
         query, provider or settings["provider"], model or settings["modelId"], validate_public_url,
+        throttle_key=task_id,
     )
     output = json.dumps(result, ensure_ascii=False)
     if len(output) > 120_000:
@@ -1324,7 +1330,7 @@ async def execute_tool(
     task_id: str,
 ) -> str:
     if name == "web_search":
-        return await web_search(str(arguments.get("query", "")), provider, model_state["model"])
+        return await web_search(str(arguments.get("query", "")), provider, model_state["model"], task_id)
     if name == "fetch_webpage":
         if search_settings()["searchMode"] == "chromium":
             return json.dumps(await BrowserRunner(validate_public_url).fetch(str(arguments.get("url", ""))), ensure_ascii=False)
