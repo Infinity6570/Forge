@@ -1,0 +1,123 @@
+/* Responsive refinement. Loaded last. Breakpoints: >=1600 comfortable, <=1536 laptop,
+   <=1280 narrow laptop, <=900 drawer layout (owned by index.css), height <=800 short laptop. */
+html[data-theme] { --sidebar-w:260px; --stream-max:64rem; }
+html[data-theme] .app-frame { grid-template-columns:var(--sidebar-w) minmax(0,1fr) var(--inspector-width,410px)!important; }
+html[data-theme] .app-frame.inspector-closed { grid-template-columns:var(--sidebar-w) minmax(0,1fr)!important; }
+html[data-theme] .app-frame.inspector-open { grid-template-columns:var(--sidebar-w) minmax(0,1fr) 8px clamp(320px,var(--inspector-width,410px),34vw)!important; }
+html[data-theme] .sidebar { width:var(--sidebar-w)!important; min-height:0; overflow-y:auto; overflow-x:hidden; scrollbar-width:thin; scrollbar-color:var(--border) transparent; }
+html[data-theme] :is(.main-area,.center-pane,.page-wrap,.dashboard-page,.activity-panel,.exec-wrap,.exec-stream,.exec-task,.exec-inner,.command-composer,.composer-actions) { min-width:0; }
+html[data-theme] :is(.main-area,.center-pane) { overflow-x:hidden; }
+
+/* Conversation column: centered, fluid padding */
+html[data-theme] .command-center > :is(.command-heading,.command-metrics,.activity-panel,.action-dock,.command-composer,.query-problem) {
+  width:100%; max-width:var(--stream-max); margin-inline:auto;
+}
+html[data-theme] .exec-inner { max-width:100%; }
+html[data-theme] .exec-task { overflow-wrap:anywhere; }
+html[data-theme] :is(.exec-text,.exec-user-text) { min-width:0; }
+
+@media (max-width:1536px) {
+  html[data-theme] { --sidebar-w:240px; --type-body:13px; --type-control:12.5px; --type-micro:11px; --stream-max:60rem; font-size:14px; }
+  html[data-theme] body { font-size:13px; }
+  html[data-theme] .page-wrap { padding:14px 16px 10px; }
+  html[data-theme] .sidebar { padding:16px 12px 10px; }
+  html[data-theme] .topbar { padding-inline:16px; }
+  html[data-theme] .topbar :is(.ops-tagline,.system-online) { display:none!important; }
+  html[data-theme] .topbar-right { flex:none; gap:8px; }
+  html[data-theme] .breadcrumbs { flex:1; min-width:0; white-space:nowrap; overflow:hidden; }
+  html[data-theme] .breadcrumbs strong { min-width:0; overflow:hidden; text-overflow:ellipsis; }
+  html[data-theme] :is(.command-heading h1,.page-heading h1,.welcome-row h1,.brand-name,.settings-section-heading h2) { font-size:clamp(16px,1.5vw,20px)!important; line-height:1.2!important; }
+  html[data-theme] :is(.activity-panel-heading h2,.thread-title) { font-size:14px!important; }
+  html[data-theme] .exec-user-text, html[data-theme] .exec-rich p, html[data-theme] .exec-pending { font-size:13px!important; line-height:1.5; }
+  html[data-theme] .exec-head strong { font-size:13px!important; }
+  html[data-theme] .exec-step .exec-rich p, html[data-theme] .exec-raw { font-size:12px!important; }
+  html[data-theme] .exec-label, html[data-theme] .exec-step time, html[data-theme] .exec-user-meta, html[data-theme] .exec-view, html[data-theme] .exec-count, html[data-theme] .exec-status { font-size:11px!important; }
+  /* tighter messages and Thinking */
+  html[data-theme] .exec-inner { gap:8px; padding-top:8px; }
+  html[data-theme] .exec-task { padding:5px 8px 6px; }
+  html[data-theme] .exec-thinking { margin-top:4px; padding:0 6px; }
+  html[data-theme] .exec-thinking > summary { min-height:24px; font-size:12px!important; }
+  html[data-theme] .exec-step summary { min-height:24px; padding:2px; gap:6px; font-size:12px!important; }
+  html[data-theme] .exec-result { margin-top:4px; padding:6px 8px; }
+  html[data-theme] .exec-stream { padding:0 12px 10px; }
+  html[data-theme] .stream-code pre { font-size:12px; max-height:180px; }
+  /* sidebar threads */
+  html[data-theme] .chat-pick { font-size:12.5px; padding:4px 6px; }
+  html[data-theme] .chat-list { max-height:28vh; }
+  html[data-theme] .nav-link { padding-block:6px; }
+  /* composer */
+  html[data-theme] .command-composer { padding:8px 10px 6px; }
+  html[data-theme] .command-composer form { padding:8px!important; gap:6px!important; }
+  html[data-theme] .command-composer :is(.terminal-prompt,textarea) { font-size:13px!important; line-height:20px!important; }
+  html[data-theme] .command-composer textarea { max-height:min(120px,22dvh); }
+  html[data-theme] .command-composer .composer-heading { display:none; }
+  /* other routes */
+  html[data-theme] .page-wrap > :not(.command-center) { max-width:1280px; margin-inline:auto; }
+  html[data-theme] :is(.settings-section,.tasks-table-panel,.panel,.workspace-card) { padding-inline:14px; }
+  html[data-theme] :is(table,.tasks-table-panel,.file-list,.reminder-list) { max-width:100%; }
+  html[data-theme] .tasks-table-panel, html[data-theme] .library-toolbar + * { overflow-x:auto; }
+  html[data-theme] .key-vault-grid { gap:10px; }
+}
+@media (max-width:1280px) and (min-width:901px) {
+  html[data-theme] { --sidebar-w:220px; --stream-max:56rem; }
+  html[data-theme] .nav-link { gap:8px; }
+  html[data-theme] .command-metrics > span { padding:3px 6px; }
+}
+/* 901-1100px: inspector becomes an overlay so the conversation keeps its width */
+@media (max-width:1100px) and (min-width:901px) {
+  html[data-theme] .app-frame, html[data-theme] .app-frame.inspector-open, html[data-theme] .app-frame.inspector-closed { grid-template-columns:var(--sidebar-w) minmax(0,1fr)!important; }
+  html[data-theme] .app-frame.inspector-open .right-inspector { position:fixed; z-index:45; top:52px; right:8px; bottom:8px; grid-column:auto; height:auto; width:min(420px,calc(100vw - var(--sidebar-w) - 24px)); box-shadow:0 15px 55px #0009; border:1px solid var(--border); }
+  html[data-theme] .app-frame.inspector-open .inspector-resize { display:none!important; }
+}
+@media (max-width:900px) {
+  html[data-theme] .activity-panel { min-height:160px; }
+  html[data-theme] .dashboard-page.command-center { min-height:0; }
+  html[data-theme] .sidebar { width:min(86vw,260px)!important; }
+  html[data-theme] .command-center > :is(.command-heading,.command-metrics,.activity-panel,.action-dock,.command-composer) { max-width:none; }
+  html[data-theme] .page-wrap { padding:12px 12px 8px; }
+  html[data-theme] .chat-list { max-height:34vh; }
+  html[data-theme] .chat-acts { display:flex; }
+  html[data-theme] .chat-act { width:28px; height:28px; }
+  html[data-theme] .new-chat-button { height:36px; }
+  html[data-theme] .right-inspector { max-height:calc(100dvh - 66px); }
+}
+@media (max-width:600px) {
+  html[data-theme] .command-composer .composer-actions { width:100%; justify-content:flex-end!important; }
+  html[data-theme] .command-composer .composer-model { flex:1 1 140px; width:auto; max-width:none; }
+  html[data-theme] .command-composer .composer-counter { margin-right:auto; }
+  html[data-theme] .exec-user-meta { gap:8px; }
+  html[data-theme] .exec-jump { right:10px; }
+  html[data-theme] .command-heading h1 { font-size:16px!important; }
+  html[data-theme] .command-metrics { display:none; }
+}
+/* Short laptops (e.g. 1366x768, 1440x800 minus browser chrome) */
+@media (max-height:800px) and (min-width:901px) {
+  html[data-theme] .agent-card, html[data-theme] .app-footer { display:none; }
+  html[data-theme] .center-pane-home .command-metrics { display:none; }
+  html[data-theme] .dashboard-page.command-center { gap:6px; }
+  html[data-theme] .command-heading .eyebrow { display:none; }
+  html[data-theme] .chat-list { max-height:22vh; }
+  html[data-theme] .quick-status > div { padding-block:3px; }
+  html[data-theme] .topbar { min-height:44px; height:44px; }
+  html[data-theme] .model-menu { max-height:min(320px,var(--radix-select-content-available-height))!important; }
+}
+@media (max-height:620px) {
+  html[data-theme] .sidebar .quick-status, html[data-theme] .sidebar .side-divider { display:none; }
+  html[data-theme] .command-composer textarea { max-height:18dvh; }
+}
+@media (min-width:1600px) {
+  html[data-theme] { --sidebar-w:260px; --stream-max:64rem; --type-body:14px; --type-control:13px; --type-micro:12px; }
+}
+
+/* Bounded attachments and approval dock; composer never leaves the viewport */
+html[data-theme] .command-composer .task-attachments { max-height:56px; overflow-y:auto; overflow-x:hidden; }
+html[data-theme] .action-dock { max-height:min(26vh,220px); overflow-x:hidden; overflow-y:auto; }
+html[data-theme] .command-composer { max-width:100%; }
+@media (max-height:800px) {
+  html[data-theme] .activity-panel { min-height:120px!important; }
+  html[data-theme] .action-dock { max-height:22vh; }
+}
+@media (max-width:600px) {
+  html[data-theme] .command-composer :is(.composer-corner,.composer-actions) { width:100%; justify-content:flex-end!important; gap:5px; }
+  html[data-theme] .command-composer .composer-corner .composer-model { flex:1 1 130px; width:auto; max-width:none; }
+}

@@ -9,6 +9,7 @@ import './styles/execution-stream.css';
 import './styles/model-menu.css';
 import './styles/chat-threads.css';
 import './styles/composer-toolbar.css';
+import './styles/responsive.css';
 
 createRoot(document.getElementById('root')!, {
   // Keeps caught errors off reportError(), which would raise the dev overlay.

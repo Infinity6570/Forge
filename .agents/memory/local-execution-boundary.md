@@ -10,3 +10,9 @@ Generated Python app previews follow a separate explicit opt-in. They are always
 **Why:** The user chose an explicit, portable local opt-in over kernel-specific sandbox dependencies. A child process can still read or modify anything available to the user's account, so the warning and default-off toggle are essential; this is distinct from the separate admin elevation approval gate.
 
 **How to apply:** Keep static previews available everywhere and Python app processes disabled in Replit. On localhost, require the saved opt-in, use `workspace/` as cwd, pass only a cleaned environment, bind preview servers to loopback, enforce a runtime limit, and terminate children when the Live Preview panel closes. Do not describe cwd or environment cleanup as filesystem confinement. Keep ordinary file and command tools workspace-confined; keep elevated commands gated, audited, and fail-closed.
+
+New laptop layout breakpoints must not add automatic inspector closures; use an overlay or narrower layout while keeping an already-open preview mounted.
+
+**Why:** Closing/unmounting the inspector stops preview processes. A layout-only resize should not introduce additional ways to terminate a running local app.
+
+**How to apply:** Distinguish the initial inspector visibility on compact screens from lifecycle-changing closure of an existing inspector. Keep explicit close behavior and the existing mobile boundary intact.

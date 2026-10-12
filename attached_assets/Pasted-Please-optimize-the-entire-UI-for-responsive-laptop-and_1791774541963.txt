@@ -1,0 +1,28 @@
+Please optimize the entire UI for responsive laptop and compact screen viewports:
+
+1. Viewport-Aware Responsive Scaling (Root & Base Typography):
+   - Replace absolute fixed font sizes on container levels with responsive fluid rem scaling or standard media queries:
+     * Desktop / Ultrawide (@media min-width: 1600px): Retain current comfortable sizes (13px–14px body).
+     * Laptop / Compact (@media max-width: 1536px and standard 1080p laptop displays):
+       - Reduce root font scaling slightly (`html { font-size: 14px; }` or adjust rem bases).
+       - Micro text (timestamps, badges, status indicators): 11px.
+       - Body / Chat messages / Descriptions: 12.5px–13px.
+       - Section titles ('Orbitron'): 16px–20px (down from oversized displays).
+
+2. Command Center & Stream Clutter Reduction:
+   - Ensure the main conversation stream container has a responsive `max-width` (e.g., `max-w-4xl` or `max-w-5xl` centered) with fluid horizontal padding (`px-4` on laptops).
+   - Compact Spacing:
+     * Reduce vertical margins and gap sizes between consecutive messages and action pills (`gap-2` instead of heavy spacing).
+     * Make the intermediate "Thinking / Steps" collapsibles tighter and low-profile.
+
+3. Sidebar & Layout Flexibility:
+   - Make the left navigation/thread sidebar collapsible or narrower on laptop widths (e.g., width 220px–240px instead of taking up excessive screen real estate).
+   - Ensure main layout panels use `min-width: 0` and `overflow-x: hidden` to prevent horizontal scroll leaks or awkward wrapping.
+
+4. Chat Input Bar Compactness:
+   - Set the bottom input console to sit flush and neatly proportioned:
+     * Height of the textarea auto-resizes cleanly without pushing other elements off-screen.
+     * Keep the corner action cluster ([Model Pill], [Attach], [Send]) tucked tightly in the corner without overlapping the prompt text.
+
+5. Preserve Theme & Functionality:
+   - Maintain the active Sci-Fi cyberdeck styling, colors, and persistent conversation threads.

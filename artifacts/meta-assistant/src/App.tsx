@@ -191,25 +191,39 @@ function Modal({ title, onClose, children }: { title: string; onClose: () => voi
   return createPortal(<div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><section className="modal-card enter" role="dialog" aria-modal="true" aria-label={title}><div className="modal-heading"><h2 className="font-display">{title}</h2><button className="icon-button" onClick={onClose} aria-label="Close dialog" data-testid="button-close-modal"><X size={18} /></button></div>{children}</section></div>, document.body);
 }
 
+// Inspector width bounds track the viewport so the CSS cap and the resizer agree.
+function inspectorRange(viewportWidth = typeof window === 'undefined' ? 1400 : window.innerWidth) {
+  const max = Math.max(320, Math.min(450, Math.floor(viewportWidth * 0.34)));
+  return { min: Math.min(380, max), max };
+}
+
 function AppShell({ children, page }: { children: ReactNode; page: Page }) {
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [inspectorOpen, setInspectorOpen] = useState(() => typeof window !== 'undefined' && window.innerWidth > 900);
+  const [inspectorOpen, setInspectorOpen] = useState(() => typeof window !== 'undefined' && window.innerWidth > 1100);
   const [inspectorWidth, setInspectorWidth] = useState(410);
+  const [viewportWidth, setViewportWidth] = useState(() => typeof window === 'undefined' ? 1400 : window.innerWidth);
+  const range = inspectorRange(viewportWidth);
+  const displayedInspectorWidth = Math.max(range.min, Math.min(range.max, inspectorWidth));
   const [resizingInspector, setResizingInspector] = useState(false);
   const [location] = useLocation();
   const routePage = (location === '/' ? 'home' : location.slice(1)) as Page;
   const current = page || routePage;
   useEffect(() => {
     const viewport = window.matchMedia('(max-width: 900px)');
+    const syncViewport = () => setViewportWidth(window.innerWidth);
     const closeInspectorOnNarrowViewport = (event: MediaQueryListEvent) => {
       if (event.matches) setInspectorOpen(false);
     };
     viewport.addEventListener('change', closeInspectorOnNarrowViewport);
-    return () => viewport.removeEventListener('change', closeInspectorOnNarrowViewport);
+    window.addEventListener('resize', syncViewport);
+    return () => {
+      viewport.removeEventListener('change', closeInspectorOnNarrowViewport);
+      window.removeEventListener('resize', syncViewport);
+    };
   }, []);
   useEffect(() => {
     if (!resizingInspector) return;
-    const move = (event: PointerEvent) => setInspectorWidth(Math.max(380, Math.min(450, window.innerWidth - event.clientX)));
+    const move = (event: PointerEvent) => { const { min, max } = inspectorRange(); setInspectorWidth(Math.max(min, Math.min(max, window.innerWidth - event.clientX))); };
     const stop = () => setResizingInspector(false);
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', stop, { once: true });
@@ -223,7 +237,7 @@ function AppShell({ children, page }: { children: ReactNode; page: Page }) {
     window.addEventListener('morrow:open-preview-inspector', openPreview);
     return () => window.removeEventListener('morrow:open-preview-inspector', openPreview);
   }, []);
-  return <div className={`app-frame shell-noise ${inspectorOpen ? 'inspector-open' : 'inspector-closed'}`} style={{ '--inspector-width': `${inspectorWidth}px` } as CSSProperties}>
+  return <div className={`app-frame shell-noise ${inspectorOpen ? 'inspector-open' : 'inspector-closed'}`} style={{ '--inspector-width': `${displayedInspectorWidth}px` } as CSSProperties}>
     <aside className={`sidebar ${mobileOpen ? 'mobile-open' : ''}`}>
       <div className="brand"><div className="brand-mark" aria-hidden="true"><svg viewBox="0 0 32 32" fill="none"><path d="M5 9.5 16 4l11 5.5-4.7 2.35L16 9l-6.3 2.85L5 9.5Z" /><path d="m5 9.5 2.8 12L16 27l8.2-5.5L27 9.5" /><path d="m9.7 11.85 1.55 7.1L16 22l4.75-3.05 1.55-7.1" /><path d="m11.25 18.95 4.75-2.6 4.75 2.6M16 9v7.35" /></svg></div><div><div className="brand-name">Forge</div><div className="brand-caption">LOCAL OPERATIONS</div></div><span className="runtime-ready-dot" aria-label="Local runtime ready" title="Local runtime ready" /><button className="sidebar-close icon-button" onClick={() => setMobileOpen(false)} aria-label="Close navigation"><X size={17} /></button></div>
       <ChatSidebar onPicked={() => setMobileOpen(false)} />
@@ -241,7 +255,7 @@ function AppShell({ children, page }: { children: ReactNode; page: Page }) {
       <header className="topbar"><button className="mobile-menu icon-button" aria-label="Open navigation" onClick={() => setMobileOpen(true)} data-testid="button-open-navigation"><Menu size={20} /></button><div className="breadcrumbs"><span>Workspace</span><span className="crumb-slash">/</span><strong>{navItems.find((n) => (n.href === '/' ? 'home' : n.href.slice(1)) === current)?.label ?? 'Overview'}</strong></div><div className="topbar-right"><span className="ops-tagline">LOCAL OPS // 6570</span><div className="system-online"><span className="online-pip" />All systems operational</div><ThemeChooser /><CyberFxToggle /><button className="inspector-toggle icon-button" aria-label={inspectorOpen ? 'Close workspace inspector' : 'Open workspace inspector'} aria-expanded={inspectorOpen} onClick={() => setInspectorOpen((open) => !open)} data-testid="button-toggle-inspector"><PanelRight size={17} /></button><button className="topbar-icon" aria-label="Help" onClick={() => window.alert('Your agent can help with documents, reminders, research, and code-related work.')} data-testid="button-help"><CircleHelp size={18} /></button><div className="topbar-avatar">F</div></div></header>
       <div className={`center-pane ${page === 'home' ? 'center-pane-home' : ''}`}><div className="page-wrap">{children}</div><footer className="app-footer"><span>Made for thoughtful delegation.</span><span className="footer-build">FORGE <span>·</span> LOCAL COMMAND CENTER</span></footer></div>
     </main>
-    {inspectorOpen && <div className="inspector-resize" role="separator" aria-orientation="vertical" aria-label="Resize workspace inspector" aria-valuemin={380} aria-valuemax={450} aria-valuenow={inspectorWidth} tabIndex={0} onPointerDown={(event) => { event.preventDefault(); setResizingInspector(true); }} onKeyDown={(event) => { if (event.key === 'ArrowLeft') setInspectorWidth((width) => Math.min(450, width + 10)); if (event.key === 'ArrowRight') setInspectorWidth((width) => Math.max(380, width - 10)); }} data-testid="separator-inspector"><GripVertical size={14} /></div>}
+    {inspectorOpen && <div className="inspector-resize" role="separator" aria-orientation="vertical" aria-label="Resize workspace inspector" aria-valuemin={range.min} aria-valuemax={range.max} aria-valuenow={displayedInspectorWidth} tabIndex={0} onPointerDown={(event) => { event.preventDefault(); setResizingInspector(true); }} onKeyDown={(event) => { if (event.key === 'ArrowLeft') setInspectorWidth(Math.min(range.max, displayedInspectorWidth + 10)); if (event.key === 'ArrowRight') setInspectorWidth(Math.max(range.min, displayedInspectorWidth - 10)); }} data-testid="separator-inspector"><GripVertical size={14} /></div>}
     {inspectorOpen && <InspectorPanel onClose={() => setInspectorOpen(false)} />}
   </div>;
 }
