@@ -1,0 +1,28 @@
+Please upgrade Forge's workspace capabilities from a static single-file HTML generator into an autonomous multi-file development engine:
+
+1. Add Shell Execution Tool (Backend - `agent_tools.py`):
+   - Register a tool: `run_terminal_command(command: str, cwd: str = ".")`:
+     * Executes shell commands in the workspace using `subprocess.run(shell=True, capture_output=True, text=True, timeout=60)`.
+     * Returns `stdout`, `stderr`, and `returncode`.
+     * Grants the agent the ability to install dependencies (`pip install`, `npm i`), run tests, start dev servers, and execute Python/Node scripts.
+
+2. Add Multi-File Workspace Scaffolding Tools:
+   - Register:
+     * `write_file(path: str, content: str)`: Creates subdirectories recursively if they don't exist and writes file contents.
+     * `list_directory(path: str = ".")`: Returns the file and folder tree so the agent inspects existing files before modifying them.
+     * `read_file(path: str)`: Reads existing source code for debugging and refactoring.
+
+3. Update System Prompt & Builder Directives:
+   - Remove any instructions telling the agent to default to `index.html` for user requests.
+   - Update instructions:
+     "You are a full-stack software engineer and autonomous builder. When the user asks you to build an application, script, or tool:
+      1. Inspect existing files before writing.
+      2. Scaffold real multi-file architectures (e.g., modular Python scripts, modern React/Vite structures, proper CSS modules, configuration files).
+      3. Use `write_file` across all necessary files.
+      4. Use `run_terminal_command` to install dependencies or run tests to verify execution.
+      5. Never compress complex applications into a single static index.html unless the user explicitly asks for a standalone single-file HTML demo."
+
+4. Upgrade Live Preview Tab:
+   - In the right-hand panel, allow switching preview modes:
+     * Mode 1: Static File Preview (renders workspace HTML files).
+     * Mode 2: Localhost Port Tunnel (renders `http://localhost:<PORT>` when a background server like FastAPI, Flask, or Vite is executed).
