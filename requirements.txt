@@ -16,3 +16,4 @@ flask
 pydantic
 streamlit
 websockets
+playwright>=1.49,<2

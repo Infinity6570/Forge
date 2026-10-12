@@ -24,3 +24,38 @@ html[data-theme] .chat-skeleton { display:grid; gap:5px; }
 html[data-theme] .chat-skeleton i { height:24px; border-radius:3px; background:var(--surface-raised); opacity:.6; }
 html[data-theme] .thread-title { margin:0; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 html[data-theme] .exec-tool-out { border-top:1px solid color-mix(in srgb,var(--border) 60%,transparent); }
+
+/* Web search settings and grounding sources */
+html[data-theme] .search-modes, html[data-theme] .search-engines { display:grid; gap:6px; }
+html[data-theme] .search-engines { grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); }
+html[data-theme] .search-mode, html[data-theme] .search-engine { display:flex; align-items:flex-start; gap:8px; padding:8px 10px; border:1px solid var(--border); border-radius:4px; background:var(--bg-card); color:var(--text-primary); cursor:pointer; }
+html[data-theme] .search-engine { align-items:center; }
+html[data-theme] .search-mode.on, html[data-theme] .search-engine.on { border-color:var(--accent); background:color-mix(in srgb,var(--accent) 10%,var(--bg-card)); }
+html[data-theme] .search-mode input, html[data-theme] .search-engine input { margin-top:3px; accent-color:var(--accent); }
+html[data-theme] .search-mode span { display:grid; gap:2px; min-width:0; }
+html[data-theme] .search-mode small { color:var(--text-muted); font-size:12px; }
+html[data-theme] .search-engine-pick { display:grid; gap:6px; margin-top:10px; }
+html[data-theme] .search-settings code { font:12px var(--font-mono); color:var(--accent); overflow-wrap:anywhere; }
+html[data-theme] .search-settings .switch { height:20px; background:var(--bg-main); border:1px solid var(--border); }
+html[data-theme] .search-settings .switch span { width:13px; height:13px; background:var(--text-muted); box-shadow:none; }
+html[data-theme] .search-settings .switch.on { background:var(--accent); border-color:var(--accent); }
+html[data-theme] .search-settings .switch.on span { background:var(--bg-main); transform:translateX(14px); }
+html[data-theme="scifi"] .search-mode input, html[data-theme="scifi"] .search-engine input { color-scheme:dark; }
+html[data-theme] .search-payload { display:grid; gap:6px; }
+html[data-theme] .search-engine-line { display:flex; flex-wrap:wrap; align-items:center; gap:8px; }
+html[data-theme] .search-engine-badge { padding:1px 7px; border:1px solid var(--accent); border-radius:2px; color:var(--accent); font:11px var(--font-mono); text-transform:uppercase; }
+html[data-theme] .search-note { margin:0; color:var(--text-muted); font-size:12px!important; }
+html[data-theme] .search-error { display:flex; align-items:center; gap:6px; margin:0; color:var(--error); font-size:12px!important; }
+html[data-theme] .search-answer { margin:0; white-space:pre-wrap; overflow-wrap:anywhere; color:var(--text-primary); }
+html[data-theme] .source-list { display:grid; gap:4px; margin:0; padding:0; list-style:none; }
+html[data-theme] .source-card { min-width:0; padding:5px 8px; border:1px solid var(--border); border-left:2px solid var(--accent); border-radius:3px; background:var(--surface-raised); }
+html[data-theme] .source-card a, html[data-theme] .source-plain { display:flex; align-items:center; gap:6px; min-width:0; color:var(--accent); text-decoration:none; font-size:12.5px; }
+html[data-theme] .source-card a:hover { text-decoration:underline; }
+html[data-theme] .source-title { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+html[data-theme] .source-host { flex:none; color:var(--text-muted); font:11px var(--font-mono); }
+html[data-theme] .source-card p { margin:3px 0 0; color:var(--text-muted); font-size:12px!important; overflow-wrap:anywhere; }
+html[data-theme] .search-suggestions { width:100%; height:64px; border:1px solid var(--border); border-radius:3px; background:#fff; }
+html[data-theme] .search-raw summary { cursor:pointer; color:var(--text-muted); font:11px var(--font-mono); }
+html[data-theme] .search-raw pre { max-height:200px; margin:4px 0 0; overflow:auto; padding:6px; border:1px solid var(--border); border-radius:3px; font:11px/1.5 var(--font-mono); color:var(--text-primary); white-space:pre-wrap; overflow-wrap:anywhere; }
+html[data-theme] .exec-sources { margin-top:6px; display:grid; gap:4px; }
+html[data-theme] .exec-sources > span { color:var(--text-muted); font:11px var(--font-mono); text-transform:uppercase; }

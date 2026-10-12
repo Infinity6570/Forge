@@ -6,6 +6,8 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { AssistantSettingsProvider } from './assistantSettingsProvider';
+import type { AssistantSettingsSearchApiProvider } from './assistantSettingsSearchApiProvider';
+import type { AssistantSettingsSearchMode } from './assistantSettingsSearchMode';
 
 export interface AssistantSettings {
   provider: AssistantSettingsProvider;
@@ -20,4 +22,11 @@ export interface AssistantSettings {
   hasOpenrouterKey: boolean;
   codeRunnerEnabled: boolean;
   appPreviewsEnabled: boolean;
+  searchMode?: AssistantSettingsSearchMode;
+  searchApiProvider?: AssistantSettingsSearchApiProvider;
+  searchChromiumFallback?: boolean;
+  hasTavilyKey?: boolean;
+  hasSerperKey?: boolean;
+  hasBraveKey?: boolean;
+  chromiumAvailable?: boolean;
 }

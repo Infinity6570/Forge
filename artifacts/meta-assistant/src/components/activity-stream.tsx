@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Activity, AlertCircle, ArrowDown, ArrowRight, Brain, CheckCircle2, ChevronDown, Copy, FileEdit, Globe, ListChecks, Terminal, Wrench } from 'lucide-react';
+import { SearchPayloadView, SourceList, parseSearchPayload } from '@/components/search-sources';
 import type { AssistantTask, ConversationMessage, TaskLog } from '@workspace/api-client-react';
 
 type Props = { tasks: AssistantTask[]; loading: boolean; onOpen: (task: AssistantTask) => void; messages?: ConversationMessage[] };
@@ -86,10 +87,11 @@ function ErrorLine({ error }: { error: string }) {
 
 function ToolOutput({ message }: { message: ConversationMessage }) {
   const tool = message.role === 'tool' || message.isToolCall;
-  const first = clip(message.content.split('\n').find((l) => l.trim())?.trim() ?? message.content);
+  const search = parseSearchPayload(message.content);
+  const first = search ? `Search via ${search.engine}: ${search.results.length} sources` : clip(message.content.split('\n').find((l) => l.trim())?.trim() ?? message.content);
   return <details className="exec-step exec-tool-out tone-tool" data-testid={`step-message-${message.id}`}>
-    <summary>{tool ? <Wrench size={14} className="exec-ico" /> : <Brain size={14} className="exec-ico" />}<span className="exec-label">{tool ? 'Output' : 'Note'}</span><span className="exec-text" title={first}>{first}</span><time>{clock(message.createdAt)}</time><ChevronDown size={13} className="exec-chev" /></summary>
-    <div className="exec-raw"><Rich text={message.content} /></div>
+    <summary>{tool ? <Wrench size={14} className="exec-ico" /> : <Brain size={14} className="exec-ico" />}<span className="exec-label">{search ? 'Search' : tool ? 'Output' : 'Note'}</span><span className="exec-text" title={first}>{first}</span><time>{clock(message.createdAt)}</time><ChevronDown size={13} className="exec-chev" /></summary>
+    <div className="exec-raw">{search ? <SearchPayloadView payload={search} /> : <Rich text={message.content} />}</div>
   </details>;
 }
 
@@ -153,6 +155,7 @@ export function ActivityStream({ tasks, loading, onOpen, messages }: Props) {
         const rows = rowsFor(task.logs ?? []);
         const extras = (messages ?? []).filter((m) => m.taskId === task.id && (m.role === 'tool' || m.isToolCall)).sort((a, b) => time(a.createdAt) - time(b.createdAt));
         const stepCount = rows.length + extras.length;
+        const sources = extras.flatMap((m) => parseSearchPayload(m.content)?.results ?? []).filter((r, i, all) => r.url && all.findIndex((x) => x.url === r.url) === i);
         return <article className="stream-task exec-task" key={task.id} data-task-status={task.status} data-active={live ? 'true' : 'false'} data-testid={`stream-task-${task.id}`}>
           <div className="exec-user">
             <p className="exec-user-text">{task.objective}</p>
@@ -165,7 +168,7 @@ export function ActivityStream({ tasks, loading, onOpen, messages }: Props) {
             {task.error && !rows.some((row) => row.log.kind === 'error' && row.log.message.includes(task.error!)) && <ErrorLine error={task.error} />}
           </details>}
           {task.error && <div className="exec-failure"><AlertCircle size={14} />Task failed. Open Thinking or View Details for the cause.</div>}
-          {task.result && <div className="exec-result"><div className="exec-result-label">{live ? <><span className="exec-dot live" />Responding</> : <><CheckCircle2 size={14} />Forge</>}</div><Rich text={task.result} /></div>}
+          {task.result && <div className="exec-result"><div className="exec-result-label">{live ? <><span className="exec-dot live" />Responding</> : <><CheckCircle2 size={14} />Forge</>}</div><Rich text={task.result} />{sources.length > 0 && <div className="exec-sources" data-testid={`sources-${task.id}`}><span>Sources</span><SourceList results={sources} limit={6} /></div>}</div>}
           {!rows.length && !task.result && !task.error && !task.currentStep && !live && <p className="stream-no-events">No execution updates yet.</p>}
         </article>;
       })}

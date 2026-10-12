@@ -359,6 +359,30 @@ export interface WorkspacePreviewStopInput {
   appId: string;
 }
 
+export type SearchSettingsInputSearchMode = typeof SearchSettingsInputSearchMode[keyof typeof SearchSettingsInputSearchMode];
+
+
+export const SearchSettingsInputSearchMode = {
+  native: 'native',
+  api: 'api',
+  chromium: 'chromium',
+} as const;
+
+export type SearchSettingsInputSearchApiProvider = typeof SearchSettingsInputSearchApiProvider[keyof typeof SearchSettingsInputSearchApiProvider];
+
+
+export const SearchSettingsInputSearchApiProvider = {
+  tavily: 'tavily',
+  serper: 'serper',
+  brave: 'brave',
+} as const;
+
+export interface SearchSettingsInput {
+  searchMode: SearchSettingsInputSearchMode;
+  searchApiProvider: SearchSettingsInputSearchApiProvider;
+  searchChromiumFallback: boolean;
+}
+
 export type AssistantSettingsProvider = typeof AssistantSettingsProvider[keyof typeof AssistantSettingsProvider];
 
 
@@ -368,6 +392,24 @@ export const AssistantSettingsProvider = {
   gemini: 'gemini',
   openrouter: 'openrouter',
   ollama: 'ollama',
+} as const;
+
+export type AssistantSettingsSearchMode = typeof AssistantSettingsSearchMode[keyof typeof AssistantSettingsSearchMode];
+
+
+export const AssistantSettingsSearchMode = {
+  native: 'native',
+  api: 'api',
+  chromium: 'chromium',
+} as const;
+
+export type AssistantSettingsSearchApiProvider = typeof AssistantSettingsSearchApiProvider[keyof typeof AssistantSettingsSearchApiProvider];
+
+
+export const AssistantSettingsSearchApiProvider = {
+  tavily: 'tavily',
+  serper: 'serper',
+  brave: 'brave',
 } as const;
 
 export interface AssistantSettings {
@@ -383,6 +425,13 @@ export interface AssistantSettings {
   hasOpenrouterKey: boolean;
   codeRunnerEnabled: boolean;
   appPreviewsEnabled: boolean;
+  searchMode?: AssistantSettingsSearchMode;
+  searchApiProvider?: AssistantSettingsSearchApiProvider;
+  searchChromiumFallback?: boolean;
+  hasTavilyKey?: boolean;
+  hasSerperKey?: boolean;
+  hasBraveKey?: boolean;
+  chromiumAvailable?: boolean;
 }
 
 export type ModelSelectionInputProvider = typeof ModelSelectionInputProvider[keyof typeof ModelSelectionInputProvider];
@@ -434,6 +483,21 @@ export interface ProviderKeysInput {
   openrouterApiKey?: string | null;
   /** @maxLength 500 */
   ollamaBaseUrl?: string;
+  /**
+     * @maxLength 1000
+     * @nullable
+     */
+  tavilyApiKey?: string | null;
+  /**
+     * @maxLength 1000
+     * @nullable
+     */
+  serperApiKey?: string | null;
+  /**
+     * @maxLength 1000
+     * @nullable
+     */
+  braveApiKey?: string | null;
 }
 
 export type AssistantSettingsInputProvider = typeof AssistantSettingsInputProvider[keyof typeof AssistantSettingsInputProvider];

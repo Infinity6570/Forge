@@ -438,6 +438,24 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AssistantSettings"
+  /assistant/settings/search:
+    patch:
+      operationId: updateAssistantSearchSettings
+      tags: [assistant]
+      summary: Save search engine preferences without changing models or credentials
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SearchSettingsInput"
+      responses:
+        "200":
+          description: Search preferences saved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantSettings"
   /assistant/workspace.zip:
     get:
       operationId: downloadAssistantWorkspace
@@ -820,6 +838,13 @@ components:
       required: [appId]
       properties:
         appId: { type: string, format: uuid }
+    SearchSettingsInput:
+      type: object
+      required: [searchMode, searchApiProvider, searchChromiumFallback]
+      properties:
+        searchMode: { type: string, enum: [native, api, chromium] }
+        searchApiProvider: { type: string, enum: [tavily, serper, brave] }
+        searchChromiumFallback: { type: boolean }
     AssistantSettings:
       type: object
       required: [provider, modelId, fallbackModelId, ollamaBaseUrl, localSetupAllowed, providerSettingsAllowed, hasOpenaiKey, hasDeepseekKey, hasGeminiKey, hasOpenrouterKey, codeRunnerEnabled, appPreviewsEnabled]
@@ -836,6 +861,13 @@ components:
         hasOpenrouterKey: { type: boolean }
         codeRunnerEnabled: { type: boolean }
         appPreviewsEnabled: { type: boolean }
+        searchMode: { type: string, enum: [native, api, chromium] }
+        searchApiProvider: { type: string, enum: [tavily, serper, brave] }
+        searchChromiumFallback: { type: boolean }
+        hasTavilyKey: { type: boolean }
+        hasSerperKey: { type: boolean }
+        hasBraveKey: { type: boolean }
+        chromiumAvailable: { type: boolean }
     ModelSelectionInput:
       type: object
       required: [provider, modelId]
@@ -851,6 +883,9 @@ components:
         geminiApiKey: { type: ["string", "null"], maxLength: 1000 }
         openrouterApiKey: { type: ["string", "null"], maxLength: 1000 }
         ollamaBaseUrl: { type: string, maxLength: 500 }
+        tavilyApiKey: { type: ["string", "null"], maxLength: 1000 }
+        serperApiKey: { type: ["string", "null"], maxLength: 1000 }
+        braveApiKey: { type: ["string", "null"], maxLength: 1000 }
     AssistantSettingsInput:
       type: object
       required: [provider, modelId]

@@ -1,0 +1,167 @@
+"""Portable search routing: Gemini native grounding, personal APIs, or Chromium."""
+from __future__ import annotations
+
+import os
+from typing import Any, Callable
+from urllib.parse import urlparse
+import httpx
+
+from tools.browser_runner import BrowserRunner
+
+SEARCH_KEY_NAMES = {"tavily": "TAVILY_API_KEY", "serper": "SERPER_API_KEY", "brave": "BRAVE_SEARCH_API_KEY"}
+
+
+class SearchError(RuntimeError):
+    def __init__(self, message: str, *, quota: bool = False):
+        super().__init__(message)
+        self.quota = quota
+
+
+def search_settings() -> dict[str, Any]:
+    mode = os.getenv("WEB_SEARCH_MODE", "native")
+    engine = os.getenv("WEB_SEARCH_API_PROVIDER", "tavily")
+    return {
+        "searchMode": mode if mode in {"native", "api", "chromium"} else "native",
+        "searchApiProvider": engine if engine in SEARCH_KEY_NAMES else "tavily",
+        "searchChromiumFallback": os.getenv("WEB_SEARCH_CHROMIUM_FALLBACK", "false").lower() == "true",
+        "hasTavilyKey": bool(os.getenv("TAVILY_API_KEY")),
+        "hasSerperKey": bool(os.getenv("SERPER_API_KEY")),
+        "hasBraveKey": bool(os.getenv("BRAVE_SEARCH_API_KEY")),
+    }
+
+
+def check_response(response: httpx.Response, engine: str) -> dict[str, Any]:
+    try:
+        payload = response.json()
+    except ValueError as exc:
+        raise SearchError(f"{engine} returned a non-JSON response (HTTP {response.status_code}).",
+                          quota=response.status_code in {402, 429}) from exc
+    if not isinstance(payload, dict):
+        raise SearchError(f"{engine} returned an unexpected response shape.")
+    if response.is_error or payload.get("error"):
+        # Keep credentials and arbitrary provider bodies out of task logs.
+        details = str(payload.get("error", payload.get("message", ""))).lower()
+        quota = response.status_code in {402, 429} or (
+            response.status_code in {200, 400, 403} and any(
+                word in details for word in ("quota", "resource_exhausted", "not enough credits", "credits exhausted", "usage limit")
+            )
+        )
+        raise SearchError(f"{engine} search failed (HTTP {response.status_code}). "
+                          + ("Quota/rate limit exhausted." if quota else "Check the key, model support, and provider access."), quota=quota)
+    return payload
+
+
+def normalized_results(items: list[dict[str, Any]]) -> list[dict[str, str]]:
+    results = []
+    seen = set()
+    for item in items[:64]:
+        url = str(item.get("url", ""))
+        parsed = urlparse(url)
+        if parsed.scheme not in {"https", "http"} or not parsed.hostname or parsed.username or parsed.password or url in seen:
+            continue
+        seen.add(url)
+        results.append({
+            "title": str(item.get("title") or parsed.hostname)[:300],
+            "url": url[:8192], "text": str(item.get("text", ""))[:2400],
+        })
+    return results
+
+
+class GeminiGroundingAdapter:
+    """Separate GenerateContent call: do not mix hosted and custom function tools.
+
+    The agent's existing OpenAI-compatible history (including thought signatures)
+    is untouched. The returned grounding metadata becomes a normal tool result.
+    """
+    async def search(self, query: str, model: str) -> dict[str, Any]:
+        key = os.getenv("GEMINI_API_KEY")
+        if not key:
+            raise SearchError("Add a Gemini API key in Preferences before using native grounding.")
+        model = model.removeprefix("models/")
+        if not model.startswith("gemini-") or any(c not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-" for c in model):
+            raise SearchError("Native Google grounding requires a compatible Gemini model. Choose Search API or Chromium for Gemma/custom unsupported models.")
+        async with httpx.AsyncClient(timeout=35, follow_redirects=False) as client:
+            response = await client.post(
+                f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
+                headers={"x-goog-api-key": key},
+                json={
+                    "contents": [{"role": "user", "parts": [{"text": "Search the public web for this query and answer with source citations: " + query}]}],
+                    "tools": [{"google_search": {}}],
+                    "generationConfig": {"maxOutputTokens": 4096},
+                },
+            )
+        payload = check_response(response, "Google grounding")
+        candidates = payload.get("candidates") or []
+        if not candidates:
+            raise SearchError("Google grounding returned no answer (possibly a safety block).")
+        candidate = candidates[0]
+        answer = "\n".join(p.get("text", "") for p in candidate.get("content", {}).get("parts", []) if not p.get("thought"))
+        metadata = candidate.get("groundingMetadata") or {}
+        items = []
+        for chunk in metadata.get("groundingChunks", []):
+            web = chunk.get("web", {})
+            if web.get("uri"):
+                items.append({"title": web.get("title"), "url": web["uri"], "text": ""})
+        if not answer.strip():
+            raise SearchError("Google grounding returned no usable text.")
+        result: dict[str, Any] = {
+            "engine": "google-grounding", "model": model, "answer": answer,
+            "results": normalized_results(items), "groundingMetadata": metadata,
+            "grounded": bool(metadata.get("groundingChunks")),
+        }
+        if not result["grounded"]:
+            result["warning"] = "Google did not return grounding sources; do not describe this answer as verified web evidence."
+        return result
+
+
+async def search_api(query: str, engine: str) -> dict[str, Any]:
+    key = os.getenv(SEARCH_KEY_NAMES[engine])
+    if not key:
+        raise SearchError(f"No {engine.title()} search key is saved. Add it in API Keys Vault.")
+    async with httpx.AsyncClient(timeout=20, follow_redirects=False) as client:
+        if engine == "tavily":
+            response = await client.post("https://api.tavily.com/search", headers={"Authorization": f"Bearer {key}"},
+                                         json={"query": query, "max_results": 6, "search_depth": "basic"})
+        elif engine == "serper":
+            response = await client.post("https://google.serper.dev/search", headers={"X-API-KEY": key},
+                                         json={"q": query, "num": 6})
+        else:
+            response = await client.get("https://api.search.brave.com/res/v1/web/search",
+                                        headers={"X-Subscription-Token": key, "Accept": "application/json"},
+                                        params={"q": query, "count": 6})
+    payload = check_response(response, engine.title())
+    items = (
+        [{"title": r.get("title"), "url": r.get("url"), "text": r.get("content")} for r in payload.get("results", [])]
+        if engine == "tavily" else
+        [{"title": r.get("title"), "url": r.get("link"), "text": r.get("snippet")} for r in payload.get("organic", [])]
+        if engine == "serper" else
+        [{"title": r.get("title"), "url": r.get("url"), "text": r.get("description")} for r in payload.get("web", {}).get("results", [])]
+    )
+    results = normalized_results(items)
+    if not results:
+        raise SearchError(f"{engine.title()} returned no readable results. Refine the query; no empty array is treated as success.")
+    return {"engine": engine, "results": results}
+
+
+async def routed_search(query: str, provider: str, model: str, validate_url: Callable[[str], str]) -> dict[str, Any]:
+    query = query.strip()[:500]
+    if not query:
+        raise SearchError("Search query cannot be empty.")
+    settings = search_settings()
+    mode, engine = settings["searchMode"], settings["searchApiProvider"]
+    browser = BrowserRunner(validate_url)
+    if mode == "chromium":
+        return await browser.search(query)
+    route = "google-grounding" if mode == "native" and provider == "gemini" else engine
+    if mode == "native" and provider != "gemini" and not os.getenv(SEARCH_KEY_NAMES[engine]):
+        result = await browser.search(query)
+        result["warning"] = "This provider has no native search or saved selected search API key; Chromium was used."
+        return result
+    try:
+        return await GeminiGroundingAdapter().search(query, model) if route == "google-grounding" else await search_api(query, engine)
+    except SearchError as exc:
+        if not exc.quota or not settings["searchChromiumFallback"]:
+            raise
+        result = await browser.search(query)
+        result.update(fallbackFrom=route, warning=f"{route} quota/rate limit exhausted; used the enabled Chromium fallback.")
+        return result

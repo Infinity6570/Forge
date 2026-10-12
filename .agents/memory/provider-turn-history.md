@@ -14,3 +14,9 @@ For Gemini only, use Google's documented `skip_thought_signature_validator` fall
 **Why:** The user explicitly requested the documented missing-signature failsafe. Preserving genuine signatures is preferable because the fallback skips validation but cannot recover lost model context.
 
 **How to apply:** Repair missing signatures in older replayed histories as well as new turns; respect the transport's snake_case or camelCase representation and preserve the original function arguments.
+
+Keep native Google grounding separate from the normal OpenAI-compatible function-calling conversation unless support for combining both tool types is verified for every supported model.
+
+**Why:** Older Gemini models, including Gemini 2.5, do not support the same hosted/custom tool combinations as Gemini 3. A separate native grounding request avoids changing or corrupting the signed outer conversation history.
+
+**How to apply:** Use the task's exact selected model for grounding; return the answer and untouched grounding metadata as the paired tool result. Do not silently substitute a grounding-capable model for unsupported Gemma selections.

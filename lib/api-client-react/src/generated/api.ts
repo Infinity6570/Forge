@@ -34,6 +34,7 @@ import type {
   ModelSelectionInput,
   NoteInput,
   ProviderKeysInput,
+  SearchSettingsInput,
   TaskApprovalInput,
   TaskFallbackChoiceInput,
   TaskInput,
@@ -2230,6 +2231,94 @@ export const useSaveAssistantProviderKeys = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getSaveAssistantProviderKeysMutationOptions(options));
+    }
+
+export const getUpdateAssistantSearchSettingsUrl = () => {
+
+
+
+
+  return `/api/assistant/settings/search`
+}
+
+/**
+ * @summary Save search engine preferences without changing models or credentials
+ */
+export const updateAssistantSearchSettings = async (searchSettingsInput: SearchSettingsInput, options?: Parameters<typeof customFetch>[1]): Promise<AssistantSettings> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<AssistantSettings>(getUpdateAssistantSearchSettingsUrl(),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(searchSettingsInput)
+  }
+);}
+
+
+
+
+
+export const getUpdateAssistantSearchSettingsMutationKey = () => ['updateAssistantSearchSettings'] as const;
+
+export const getUpdateAssistantSearchSettingsMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateAssistantSearchSettings>>, TError,UpdateAssistantSearchSettingsMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateAssistantSearchSettings>>, TError,UpdateAssistantSearchSettingsMutationVariables, TContext> => {
+
+const mutationKey = getUpdateAssistantSearchSettingsMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateAssistantSearchSettings>>, UpdateAssistantSearchSettingsMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  updateAssistantSearchSettings(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateAssistantSearchSettingsMutationResult = NonNullable<Awaited<ReturnType<typeof updateAssistantSearchSettings>>>
+    export type UpdateAssistantSearchSettingsMutationBody = BodyType<SearchSettingsInput>
+    export type UpdateAssistantSearchSettingsMutationError = ErrorType<unknown>
+    export type UpdateAssistantSearchSettingsMutationVariables = {data: BodyType<SearchSettingsInput>}
+
+    /**
+ * @summary Save search engine preferences without changing models or credentials
+ */
+export const useUpdateAssistantSearchSettings = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateAssistantSearchSettings>>, TError,UpdateAssistantSearchSettingsMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateAssistantSearchSettings>>,
+        TError,
+        UpdateAssistantSearchSettingsMutationVariables,
+        TContext
+      > => {
+      return useMutation(getUpdateAssistantSearchSettingsMutationOptions(options));
     }
 
 export const getDownloadAssistantWorkspaceUrl = () => {

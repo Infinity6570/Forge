@@ -20,7 +20,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from io import BytesIO
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import quote, urlparse
 
 import httpx
@@ -52,6 +52,8 @@ from tools.elevated_runner import (
     is_process_elevated,
     validate_elevated_command,
 )
+from tools.browser_runner import BrowserRunner, chromium_available
+from tools.web_search import SEARCH_KEY_NAMES, routed_search, search_settings
 
 ROOT = Path(__file__).resolve().parent
 ENV_FILE = ROOT / ".env"
@@ -647,6 +649,8 @@ def get_settings(local_allowed: bool, provider_settings_allowed: bool) -> dict[s
         "hasOpenrouterKey": bool(os.getenv("OPENROUTER_API_KEY")),
         "codeRunnerEnabled": local_code_runner_available(),
         "appPreviewsEnabled": local_allowed and local_app_previews_enabled(),
+        **search_settings(),
+        "chromiumAvailable": chromium_available(),
     }
 
 
@@ -796,6 +800,15 @@ class ProviderKeysInput(BaseModel):
     geminiApiKey: str | None = Field(default=None, max_length=1000)
     openrouterApiKey: str | None = Field(default=None, max_length=1000)
     ollamaBaseUrl: str | None = Field(default=None, max_length=500)
+    tavilyApiKey: str | None = Field(default=None, max_length=1000)
+    serperApiKey: str | None = Field(default=None, max_length=1000)
+    braveApiKey: str | None = Field(default=None, max_length=1000)
+
+
+class SearchSettingsInput(BaseModel):
+    searchMode: Literal["native", "api", "chromium"]
+    searchApiProvider: Literal["tavily", "serper", "brave"]
+    searchChromiumFallback: bool = False
 
 
 def credential_for(provider: str) -> str | None:
@@ -830,7 +843,7 @@ def validate_ollama_base_url(value: str | None) -> str:
 
 
 def redact_provider_keys(message: str) -> str:
-    for key_name in KEY_NAMES.values():
+    for key_name in (*KEY_NAMES.values(), *SEARCH_KEY_NAMES.values()):
         key = os.getenv(key_name)
         if key:
             message = message.replace(key, "[redacted]")
@@ -974,25 +987,20 @@ async def fire_timer(timer_id: str) -> None:
     schedule_timer(next_id, next_iso)
 
 
-async def web_search(query: str) -> str:
-    from duckduckgo_search import DDGS
-
-    def search_sync() -> str:
-        results = DDGS().text(query[:300], max_results=6)
-        return json.dumps(
-            [
-                {"title": item.get("title"), "url": item.get("href"), "snippet": item.get("body")}
-                for item in results or []
-            ],
-            ensure_ascii=False,
-        )
-
-    return await asyncio.to_thread(search_sync)
+async def web_search(query: str, provider: str | None = None, model: str | None = None) -> str:
+    settings = get_settings(False, False)
+    result = await routed_search(
+        query, provider or settings["provider"], model or settings["modelId"], validate_public_url,
+    )
+    output = json.dumps(result, ensure_ascii=False)
+    if len(output) > 120_000:
+        raise ValueError("The search response exceeded the safe context size; refine your query.")
+    return output
 
 
 def validate_public_url(url: str) -> str:
     parsed = urlparse(url)
-    if parsed.scheme != "https" or not parsed.hostname:
+    if len(url) > 8192 or parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password:
         raise ValueError("Only public HTTPS pages can be fetched.")
     host = parsed.hostname.lower()
     if host in {"localhost", "localhost.localdomain"} or host.endswith(".local"):
@@ -1316,8 +1324,10 @@ async def execute_tool(
     task_id: str,
 ) -> str:
     if name == "web_search":
-        return await web_search(str(arguments.get("query", "")))
+        return await web_search(str(arguments.get("query", "")), provider, model_state["model"])
     if name == "fetch_webpage":
+        if search_settings()["searchMode"] == "chromium":
+            return json.dumps(await BrowserRunner(validate_public_url).fetch(str(arguments.get("url", ""))), ensure_ascii=False)
         return await fetch_public_page(str(arguments.get("url", "")))
     if name == "search_workspace":
         needle = str(arguments.get("query", "")).casefold()[:300]
@@ -1649,7 +1659,9 @@ async def run_agent_task(
                         model_state["model"],
                         output,
                     )
-                messages.append({"role": "tool", "tool_call_id": call.id, "content": output[:16_000]})
+                # Grounding metadata is structured JSON: truncation would corrupt
+                # citations/search suggestions and the persisted historical view.
+                messages.append({"role": "tool", "tool_call_id": call.id, "content": output if call.function.name == "web_search" else output[:16_000]})
             THREADS.checkpoint(task_id, messages, history_start)
         if not final_result:
             final_result = "The agent reached the 10-step tool limit. Review the activity log and submit a focused follow-up if needed."
@@ -2460,6 +2472,9 @@ async def save_provider_keys(body: ProviderKeysInput, request: Request) -> dict[
         "DEEPSEEK_API_KEY": body.deepseekApiKey,
         "GEMINI_API_KEY": body.geminiApiKey,
         "OPENROUTER_API_KEY": body.openrouterApiKey,
+        "TAVILY_API_KEY": body.tavilyApiKey,
+        "SERPER_API_KEY": body.serperApiKey,
+        "BRAVE_SEARCH_API_KEY": body.braveApiKey,
     }
     for key, value in values.items():
         if value is not None and value.strip():
@@ -2470,6 +2485,23 @@ async def save_provider_keys(body: ProviderKeysInput, request: Request) -> dict[
         os.chmod(ENV_FILE, 0o600)
         load_dotenv(ENV_FILE, override=True)
     return get_settings(local_allowed, True)
+
+
+@app.patch("/api/assistant/settings/search")
+async def update_search_settings(body: SearchSettingsInput, request: Request) -> dict[str, Any]:
+    if not can_manage_provider_settings(request) or (
+        request.headers.get("origin") and not is_same_origin_preview_request(request)
+    ):
+        raise HTTPException(status_code=403, detail="Search settings can only be changed from this app's preview or a local copy.")
+    for key, value in {
+        "WEB_SEARCH_MODE": body.searchMode,
+        "WEB_SEARCH_API_PROVIDER": body.searchApiProvider,
+        "WEB_SEARCH_CHROMIUM_FALLBACK": str(body.searchChromiumFallback).lower(),
+    }.items():
+        set_key(str(ENV_FILE), key, value, quote_mode="always")
+    os.chmod(ENV_FILE, 0o600)
+    load_dotenv(ENV_FILE, override=True)
+    return get_settings(is_local_setup_allowed(request), True)
 
 
 @app.get("/api/assistant/workspace.zip")
@@ -2496,8 +2528,8 @@ async def download_workspace() -> FileResponse:
 
 def configure_static_files() -> None:
     candidates = [
-        ROOT / "static" / "app",
         ROOT / "artifacts" / "meta-assistant" / "dist" / "public",
+        ROOT / "static" / "app",
     ]
     static_root = next((candidate for candidate in candidates if (candidate / "index.html").exists()), None)
     if static_root:

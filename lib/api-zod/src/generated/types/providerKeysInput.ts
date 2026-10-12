@@ -29,4 +29,19 @@ export interface ProviderKeysInput {
   openrouterApiKey?: string | null;
   /** @maxLength 500 */
   ollamaBaseUrl?: string;
+  /**
+     * @maxLength 1000
+     * @nullable
+     */
+  tavilyApiKey?: string | null;
+  /**
+     * @maxLength 1000
+     * @nullable
+     */
+  serperApiKey?: string | null;
+  /**
+     * @maxLength 1000
+     * @nullable
+     */
+  braveApiKey?: string | null;
 }

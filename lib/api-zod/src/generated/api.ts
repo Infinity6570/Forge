@@ -624,7 +624,14 @@ export const GetAssistantSettingsResponse = zod.object({
   "hasGeminiKey": zod.boolean(),
   "hasOpenrouterKey": zod.boolean(),
   "codeRunnerEnabled": zod.boolean(),
-  "appPreviewsEnabled": zod.boolean()
+  "appPreviewsEnabled": zod.boolean(),
+  "searchMode": zod.enum(['native', 'api', 'chromium']).optional(),
+  "searchApiProvider": zod.enum(['tavily', 'serper', 'brave']).optional(),
+  "searchChromiumFallback": zod.boolean().optional(),
+  "hasTavilyKey": zod.boolean().optional(),
+  "hasSerperKey": zod.boolean().optional(),
+  "hasBraveKey": zod.boolean().optional(),
+  "chromiumAvailable": zod.boolean().optional()
 })
 
 
@@ -676,7 +683,14 @@ export const UpdateAssistantSettingsResponse = zod.object({
   "hasGeminiKey": zod.boolean(),
   "hasOpenrouterKey": zod.boolean(),
   "codeRunnerEnabled": zod.boolean(),
-  "appPreviewsEnabled": zod.boolean()
+  "appPreviewsEnabled": zod.boolean(),
+  "searchMode": zod.enum(['native', 'api', 'chromium']).optional(),
+  "searchApiProvider": zod.enum(['tavily', 'serper', 'brave']).optional(),
+  "searchChromiumFallback": zod.boolean().optional(),
+  "hasTavilyKey": zod.boolean().optional(),
+  "hasSerperKey": zod.boolean().optional(),
+  "hasBraveKey": zod.boolean().optional(),
+  "chromiumAvailable": zod.boolean().optional()
 })
 
 
@@ -711,7 +725,14 @@ export const ApplyAssistantModelResponse = zod.object({
   "hasGeminiKey": zod.boolean(),
   "hasOpenrouterKey": zod.boolean(),
   "codeRunnerEnabled": zod.boolean(),
-  "appPreviewsEnabled": zod.boolean()
+  "appPreviewsEnabled": zod.boolean(),
+  "searchMode": zod.enum(['native', 'api', 'chromium']).optional(),
+  "searchApiProvider": zod.enum(['tavily', 'serper', 'brave']).optional(),
+  "searchChromiumFallback": zod.boolean().optional(),
+  "hasTavilyKey": zod.boolean().optional(),
+  "hasSerperKey": zod.boolean().optional(),
+  "hasBraveKey": zod.boolean().optional(),
+  "chromiumAvailable": zod.boolean().optional()
 })
 
 
@@ -728,6 +749,12 @@ export const saveAssistantProviderKeysBodyOpenrouterApiKeyMax = 1000;
 
 export const saveAssistantProviderKeysBodyOllamaBaseUrlMax = 500;
 
+export const saveAssistantProviderKeysBodyTavilyApiKeyMax = 1000;
+
+export const saveAssistantProviderKeysBodySerperApiKeyMax = 1000;
+
+export const saveAssistantProviderKeysBodyBraveApiKeyMax = 1000;
+
 
 
 export const SaveAssistantProviderKeysBody = zod.object({
@@ -735,7 +762,10 @@ export const SaveAssistantProviderKeysBody = zod.object({
   "deepseekApiKey": zod.string().max(saveAssistantProviderKeysBodyDeepseekApiKeyMax).nullish(),
   "geminiApiKey": zod.string().max(saveAssistantProviderKeysBodyGeminiApiKeyMax).nullish(),
   "openrouterApiKey": zod.string().max(saveAssistantProviderKeysBodyOpenrouterApiKeyMax).nullish(),
-  "ollamaBaseUrl": zod.string().max(saveAssistantProviderKeysBodyOllamaBaseUrlMax).optional()
+  "ollamaBaseUrl": zod.string().max(saveAssistantProviderKeysBodyOllamaBaseUrlMax).optional(),
+  "tavilyApiKey": zod.string().max(saveAssistantProviderKeysBodyTavilyApiKeyMax).nullish(),
+  "serperApiKey": zod.string().max(saveAssistantProviderKeysBodySerperApiKeyMax).nullish(),
+  "braveApiKey": zod.string().max(saveAssistantProviderKeysBodyBraveApiKeyMax).nullish()
 })
 
 export const SaveAssistantProviderKeysResponse = zod.object({
@@ -750,7 +780,46 @@ export const SaveAssistantProviderKeysResponse = zod.object({
   "hasGeminiKey": zod.boolean(),
   "hasOpenrouterKey": zod.boolean(),
   "codeRunnerEnabled": zod.boolean(),
-  "appPreviewsEnabled": zod.boolean()
+  "appPreviewsEnabled": zod.boolean(),
+  "searchMode": zod.enum(['native', 'api', 'chromium']).optional(),
+  "searchApiProvider": zod.enum(['tavily', 'serper', 'brave']).optional(),
+  "searchChromiumFallback": zod.boolean().optional(),
+  "hasTavilyKey": zod.boolean().optional(),
+  "hasSerperKey": zod.boolean().optional(),
+  "hasBraveKey": zod.boolean().optional(),
+  "chromiumAvailable": zod.boolean().optional()
+})
+
+
+/**
+ * @summary Save search engine preferences without changing models or credentials
+ */
+export const UpdateAssistantSearchSettingsBody = zod.object({
+  "searchMode": zod.enum(['native', 'api', 'chromium']),
+  "searchApiProvider": zod.enum(['tavily', 'serper', 'brave']),
+  "searchChromiumFallback": zod.boolean()
+})
+
+export const UpdateAssistantSearchSettingsResponse = zod.object({
+  "provider": zod.enum(['openai', 'deepseek', 'gemini', 'openrouter', 'ollama']),
+  "modelId": zod.string(),
+  "fallbackModelId": zod.string(),
+  "ollamaBaseUrl": zod.string(),
+  "localSetupAllowed": zod.boolean(),
+  "providerSettingsAllowed": zod.boolean(),
+  "hasOpenaiKey": zod.boolean(),
+  "hasDeepseekKey": zod.boolean(),
+  "hasGeminiKey": zod.boolean(),
+  "hasOpenrouterKey": zod.boolean(),
+  "codeRunnerEnabled": zod.boolean(),
+  "appPreviewsEnabled": zod.boolean(),
+  "searchMode": zod.enum(['native', 'api', 'chromium']).optional(),
+  "searchApiProvider": zod.enum(['tavily', 'serper', 'brave']).optional(),
+  "searchChromiumFallback": zod.boolean().optional(),
+  "hasTavilyKey": zod.boolean().optional(),
+  "hasSerperKey": zod.boolean().optional(),
+  "hasBraveKey": zod.boolean().optional(),
+  "chromiumAvailable": zod.boolean().optional()
 })
 
 
