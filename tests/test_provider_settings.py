@@ -428,6 +428,30 @@ class ProviderSettingsTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(invalid_model.status_code, 422)
         self.assertFalse(self.env_file.exists())
 
+    async def test_openrouter_missing_key_shows_preferences_vault_message(self) -> None:
+        expected = "Please configure your OpenRouter API key in Preferences/Vault before selecting this model."
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=main.app),
+            base_url="http://127.0.0.1",
+        ) as client:
+            select_model = await client.patch(
+                "/api/assistant/settings/model",
+                json={"provider": "openrouter", "modelId": "anthropic/claude-3.7-sonnet"},
+            )
+            start_task = await client.post(
+                "/api/assistant/tasks",
+                json={
+                    "objective": "Summarize this topic",
+                    "provider": "openrouter",
+                    "modelId": "anthropic/claude-3.7-sonnet",
+                },
+            )
+
+        self.assertEqual(select_model.status_code, 400)
+        self.assertEqual(select_model.json()["detail"], expected)
+        self.assertEqual(start_task.status_code, 400)
+        self.assertEqual(start_task.json()["detail"], expected)
+
     async def test_new_settings_actions_reject_untrusted_origins(self) -> None:
         os.environ.update({"REPL_ID": "test-repl", "REPLIT_DEV_DOMAIN": "assistant.replit.dev"})
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=main.app), base_url="https://assistant.replit.dev", headers={"Origin": "https://attacker.example"}) as client:

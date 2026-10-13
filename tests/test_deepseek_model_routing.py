@@ -65,6 +65,40 @@ class DeepSeekModelRoutingTests(unittest.IsolatedAsyncioTestCase):
             max_retries=2,
         )
 
+    async def test_openrouter_client_prefers_vault_key_and_sets_auth_headers(self) -> None:
+        os.environ["OPENROUTER_API_KEY"] = "environment-openrouter-key"
+        main.save_vault_values({"OPENROUTER_API_KEY": "vault-openrouter-key"})
+
+        with patch.object(main, "AsyncOpenAI") as openai_client:
+            main.create_llm_client("openrouter")
+
+        openai_client.assert_called_once_with(
+            api_key="vault-openrouter-key",
+            base_url="https://openrouter.ai/api/v1",
+            timeout=90,
+            max_retries=2,
+            default_headers={"HTTP-Referer": "http://localhost:3000", "X-Title": "Forge"},
+        )
+
+    async def test_openrouter_client_falls_back_to_environment_key(self) -> None:
+        os.environ["OPENROUTER_API_KEY"] = " environment-openrouter-key "
+
+        with patch.object(main, "AsyncOpenAI") as openai_client:
+            main.create_llm_client("openrouter")
+
+        self.assertEqual(openai_client.call_args.kwargs["api_key"], "environment-openrouter-key")
+
+    async def test_openrouter_missing_key_fails_before_client_creation(self) -> None:
+        os.environ["OPENROUTER_API_KEY"] = "   "
+        expected = (
+            "Please configure your OpenRouter API key in Preferences/Vault before selecting this model."
+        )
+        with patch.object(main, "AsyncOpenAI") as openai_client:
+            with self.assertRaisesRegex(RuntimeError, expected.replace("/", r"\/")):
+                main.create_llm_client("openrouter")
+
+        openai_client.assert_not_called()
+
     async def test_supervisor_and_delegated_specialist_keep_selected_model(self) -> None:
         model_ids = ("deepseek-chat", "deepseek-reasoner", "deepseek-v4-flash")
 

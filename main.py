@@ -38,6 +38,7 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from openai import APIStatusError, AsyncOpenAI
 from llm_protocol import TextCallback, assistant_turn, collect_completion, prepare_history
+from model_client import AnthropicChatClient
 from conversation_threads import ThreadStore, thread_routers
 from task_text_stream import TaskTextStreamHub
 from pydantic import BaseModel, Field
@@ -110,6 +111,7 @@ MODEL_OPTIONS = {
         "gemini-3.8-flash",
         "gemma-4-31b-it",
     },
+    "anthropic": {"claude-3-opus", "claude-3-5-sonnet", "claude-opus-5.5"},
     "openrouter": {
         "deepseek/deepseek-chat",
         "anthropic/claude-3.7-sonnet",
@@ -126,12 +128,14 @@ KEY_NAMES = {
     "openai": "OPENAI_API_KEY",
     "deepseek": "DEEPSEEK_API_KEY",
     "gemini": "GEMINI_API_KEY",
+    "anthropic": "ANTHROPIC_API_KEY",
     "openrouter": "OPENROUTER_API_KEY",
 }
 VAULT_KEY_CATEGORIES = {
     "OPENAI_API_KEY": "ai",
     "DEEPSEEK_API_KEY": "ai",
     "GEMINI_API_KEY": "ai",
+    "ANTHROPIC_API_KEY": "ai",
     "OPENROUTER_API_KEY": "ai",
     "TAVILY_API_KEY": "search",
     "SERPER_API_KEY": "search",
@@ -149,6 +153,7 @@ VAULT_FORM_TO_ENV = {
     "openaiApiKey": "OPENAI_API_KEY",
     "deepseekApiKey": "DEEPSEEK_API_KEY",
     "geminiApiKey": "GEMINI_API_KEY",
+    "anthropicApiKey": "ANTHROPIC_API_KEY",
     "openrouterApiKey": "OPENROUTER_API_KEY",
     "tavilyApiKey": "TAVILY_API_KEY",
     "serperApiKey": "SERPER_API_KEY",
@@ -166,6 +171,7 @@ DEFAULT_MODELS = {
     "openai": "gpt-4o-mini",
     "deepseek": "deepseek-chat",
     "gemini": "gemini-3.5-flash-lite",
+    "anthropic": "claude-3-5-sonnet",
     "openrouter": "deepseek/deepseek-chat",
     "ollama": "qwen2.5-coder",
 }
@@ -809,6 +815,15 @@ def get_vault_secret(key_name: str) -> str | None:
     return get_vault_values([key_name]).get(key_name)
 
 
+def get_api_key(key_name: str) -> str | None:
+    """Resolve a provider key from the encrypted vault first, then the environment."""
+    value = get_vault_values([key_name]).get(key_name)
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    environment_value = os.getenv(key_name, "")
+    return environment_value.strip() or None
+
+
 def save_vault_values(values: dict[str, str | None]) -> None:
     clean_values = {
         key_name: value.strip()
@@ -1150,6 +1165,10 @@ def get_settings(local_allowed: bool, provider_settings_allowed: bool) -> dict[s
         "hasOpenaiKey": bool(secret_from_vault("OPENAI_API_KEY")),
         "hasDeepseekKey": bool(secret_from_vault("DEEPSEEK_API_KEY")),
         "hasGeminiKey": bool(secret_from_vault("GEMINI_API_KEY")),
+        "hasAnthropicKey": bool(
+            secret_from_vault("ANTHROPIC_API_KEY")
+            or os.getenv("CLAUDE_API_KEY", "").strip()
+        ),
         "hasOpenrouterKey": bool(secret_from_vault("OPENROUTER_API_KEY")),
         "codeRunnerEnabled": local_code_runner_available(),
         "appPreviewsEnabled": local_allowed and local_app_previews_enabled(),
@@ -1281,13 +1300,14 @@ class NoteInput(BaseModel):
 
 
 class SettingsInput(BaseModel):
-    provider: str = Field(pattern="^(openai|deepseek|gemini|openrouter|ollama)$")
+    provider: str = Field(pattern="^(openai|deepseek|gemini|anthropic|openrouter|ollama)$")
     modelId: str = Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,119}$")
     fallbackModelId: str | None = Field(default=None, max_length=120)
     ollamaBaseUrl: str | None = Field(default=None, max_length=500)
     openaiApiKey: str | None = Field(default=None, max_length=1000)
     deepseekApiKey: str | None = Field(default=None, max_length=1000)
     geminiApiKey: str | None = Field(default=None, max_length=1000)
+    anthropicApiKey: str | None = Field(default=None, max_length=1000)
     openrouterApiKey: str | None = Field(default=None, max_length=1000)
     codeRunnerEnabled: bool = False
     appPreviewsEnabled: bool = False
@@ -1295,7 +1315,7 @@ class SettingsInput(BaseModel):
 
 
 class ModelSelectionInput(BaseModel):
-    provider: str = Field(pattern="^(openai|deepseek|gemini|openrouter|ollama)$")
+    provider: str = Field(pattern="^(openai|deepseek|gemini|anthropic|openrouter|ollama)$")
     modelId: str = Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,119}$")
     fallbackModelId: str | None = Field(default=None, max_length=120)
 
@@ -1304,6 +1324,7 @@ class ProviderKeysInput(BaseModel):
     openaiApiKey: str | None = Field(default=None, max_length=1000)
     deepseekApiKey: str | None = Field(default=None, max_length=1000)
     geminiApiKey: str | None = Field(default=None, max_length=1000)
+    anthropicApiKey: str | None = Field(default=None, max_length=1000)
     openrouterApiKey: str | None = Field(default=None, max_length=1000)
     ollamaBaseUrl: str | None = Field(default=None, max_length=500)
     tavilyApiKey: str | None = Field(default=None, max_length=1000)
@@ -1340,8 +1361,28 @@ def credential_for(provider: str) -> str | None:
         except ValueError:
             return None
         return "ollama"
+    if provider == "openrouter":
+        return get_api_key("OPENROUTER_API_KEY")
+    if provider == "anthropic":
+        return get_api_key("ANTHROPIC_API_KEY") or os.getenv("CLAUDE_API_KEY", "").strip() or None
     key_name = KEY_NAMES.get(provider)
-    return get_vault_secret(key_name) if key_name else None
+    return get_api_key(key_name) if key_name else None
+
+
+def resolve_direct_anthropic_model(provider: str, model_id: str) -> tuple[str, str]:
+    """Use the direct Anthropic API for OpenRouter Claude IDs when its key is available."""
+    if provider == "openrouter" and model_id.lower().startswith("anthropic/claude-"):
+        if credential_for("anthropic"):
+            return "anthropic", model_id.split("/", 1)[1]
+    return provider, model_id
+
+
+def missing_provider_key_message(provider: str) -> str:
+    if provider == "openrouter":
+        return "Please configure your OpenRouter API key in Preferences/Vault before selecting this model."
+    if provider == "anthropic":
+        return "Please configure your Anthropic API key in Preferences/Vault before selecting this model."
+    return f"Add a {provider.title()} API key in Settings before starting a task."
 
 
 def validate_ollama_base_url(value: str | None) -> str:
@@ -1372,10 +1413,18 @@ def redact_provider_keys(message: str) -> str:
     for key in secrets.values():
         if key:
             message = message.replace(key, "[redacted]")
+    claude_key = os.getenv("CLAUDE_API_KEY", "").strip()
+    if claude_key:
+        message = message.replace(claude_key, "[redacted]")
     return message
 
 
-def create_llm_client(provider: str) -> AsyncOpenAI:
+def create_llm_client(provider: str) -> Any:
+    if provider == "anthropic":
+        key = credential_for(provider)
+        if not key:
+            raise RuntimeError(missing_provider_key_message(provider))
+        return AnthropicChatClient(key)
     if provider == "ollama":
         return AsyncOpenAI(
             api_key="ollama",
@@ -1383,6 +1432,20 @@ def create_llm_client(provider: str) -> AsyncOpenAI:
             timeout=90,
             max_retries=2,
         )
+    if provider == "openrouter":
+        key = get_api_key("OPENROUTER_API_KEY")
+        if not key:
+            raise RuntimeError(
+                "Please configure your OpenRouter API key in Preferences/Vault before selecting this model."
+            )
+        return AsyncOpenAI(
+            api_key=key,
+            base_url="https://openrouter.ai/api/v1",
+            timeout=90,
+            max_retries=2,
+            default_headers={"HTTP-Referer": "http://localhost:3000", "X-Title": "Forge"},
+        )
+
     key = credential_for(provider)
     if not key:
         raise RuntimeError(f"No {provider.title()} API key is configured. Open provider settings to add one.")
@@ -1399,14 +1462,6 @@ def create_llm_client(provider: str) -> AsyncOpenAI:
             base_url="https://api.deepseek.com",
             timeout=90,
             max_retries=2,
-        )
-    if provider == "openrouter":
-        return AsyncOpenAI(
-            api_key=key,
-            base_url="https://openrouter.ai/api/v1",
-            timeout=90,
-            max_retries=2,
-            default_headers={"HTTP-Referer": "http://localhost", "X-Title": "Local Meta-Agent Assistant"},
         )
     return AsyncOpenAI(api_key=key, timeout=90, max_retries=2)
 
@@ -3050,6 +3105,7 @@ async def create_task(body: TaskInput, request: Request) -> dict[str, Any]:
     if provider not in MODEL_OPTIONS:
         raise HTTPException(status_code=422, detail="Choose a supported AI provider.")
     model = body.modelId or os.getenv("AGENT_MODEL", DEFAULT_MODELS[provider])
+    provider, model = resolve_direct_anthropic_model(provider, model)
     if not MODEL_ID_PATTERN.fullmatch(model) or (
         provider == "gemini" and not GEMINI_MODEL_ID_PATTERN.fullmatch(model)
     ):
@@ -3062,7 +3118,7 @@ async def create_task(body: TaskInput, request: Request) -> dict[str, Any]:
         except ValueError as error:
             raise HTTPException(status_code=422, detail=str(error)) from error
     elif not credential_for(provider):
-        raise HTTPException(status_code=400, detail=f"Add a {provider.title()} API key in Settings before starting a task.")
+        raise HTTPException(status_code=400, detail=missing_provider_key_message(provider))
     reason = classify_task_complexity(body.objective, len(body.fileIds))
     recommendation_kind = "complexity" if reason else None
     recommended_provider, recommended_model, recommended_name = (
@@ -3123,7 +3179,10 @@ async def choose_task_model(task_id: str, body: TaskModelChoiceInput) -> dict[st
     provider = row["recommended_provider"] if body.switchToRecommendation else row["provider"]
     model = row["recommended_model_id"] if body.switchToRecommendation else row["model_id"]
     if not provider or not model or not credential_for(provider):
-        raise HTTPException(status_code=400, detail="The selected provider API key is not available.")
+        raise HTTPException(
+            status_code=400,
+            detail=missing_provider_key_message(provider or row["provider"]),
+        )
     now = utc_now()
     updated = db_run(
         "UPDATE tasks SET provider=?,model_id=?,status='queued',current_step=?,"
@@ -3169,7 +3228,10 @@ async def choose_task_fallback(task_id: str, body: TaskFallbackChoiceInput) -> d
     provider = row["recommended_provider"]
     model = row["recommended_model_id"]
     if not provider or not model or not credential_for(provider):
-        raise HTTPException(status_code=400, detail="The recommended provider API key is not available.")
+        raise HTTPException(
+            status_code=400,
+            detail=missing_provider_key_message(provider or row["provider"]),
+        )
     db_run(
         "UPDATE tasks SET status='running',error=NULL,current_step=?,updated_at=? WHERE id=?",
         (f"Retrying failed specialist step with {model}", utc_now(), task_id),
@@ -3829,18 +3891,20 @@ async def update_settings(body: SettingsInput, request: Request) -> dict[str, An
         "OPENAI_API_KEY": body.openaiApiKey,
         "DEEPSEEK_API_KEY": body.deepseekApiKey,
         "GEMINI_API_KEY": body.geminiApiKey,
+        "ANTHROPIC_API_KEY": body.anthropicApiKey,
         "OPENROUTER_API_KEY": body.openrouterApiKey,
     }
-    required_key_name = KEY_NAMES.get(body.provider)
+    settings_provider, settings_model = resolve_direct_anthropic_model(body.provider, body.modelId)
+    required_key_name = KEY_NAMES.get(settings_provider)
     pending_key = values.get(required_key_name) if required_key_name else None
-    if body.provider != "ollama" and not credential_for(body.provider) and not (pending_key and pending_key.strip()):
-        raise HTTPException(status_code=400, detail=f"Add a {body.provider.title()} API key before selecting this provider.")
+    if settings_provider != "ollama" and not credential_for(settings_provider) and not (pending_key and pending_key.strip()):
+        raise HTTPException(status_code=400, detail=missing_provider_key_message(settings_provider))
     save_vault_values(values)
     for key, value in values.items():
         if value is not None and value.strip():
             set_key(str(ENV_FILE), key, value.strip(), quote_mode="always")
-    set_key(str(ENV_FILE), "AGENT_PROVIDER", body.provider, quote_mode="never")
-    set_key(str(ENV_FILE), "AGENT_MODEL", body.modelId, quote_mode="always")
+    set_key(str(ENV_FILE), "AGENT_PROVIDER", settings_provider, quote_mode="never")
+    set_key(str(ENV_FILE), "AGENT_MODEL", settings_model, quote_mode="always")
     if ollama_base_url is not None:
         set_key(str(ENV_FILE), "OLLAMA_BASE_URL", ollama_base_url, quote_mode="always")
     if body.provider == "gemini" and body.fallbackModelId is not None:
@@ -3860,19 +3924,20 @@ async def apply_working_model(body: ModelSelectionInput, request: Request) -> di
     if not can_manage_provider_settings(request):
         raise HTTPException(status_code=403, detail="Model settings can only be changed from this app's preview or a local copy.")
     local_allowed = is_local_setup_allowed(request)
-    if body.provider == "ollama" and not local_allowed:
+    provider, model = resolve_direct_anthropic_model(body.provider, body.modelId)
+    if provider == "ollama" and not local_allowed:
         raise HTTPException(status_code=403, detail="Ollama is available only from a localhost copy.")
     fallback = (body.fallbackModelId or "").strip()
-    if body.provider == "gemini":
-        if not GEMINI_MODEL_ID_PATTERN.fullmatch(body.modelId):
+    if provider == "gemini":
+        if not GEMINI_MODEL_ID_PATTERN.fullmatch(model):
             raise HTTPException(status_code=422, detail="That Gemini model ID is not valid.")
         if fallback and not GEMINI_MODEL_ID_PATTERN.fullmatch(fallback):
             raise HTTPException(status_code=422, detail="That Gemini fallback model ID is not valid.")
-    if not credential_for(body.provider):
-        raise HTTPException(status_code=400, detail=f"Save a {body.provider.title()} API key before applying this model.")
-    set_key(str(ENV_FILE), "AGENT_PROVIDER", body.provider, quote_mode="never")
-    set_key(str(ENV_FILE), "AGENT_MODEL", body.modelId, quote_mode="always")
-    if body.provider == "gemini" and body.fallbackModelId is not None:
+    if not credential_for(provider):
+        raise HTTPException(status_code=400, detail=missing_provider_key_message(provider))
+    set_key(str(ENV_FILE), "AGENT_PROVIDER", provider, quote_mode="never")
+    set_key(str(ENV_FILE), "AGENT_MODEL", model, quote_mode="always")
+    if provider == "gemini" and body.fallbackModelId is not None:
         set_key(str(ENV_FILE), "GEMINI_FALLBACK_MODEL", fallback, quote_mode="always")
     os.chmod(ENV_FILE, 0o600)
     load_dotenv(ENV_FILE, override=True)
@@ -3894,6 +3959,7 @@ async def save_provider_keys(body: ProviderKeysInput, request: Request) -> dict[
         "OPENAI_API_KEY": body.openaiApiKey,
         "DEEPSEEK_API_KEY": body.deepseekApiKey,
         "GEMINI_API_KEY": body.geminiApiKey,
+        "ANTHROPIC_API_KEY": body.anthropicApiKey,
         "OPENROUTER_API_KEY": body.openrouterApiKey,
         "TAVILY_API_KEY": body.tavilyApiKey,
         "SERPER_API_KEY": body.serperApiKey,

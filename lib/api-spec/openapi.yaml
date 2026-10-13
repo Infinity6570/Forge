@@ -775,7 +775,7 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/TaskLog"
-        provider: { type: string, enum: [openai, deepseek, gemini, openrouter, ollama] }
+        provider: { type: string, enum: [openai, deepseek, gemini, anthropic, openrouter, ollama] }
         modelId: { type: string }
         recommendationKind: { type: ["string", "null"], enum: [complexity, fallback, null] }
         recommendationReason: { type: ["string", "null"] }
@@ -808,7 +808,7 @@ components:
         threadId: { type: ["string", "null"] }
         provider:
           type: string
-          enum: [openai, deepseek, gemini, openrouter, ollama]
+          enum: [openai, deepseek, gemini, anthropic, openrouter, ollama]
         modelId:
           type: string
           maxLength: 120
@@ -946,9 +946,9 @@ components:
         searchChromiumFallback: { type: boolean }
     AssistantSettings:
       type: object
-      required: [provider, modelId, fallbackModelId, ollamaBaseUrl, localSetupAllowed, providerSettingsAllowed, hasOpenaiKey, hasDeepseekKey, hasGeminiKey, hasOpenrouterKey, codeRunnerEnabled, appPreviewsEnabled, engineToolsEnabled]
+      required: [provider, modelId, fallbackModelId, ollamaBaseUrl, localSetupAllowed, providerSettingsAllowed, hasOpenaiKey, hasDeepseekKey, hasGeminiKey, hasAnthropicKey, hasOpenrouterKey, codeRunnerEnabled, appPreviewsEnabled, engineToolsEnabled]
       properties:
-        provider: { type: string, enum: [openai, deepseek, gemini, openrouter, ollama] }
+        provider: { type: string, enum: [openai, deepseek, gemini, anthropic, openrouter, ollama] }
         modelId: { type: string }
         fallbackModelId: { type: string }
         ollamaBaseUrl: { type: string }
@@ -957,6 +957,7 @@ components:
         hasOpenaiKey: { type: boolean }
         hasDeepseekKey: { type: boolean }
         hasGeminiKey: { type: boolean }
+        hasAnthropicKey: { type: boolean }
         hasOpenrouterKey: { type: boolean }
         codeRunnerEnabled: { type: boolean }
         appPreviewsEnabled: { type: boolean }
@@ -972,7 +973,7 @@ components:
       type: object
       required: [provider, modelId]
       properties:
-        provider: { type: string, enum: [openai, deepseek, gemini, openrouter, ollama] }
+        provider: { type: string, enum: [openai, deepseek, gemini, anthropic, openrouter, ollama] }
         modelId: { type: string, minLength: 1, maxLength: 120, pattern: '^[A-Za-z0-9][A-Za-z0-9._:/-]{0,119}$' }
         fallbackModelId: { type: string, maxLength: 120, pattern: '^$|^[A-Za-z0-9][A-Za-z0-9._:/-]{0,119}$' }
     ProviderKeysInput:
@@ -981,6 +982,7 @@ components:
         openaiApiKey: { type: ["string", "null"], maxLength: 1000 }
         deepseekApiKey: { type: ["string", "null"], maxLength: 1000 }
         geminiApiKey: { type: ["string", "null"], maxLength: 1000 }
+        anthropicApiKey: { type: ["string", "null"], maxLength: 1000 }
         openrouterApiKey: { type: ["string", "null"], maxLength: 1000 }
         ollamaBaseUrl: { type: string, maxLength: 500 }
         tavilyApiKey: { type: ["string", "null"], maxLength: 1000 }
@@ -1001,6 +1003,7 @@ components:
         openaiApiKey: { type: ["string", "null"], maxLength: 1000 }
         deepseekApiKey: { type: ["string", "null"], maxLength: 1000 }
         geminiApiKey: { type: ["string", "null"], maxLength: 1000 }
+        anthropicApiKey: { type: ["string", "null"], maxLength: 1000 }
         openrouterApiKey: { type: ["string", "null"], maxLength: 1000 }
         ollamaBaseUrl: { type: ["string", "null"], maxLength: 500 }
         tavilyApiKey: { type: ["string", "null"], maxLength: 1000 }
@@ -1021,6 +1024,7 @@ components:
         - openai_api_key
         - deepseek_api_key
         - gemini_api_key
+        - anthropic_api_key
         - openrouter_api_key
         - tavily_api_key
         - serper_api_key
@@ -1038,6 +1042,7 @@ components:
         openai_api_key: { type: string, enum: [configured, not_set, unavailable] }
         deepseek_api_key: { type: string, enum: [configured, not_set, unavailable] }
         gemini_api_key: { type: string, enum: [configured, not_set, unavailable] }
+        anthropic_api_key: { type: string, enum: [configured, not_set, unavailable] }
         openrouter_api_key: { type: string, enum: [configured, not_set, unavailable] }
         tavily_api_key: { type: string, enum: [configured, not_set, unavailable] }
         serper_api_key: { type: string, enum: [configured, not_set, unavailable] }
@@ -1054,13 +1059,14 @@ components:
       type: object
       required: [provider, modelId]
       properties:
-        provider: { type: string, enum: [openai, deepseek, gemini, openrouter, ollama] }
+        provider: { type: string, enum: [openai, deepseek, gemini, anthropic, openrouter, ollama] }
         modelId: { type: string, minLength: 1, maxLength: 120, pattern: '^[A-Za-z0-9][A-Za-z0-9._:/-]{0,119}$' }
         fallbackModelId: { type: string, maxLength: 120, pattern: '^$|^[A-Za-z0-9][A-Za-z0-9._:/-]{0,119}$' }
         ollamaBaseUrl: { type: string, maxLength: 500 }
         openaiApiKey: { type: ["string", "null"], maxLength: 1000 }
         deepseekApiKey: { type: ["string", "null"], maxLength: 1000 }
         geminiApiKey: { type: ["string", "null"], maxLength: 1000 }
+        anthropicApiKey: { type: ["string", "null"], maxLength: 1000 }
         openrouterApiKey: { type: ["string", "null"], maxLength: 1000 }
         codeRunnerEnabled: { type: boolean }
         appPreviewsEnabled: { type: boolean }
