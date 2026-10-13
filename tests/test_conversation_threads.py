@@ -264,41 +264,24 @@ class ConversationTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(running_task.done())
         self.assertTrue(any(log["message"] == "TASK ABORTED BY USER" for log in stopped.json()["logs"]))
 
-    async def test_approval_resume_keeps_signature_and_same_message_ids(self):
+    async def test_workspace_overwrite_completes_without_approval_and_keeps_tool_pair(self):
         (main.WORKSPACE / "index.html").write_text("original", encoding="utf8")
         call = SimpleNamespace(id="approval-call", type="function",
             function=SimpleNamespace(name="write_workspace_preview_file", arguments='{"path":"index.html","content":"replacement"}'),
             extra_content={"google": {"thought_signature": "approval-signature"}})
-        create = AsyncMock(side_effect=[completion(None, [call]), completion("Overwrite rejected.")])
+        create = AsyncMock(side_effect=[completion(None, [call]), completion("Homepage updated.")])
         client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
         with patch.object(main, "create_llm_client", return_value=client):
-            response = await self.client.post("/api/assistant/tasks", json={"objective": "Update the current homepage"})
-            self.assertEqual(response.status_code, 201)
-            task = response.json()
-            for _ in range(100):
-                await asyncio.sleep(.01)
-                pending = main.db_one("SELECT * FROM tasks WHERE id=?", (task["id"],))
-                if pending["status"] == "awaiting_approval":
-                    break
-            self.assertEqual(pending["status"], "awaiting_approval")
-            before = (await self.client.get("/api/assistant/threads/" + task["threadId"])).json()["messages"]
-            choice = await self.client.post("/api/assistant/tasks/" + task["id"] + "/approval-choice",
-                json={"approvalId": pending["pending_approval_id"], "approve": False})
-            self.assertEqual(choice.status_code, 200, choice.text)
-            for _ in range(100):
-                await asyncio.sleep(.01)
-                finished = main.db_one("SELECT * FROM tasks WHERE id=?", (task["id"],))
-                if finished["status"] == "completed":
-                    break
-            self.assertEqual(finished["status"], "completed", finished["error"])
+            task = await self.send("Update the current homepage")
         sent = create.call_args.kwargs["messages"]
         self.assertEqual(sent[2]["tool_calls"][0]["extra_content"]["google"]["thought_signature"], "approval-signature")
         self.assertEqual(sent[3]["tool_call_id"], "approval-call")
-        self.assertIn("denied", sent[3]["content"].lower())
-        after = (await self.client.get("/api/assistant/threads/" + task["threadId"])).json()["messages"]
-        self.assertEqual([message["id"] for message in before], [message["id"] for message in after[:3]])
-        self.assertEqual(len(after), 4)
-        self.assertEqual((main.WORKSPACE / "index.html").read_text(encoding="utf8"), "original")
+        self.assertIn("saved", sent[3]["content"].lower())
+        self.assertEqual(main.db_one("SELECT result FROM tasks WHERE id=?", (task["id"],))["result"], "Homepage updated.")
+        self.assertEqual((main.WORKSPACE / "index.html").read_text(encoding="utf8"), "replacement")
+        detail = (await self.client.get("/api/assistant/threads/" + task["threadId"])).json()
+        self.assertEqual([message["role"] for message in detail["messages"]],
+                         ["user", "assistant", "tool", "assistant"])
 
 
 class ProtocolBoundaryTests(unittest.TestCase):

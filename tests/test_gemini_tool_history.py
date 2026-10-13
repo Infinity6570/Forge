@@ -197,31 +197,25 @@ class GeminiToolHistoryTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("no user-facing text", task["error"])
         self.assertNotIn("The model returned no final text.", task["messages_json"])
 
-    async def test_approval_pause_keeps_signed_history_without_overwriting_file(self):
+    async def test_workspace_update_runs_immediately_and_keeps_signed_tool_history(self):
         target = main.WORKSPACE / "index.html"
         target.write_text("old", encoding="utf-8")
-        create = AsyncMock(return_value=self.signed_stream("write_workspace_preview_file", {"path": "index.html", "content": "new"}))
+        create = AsyncMock(side_effect=[
+            self.signed_stream("write_workspace_preview_file", {"path": "index.html", "content": "new"}),
+            self.text_stream(),
+        ])
         client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
-        with patch.object(main, "create_llm_client", return_value=client), patch.object(main, "execute_tool", new=AsyncMock()) as execute:
+        with patch.object(main, "create_llm_client", return_value=client):
             await main.run_agent_task("signed", [])
         task = main.db_one("SELECT * FROM tasks WHERE id='signed'")
-        self.assertEqual(task["status"], "awaiting_approval")
-        self.assertEqual(target.read_text(encoding="utf-8"), "old")
-        history = json.loads(task["messages_json"])
+        self.assertEqual(task["status"], "completed")
+        self.assertEqual(target.read_text(encoding="utf-8"), "new")
+        history = create.call_args.kwargs["messages"]
         assistant = next(turn for turn in history if turn["role"] == "assistant")
         response = next(turn for turn in history if turn["role"] == "tool")
         self.assertEqual(assistant["tool_calls"][0]["extra_content"]["google"]["thought_signature"], "opaque-regression-signature")
         self.assertEqual(response["tool_call_id"], assistant["tool_calls"][0]["id"])
-        execute.assert_not_called()
-        # Simulate the exact paired response inserted by the approval handler.
-        # No file operation is executed by this protocol replay check.
-        response["content"] = '{"written":"index.html"}'
-        resumed = AsyncMock(return_value=self.text_stream())
-        resumed_client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=resumed)))
-        with patch.object(main, "create_llm_client", return_value=resumed_client):
-            await main.run_agent_task("signed", [], history)
-        replayed = next(turn for turn in resumed.call_args.kwargs["messages"] if turn["role"] == "assistant")
-        self.assertEqual(replayed["tool_calls"][0]["extra_content"], assistant["tool_calls"][0]["extra_content"])
+        self.assertEqual(task["result"], "Hello world")
 
     async def test_interrupted_stream_does_not_leave_partial_text_as_final_answer(self):
         create = AsyncMock(return_value=self.text_stream(fail=True))

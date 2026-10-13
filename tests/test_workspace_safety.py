@@ -71,8 +71,15 @@ class WorkspaceSafetyTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["stdout"], "alpha\nbeta\ngamma\n")
         self.assertEqual(
             main.parse_workspace_command("head -n 2 sample.txt"),
-            ("head", "sample.txt", 2),
+            ("head", "sample.txt", 2, ""),
         )
+        self.assertEqual(
+            main.parse_workspace_command('grep -n "beta" sample.txt'),
+            ("grep-n", "sample.txt", 20, "beta"),
+        )
+        matches = main.run_workspace_command('grep -n "a" sample.txt')
+        self.assertEqual(matches["returnCode"], 0)
+        self.assertEqual(matches["stdout"], "1:alpha\n2:beta\n3:gamma")
         blocked = (
             "rmdir /s /q workspace",
             "del /f /s /q *",
@@ -88,6 +95,18 @@ class WorkspaceSafetyTests(unittest.IsolatedAsyncioTestCase):
         for command in blocked:
             with self.subTest(command=command), self.assertRaises(PermissionError):
                 main.parse_workspace_command(command)
+
+    async def test_read_only_workspace_commands_do_not_require_local_terminal_toggle(self) -> None:
+        with patch.object(main, "local_code_runner_available", return_value=False):
+            raw = await main.execute_tool(
+                "run_command",
+                {"command": "grep beta sample.txt"},
+                "gemini",
+                {"model": "test-model"},
+                "",
+                "test-task",
+            )
+        self.assertEqual(json.loads(raw)["stdout"], "beta")
 
     def test_local_terminal_commands_require_exact_local_approval(self) -> None:
         with (
@@ -212,7 +231,7 @@ class WorkspaceSafetyTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["returnCode"], 0, result["stderr"])
         self.assertEqual(result["stdout"].splitlines(), [str(self.workspace.resolve()), "missing"])
 
-    def test_write_file_supports_project_source_and_existing_files_need_approval(self) -> None:
+    async def test_write_file_supports_immediate_workspace_updates(self) -> None:
         created = main.write_workspace_source_file(
             self.workspace,
             "web/src/App.tsx",
@@ -223,11 +242,17 @@ class WorkspaceSafetyTests(unittest.IsolatedAsyncioTestCase):
             "write_file",
             {"path": "web/src/App.tsx", "content": "replacement\n"},
         )
-        self.assertIsNotNone(required)
-        action, payload, _summary = required
-        self.assertEqual(action, "write_source_file")
-        result = main.parse_json(main.apply_approved_workspace_action(action, payload), {})
-        self.assertTrue(result["approved"])
+        self.assertIsNone(required)
+        raw = await main.execute_tool(
+            "write_file",
+            {"path": "web/src/App.tsx", "content": "replacement\n"},
+            "gemini",
+            {"model": "test-model"},
+            "",
+            "test-task",
+        )
+        result = main.parse_json(raw, {})
+        self.assertTrue(result["saved"])
         self.assertEqual((self.workspace / "web/src/App.tsx").read_text(encoding="utf-8"), "replacement\n")
         with self.assertRaises((PermissionError, main.WorkspacePreviewError)):
             main.write_workspace_source_file(self.workspace, "../outside.py", "blocked\n")
@@ -265,7 +290,7 @@ class WorkspaceSafetyTests(unittest.IsolatedAsyncioTestCase):
             with self.assertRaises(PermissionError):
                 await manager.launch("flask", "app.py")
 
-    async def test_python_preview_files_remain_workspace_confined_and_overwrites_need_approval(self) -> None:
+    async def test_python_preview_files_remain_confined_and_can_be_updated_directly(self) -> None:
         created = main.write_workspace_app_script(
             self.workspace,
             "preview_app.py",
@@ -279,15 +304,38 @@ class WorkspaceSafetyTests(unittest.IsolatedAsyncioTestCase):
             "write_workspace_app_script",
             {"path": "preview_app.py", "content": "app = 'replacement'\n"},
         )
-        self.assertIsNotNone(required)
-        action, payload, _summary = required
-        self.assertEqual(action, "write_app_script")
-        result = main.parse_json(main.apply_approved_workspace_action(action, payload), {})
-        self.assertTrue(result["approved"])
+        self.assertIsNone(required)
+        raw = await main.execute_tool(
+            "write_workspace_app_script",
+            {"path": "preview_app.py", "content": "app = 'replacement'\n"},
+            "gemini",
+            {"model": "test-model"},
+            "",
+            "test-task",
+        )
+        result = main.parse_json(raw, {})
+        self.assertTrue(result["saved"])
         self.assertEqual(
             (self.workspace / "preview_app.py").read_text(encoding="utf-8"),
             "app = 'replacement'\n",
         )
+
+    async def test_static_preview_assets_can_be_updated_directly(self) -> None:
+        required = main.workspace_action_requiring_approval(
+            "write_workspace_preview_file",
+            {"path": "sample.html", "content": "<h1>updated</h1>"},
+        )
+        self.assertIsNone(required)
+        raw = await main.execute_tool(
+            "write_workspace_preview_file",
+            {"path": "sample.html", "content": "<h1>updated</h1>"},
+            "gemini",
+            {"model": "test-model"},
+            "",
+            "test-task",
+        )
+        self.assertTrue(main.parse_json(raw, {})["saved"])
+        self.assertEqual(self.preview_file.read_text(encoding="utf-8"), "<h1>updated</h1>")
 
     async def test_local_flask_preview_uses_workspace_cwd_scrubbed_env_and_stops(self) -> None:
         app_script = self.workspace / "preview_app.py"
