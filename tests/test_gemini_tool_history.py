@@ -76,6 +76,70 @@ class GeminiToolHistoryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(task["result"], "Hello world")
         self.assertNotIn("opaque-regression-signature", task["logs_json"])
 
+    async def test_native_candidate_text_completes_simple_no_tool_prompt(self):
+        response = {
+            "candidates": [{
+                "finishReason": "STOP",
+                "content": {"parts": [{"text": "Hi! How can I help?"}]},
+            }],
+        }
+        create = AsyncMock(return_value=response)
+        client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+        with patch.object(main, "create_llm_client", return_value=client):
+            await main.run_agent_task("signed", [])
+
+        task = main.db_one("SELECT status,result FROM tasks WHERE id='signed'")
+        self.assertEqual(create.await_count, 1)
+        self.assertEqual(task["status"], "completed")
+        self.assertEqual(task["result"], "Hi! How can I help?")
+        self.assertNotIn("All actions have completed", str(create.call_args.kwargs["messages"]))
+
+    async def test_native_tool_result_is_sent_back_for_final_candidate_text(self):
+        tool_response = {
+            "candidates": [{
+                "finishReason": "FUNCTION_CALL",
+                "content": {"parts": [
+                    {"text": "Searching the web.", "thought": True},
+                    {"functionCall": {"name": "web_search", "args": {"query": "weather"}},
+                     "thoughtSignature": "native-signature"},
+                ]},
+            }],
+        }
+        final_response = {
+            "candidates": [{
+                "finishReason": "STOP",
+                "content": {"parts": [{"text": "The forecast is clear."}]},
+            }],
+        }
+        create = AsyncMock(side_effect=[tool_response, final_response])
+        client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+        checkpointed = []
+
+        def capture_checkpoint(task_id, messages, history_start):
+            checkpointed[:] = messages
+
+        with patch.object(main, "create_llm_client", return_value=client), patch.object(
+            main, "execute_tool", new=AsyncMock(return_value='{"forecast":"clear"}')
+        ) as execute, patch.object(main.THREADS, "checkpoint", side_effect=capture_checkpoint):
+            await main.run_agent_task("signed", [])
+
+        self.assertEqual(create.await_count, 2)
+        execute.assert_awaited_once()
+        follow_up = create.call_args_list[1].kwargs["messages"]
+        self.assertTrue(any(turn["role"] == "tool" and "clear" in turn["content"] for turn in follow_up))
+        task = main.db_one("SELECT status,result FROM tasks WHERE id='signed'")
+        self.assertEqual(task["status"], "completed")
+        self.assertEqual(task["result"], "The forecast is clear.")
+        stored_assistant = next(
+            turn for turn in checkpointed
+            if turn.get("role") == "assistant" and turn.get("tool_calls")
+        )
+        self.assertEqual(stored_assistant["reasoning_content"], "Searching the web.")
+        self.assertEqual(
+            stored_assistant["tool_calls"][0]["extra_content"]["google"]["thought_signature"],
+            "native-signature",
+        )
+
     async def test_empty_final_turn_retries_with_tool_results_and_synthesis_instruction(self):
         create = AsyncMock(side_effect=[
             self.signed_stream(),

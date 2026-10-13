@@ -84,6 +84,10 @@ def prepare_history(messages: list[dict[str, Any]], provider: str) -> list[dict[
     if provider == "gemini":
         for message in prepared:
             message.pop("parts", None)
+            # Thought text is retained with the stored turn for internal
+            # diagnostics, but it is neither user-facing content nor part of
+            # the OpenAI-compatible Gemini request history.
+            message.pop("reasoning_content", None)
     # Raw stored turns stay lossless. Other providers do not accept Google's
     # opaque message extensions, so normalize only their outgoing wire copy.
     if provider in {"openai", "deepseek", "ollama"}:
@@ -149,8 +153,19 @@ async def collect_completion(response: Any, on_text: TextCallback | None = None)
                 content = candidate.get("content") or {}
                 for part_index, part in enumerate(content.get("parts") or []):
                     native_parts.append(deepcopy(part))
-                    if isinstance(part.get("text"), str):
-                        message["content"] = message.get("content", "") + part["text"]
+                    text = part.get("text")
+                    is_thought = bool(
+                        part.get("thought")
+                        or part.get("reasoning")
+                        or part.get("isThought")
+                    )
+                    if isinstance(text, str):
+                        if is_thought:
+                            message["reasoning_content"] = (
+                                message.get("reasoning_content", "") + text
+                            )
+                        else:
+                            message["content"] = message.get("content", "") + text
                     function_call = part.get("functionCall") or part.get("function_call")
                     if isinstance(function_call, dict):
                         call = calls.setdefault(part_index, {})

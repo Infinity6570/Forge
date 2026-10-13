@@ -188,3 +188,30 @@ class LLMProtocolTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(assistant_turn(completion.choices[0].message, "gemini")["parts"], [
             {"text": "Final answer from candidate parts."}
         ])
+
+    async def test_native_google_thought_parts_are_logged_but_not_streamed_as_answer(self):
+        response = {
+            "candidates": [{
+                "finishReason": "STOP",
+                "content": {"parts": [
+                    {"text": "private thought", "thought": True},
+                    {"text": "Hello "},
+                    {"text": "there."},
+                ]},
+            }],
+        }
+        updates = []
+
+        async def publish(text):
+            updates.append(text)
+
+        completion = await collect_completion(response, publish)
+        message = assistant_turn(completion.choices[0].message, "gemini")
+        self.assertEqual(message["content"], "Hello there.")
+        self.assertEqual(message["reasoning_content"], "private thought")
+        # A single candidate chunk carries both ordinary text parts, so the
+        # collector publishes its assembled visible text once for that chunk.
+        self.assertEqual(updates, ["Hello there."])
+        replay = prepare_history([message], "gemini")[0]
+        self.assertNotIn("reasoning_content", replay)
+        self.assertNotIn("parts", replay)
