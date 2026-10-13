@@ -124,10 +124,17 @@ class AnthropicProviderRoutingTests(unittest.IsolatedAsyncioTestCase):
             }],
             "tool_choice": "auto",
         })
-        self.assertEqual(request["system"], "Be concise.")
+        self.assertEqual(request["system"], [{
+            "type": "text",
+            "text": "Be concise.",
+            "cache_control": {"type": "ephemeral"},
+        }])
         self.assertEqual(request["model"], "claude-sonnet-5-5")
         self.assertEqual(request["tools"][0]["name"], "web_search")
-        self.assertEqual(request["max_tokens"], 4096)
+        self.assertEqual(request["tools"][0]["cache_control"], {"type": "ephemeral"})
+        self.assertEqual(request["cache_control"], {"type": "ephemeral"})
+        self.assertEqual(request["max_tokens"], 8192)
+        self.assertEqual(request["thinking"], {"type": "adaptive"})
 
     async def test_anthropic_tool_use_response_maps_to_chat_completion(self) -> None:
         response = SimpleNamespace(

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 import time
 import uuid
 from types import SimpleNamespace
@@ -9,6 +10,8 @@ from typing import Any
 
 import anthropic
 from openai.types.chat import ChatCompletion
+
+from llm_protocol import to_wire
 
 
 def _get(value: Any, key: str, default: Any = None) -> Any:
@@ -84,6 +87,16 @@ def _anthropic_messages(messages: list[dict[str, Any]]) -> tuple[str, list[dict[
         if role != "assistant":
             continue
 
+        preserved_blocks = message.get("anthropic_content_blocks")
+        if isinstance(preserved_blocks, list) and preserved_blocks:
+            # Anthropic requires the exact signed thinking block when continuing
+            # a tool-use turn. Do not rebuild or normalize provider blocks.
+            converted.append({
+                "role": "assistant",
+                "content": [to_wire(block) for block in preserved_blocks],
+            })
+            continue
+
         blocks: list[dict[str, Any]] = []
         text = _text(content)
         if text:
@@ -125,15 +138,23 @@ def _anthropic_tools(tools: Any) -> list[dict[str, Any]]:
 
 def _anthropic_request(kwargs: dict[str, Any]) -> dict[str, Any]:
     system, messages = _anthropic_messages(kwargs.get("messages") or [])
+    model = kwargs["model"]
+    requested_max_tokens = kwargs.get("max_tokens") or kwargs.get("max_completion_tokens") or 4096
     request: dict[str, Any] = {
-        "model": kwargs["model"],
+        "model": model,
         "messages": messages,
-        "max_tokens": kwargs.get("max_tokens") or kwargs.get("max_completion_tokens") or 4096,
+        "max_tokens": max(8192, int(requested_max_tokens)),
+        "cache_control": {"type": "ephemeral"},
     }
     if system:
-        request["system"] = system
+        request["system"] = [{
+            "type": "text",
+            "text": system,
+            "cache_control": {"type": "ephemeral"},
+        }]
     tools = _anthropic_tools(kwargs.get("tools"))
     if tools:
+        tools[-1]["cache_control"] = {"type": "ephemeral"}
         request["tools"] = tools
         choice = kwargs.get("tool_choice")
         if choice == "required":
@@ -142,17 +163,34 @@ def _anthropic_request(kwargs: dict[str, Any]) -> dict[str, Any]:
             function = choice.get("function") or {}
             if function.get("name"):
                 request["tool_choice"] = {"type": "tool", "name": function["name"]}
-            elif choice.get("type") == "none":
-                request.pop("tools", None)
+            # Keep tool schemas on every turn. A "none" preference must not
+            # silently remove them from the protocol request.
         elif choice not in (None, "auto"):
             request["tool_choice"] = {"type": "auto"}
-    for key in ("temperature", "top_p", "stop"):
+
+    version = re.search(r"claude-(?:opus|sonnet|haiku)-(\d+)[.-](\d+)", model.lower())
+    thinking: dict[str, Any] | None = None
+    if version:
+        major, minor = int(version.group(1)), int(version.group(2))
+        if major >= 5 or (major == 4 and minor >= 7):
+            # Adaptive thinking is the supported mode for Claude 4.7+ and 5.x.
+            thinking = {"type": "adaptive"}
+        elif major == 4 and minor >= 5:
+            # Earlier Claude 4 models use a stable manual budget.
+            thinking = {"type": "enabled", "budget_tokens": 4096}
+    if thinking:
+        request["thinking"] = thinking
+
+    # Temperature/top_p are incompatible with extended/adaptive thinking.
+    optional_parameters = ("stop",) if thinking else ("temperature", "top_p", "stop")
+    for key in optional_parameters:
         if key in kwargs and kwargs[key] is not None:
             request[{"stop": "stop_sequences"}.get(key, key)] = kwargs[key]
     return request
 
 
 def _chat_completion(response: Any) -> ChatCompletion:
+    raw_response = to_wire(response)
     content_parts: list[str] = []
     tool_calls: list[dict[str, Any]] = []
     for block in _get(response, "content", []) or []:
@@ -171,16 +209,23 @@ def _chat_completion(response: Any) -> ChatCompletion:
                 },
             })
     stop_reason = _get(response, "stop_reason")
+    message: dict[str, Any] = {
+        "role": "assistant",
+        "content": "".join(content_parts) or None,
+        **({"tool_calls": tool_calls} if tool_calls else {}),
+    }
+    raw_content = raw_response.get("content") if isinstance(raw_response, dict) else None
+    if isinstance(raw_content, list):
+        message["anthropic_content_blocks"] = raw_content
+    raw_usage = raw_response.get("usage") if isinstance(raw_response, dict) else None
+    if isinstance(raw_usage, dict):
+        message["anthropic_usage"] = raw_usage
     return ChatCompletion(
         id=_get(response, "id") or f"chatcmpl_{uuid.uuid4().hex}",
         choices=[{
             "finish_reason": "tool_calls" if stop_reason == "tool_use" else "stop",
             "index": 0,
-            "message": {
-                "role": "assistant",
-                "content": "".join(content_parts) or None,
-                **({"tool_calls": tool_calls} if tool_calls else {}),
-            },
+            "message": message,
         }],
         created=int(time.time()),
         model=_get(response, "model") or "",
@@ -205,6 +250,7 @@ class _AnthropicCompletions:
         request = _anthropic_request(kwargs)
         stream_id = f"chatcmpl_{uuid.uuid4().hex}"
         created = int(time.time())
+        final_message: dict[str, Any] | None = None
         async with self._client._sdk.messages.stream(**request) as stream:
             async for event in stream:
                 event_type = _get(event, "type")
@@ -275,6 +321,31 @@ class _AnthropicCompletions:
                         "model": request["model"],
                         "choices": [choice],
                     }
+            get_final_message = getattr(stream, "get_final_message", None)
+            if callable(get_final_message):
+                final = get_final_message()
+                if hasattr(final, "__await__"):
+                    final = await final
+                serialized = to_wire(final)
+                if isinstance(serialized, dict):
+                    final_message = serialized
+
+        if final_message:
+            metadata: dict[str, Any] = {}
+            blocks = final_message.get("content")
+            usage = final_message.get("usage")
+            if isinstance(blocks, list):
+                metadata["anthropic_content_blocks"] = blocks
+            if isinstance(usage, dict):
+                metadata["anthropic_usage"] = usage
+            if metadata:
+                yield {
+                    "id": stream_id,
+                    "object": "chat.completion.chunk",
+                    "created": created,
+                    "model": request["model"],
+                    "choices": [{"index": 0, "delta": metadata, "finish_reason": None}],
+                }
 
 
 class AnthropicChatClient:

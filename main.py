@@ -1005,7 +1005,13 @@ def file_dict(row: sqlite3.Row) -> dict[str, Any]:
     }
 
 
-def log_task(task_id: str, message: str, kind: str = "info") -> str | None:
+def log_task(
+    task_id: str,
+    message: str,
+    kind: str = "info",
+    *,
+    update_step: bool = True,
+) -> str | None:
     row = db_one("SELECT logs_json FROM tasks WHERE id = ?", (task_id,))
     if not row:
         return
@@ -1014,10 +1020,16 @@ def log_task(task_id: str, message: str, kind: str = "info") -> str | None:
     message = redact_provider_keys(message)
     logs.append({"id": log_id, "message": message[:2000], "kind": kind, "timestamp": utc_now()})
     logs = logs[-300:]
-    db_run(
-        "UPDATE tasks SET logs_json=?, current_step=?, updated_at=? WHERE id=?",
-        (json.dumps(logs), message[:300], utc_now(), task_id),
-    )
+    if update_step:
+        db_run(
+            "UPDATE tasks SET logs_json=?, current_step=?, updated_at=? WHERE id=?",
+            (json.dumps(logs), message[:300], utc_now(), task_id),
+        )
+    else:
+        db_run(
+            "UPDATE tasks SET logs_json=?, updated_at=? WHERE id=?",
+            (json.dumps(logs), utc_now(), task_id),
+        )
     return log_id
 
 
@@ -1573,7 +1585,22 @@ async def create_completion_with_fallback(
         if "messages" in kwargs:
             kwargs["messages"] = prepare_history(kwargs["messages"], provider)
         response = await client.chat.completions.create(**kwargs)
-        return await collect_completion(response, on_text)
+        completion = await collect_completion(response, on_text)
+        if provider == "anthropic" and completion.choices:
+            assistant_message = completion.choices[0].message
+            usage = getattr(assistant_message, "anthropic_usage", None)
+            if isinstance(usage, dict):
+                cache_read = int(usage.get("cache_read_input_tokens") or 0)
+                cache_created = int(usage.get("cache_creation_input_tokens") or 0)
+                log_task(
+                    task_id,
+                    "Anthropic prompt cache · "
+                    f"cache_read_input_tokens={cache_read} · "
+                    f"cache_creation_input_tokens={cache_created}",
+                    "info",
+                    update_step=False,
+                )
+        return completion
 
     try:
         return await request_completion()
