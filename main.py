@@ -55,7 +55,14 @@ from workspace_preview import (
     write_workspace_asset,
     write_workspace_source_file,
 )
-from tools.agent_tools import run_approved_terminal_command, validate_terminal_command
+from tools.agent_tools import (
+    run_approved_terminal_command,
+    run_blender_automation,
+    send_engine_remote_command,
+    validate_blender_request,
+    validate_engine_remote_request,
+    validate_terminal_command,
+)
 from tools.elevated_runner import (
     execute_elevated_command,
     is_process_elevated,
@@ -464,6 +471,7 @@ def init_db() -> None:
                   recommended_provider TEXT, recommended_model_id TEXT, retry_prompt TEXT,
                   file_ids_json TEXT NOT NULL DEFAULT '[]', messages_json TEXT NOT NULL DEFAULT '[]',
                   pending_approval_id TEXT, pending_approval_kind TEXT, approval_summary TEXT,
+                  pending_approval_details TEXT,
                   created_at TEXT NOT NULL, updated_at TEXT NOT NULL
                 );
                 CREATE TABLE IF NOT EXISTS timers (
@@ -512,6 +520,7 @@ def init_db() -> None:
                 ("pending_approval_id", "TEXT"),
                 ("pending_approval_kind", "TEXT"),
                 ("approval_summary", "TEXT"),
+                ("pending_approval_details", "TEXT"),
                 ("thread_id", "TEXT"),
                 ("thread_context_start", "INTEGER NOT NULL DEFAULT 1"),
             ):
@@ -938,6 +947,7 @@ def task_dict(row: sqlite3.Row) -> dict[str, Any]:
         "pendingApprovalId": row["pending_approval_id"],
         "pendingApprovalKind": row["pending_approval_kind"],
         "approvalSummary": row["approval_summary"],
+        "approvalDetails": row["pending_approval_details"],
         "requiresApproval": row["status"] == "awaiting_approval" and bool(row["pending_approval_id"]),
         "createdAt": row["created_at"],
         "updatedAt": row["updated_at"],
@@ -996,7 +1006,13 @@ def log_task(task_id: str, message: str, kind: str = "info") -> str | None:
 
 def tool_activity_summary(name: str, args: dict[str, Any], *, finished: bool = False, failed: bool = False) -> str:
     """Describe only the action actually attempted; details stay in the expandable log."""
-    if name in {"run_command", "run_terminal_command", "execute_elevated_command"}:
+    if name == "run_blender_automation":
+        verb = "Blender automation" if finished else "Requesting Blender automation"
+        target = str(args.get("render_output_path") or args.get("blend_filepath") or "procedural scene")
+    elif name == "send_engine_remote_command":
+        verb = "Engine command sent" if finished else "Requesting engine command"
+        target = f"{args.get('engine', 'engine')} · {args.get('endpoint_url', 'local listener')}"
+    elif name in {"run_command", "run_terminal_command", "execute_elevated_command"}:
         verb = "Ran command" if finished else "Running command"
         target = str(args.get("command", ""))
     elif name in {"write_workspace_preview_file", "write_workspace_app_script", "write_file"}:
@@ -1099,6 +1115,10 @@ def local_code_runner_available() -> bool:
     return not is_replit_runtime() and os.getenv("RUN_LOCAL_CODE", "false").lower() == "true"
 
 
+def local_engine_tools_available() -> bool:
+    return not is_replit_runtime() and os.getenv("RUN_LOCAL_3D_ENGINE_TOOLS", "false").lower() == "true"
+
+
 def get_settings(local_allowed: bool, provider_settings_allowed: bool) -> dict[str, Any]:
     provider = os.getenv("AGENT_PROVIDER", "deepseek")
     if provider not in MODEL_OPTIONS:
@@ -1129,6 +1149,7 @@ def get_settings(local_allowed: bool, provider_settings_allowed: bool) -> dict[s
         "hasOpenrouterKey": bool(secret_from_vault("OPENROUTER_API_KEY")),
         "codeRunnerEnabled": local_code_runner_available(),
         "appPreviewsEnabled": local_allowed and local_app_previews_enabled(),
+        "engineToolsEnabled": local_allowed and local_engine_tools_available(),
         **search_settings(secret_from_vault),
         "chromiumAvailable": chromium_available(),
     }
@@ -1266,6 +1287,7 @@ class SettingsInput(BaseModel):
     openrouterApiKey: str | None = Field(default=None, max_length=1000)
     codeRunnerEnabled: bool = False
     appPreviewsEnabled: bool = False
+    engineToolsEnabled: bool = False
 
 
 class ModelSelectionInput(BaseModel):
@@ -1985,6 +2007,54 @@ def workspace_action_requiring_approval(
             {"command": command, "cwd": "."},
             f"Run local terminal command: {command}",
         )
+    if tool_name == "run_blender_automation":
+        if is_replit_runtime() or not local_engine_tools_available():
+            raise PermissionError(
+                "Blender automation is disabled. Enable local Blender and Unreal tools in Preferences in a localhost copy."
+            )
+        script_content = arguments.get("script_content")
+        blend_filepath = arguments.get("blend_filepath")
+        render_output_path = arguments.get("render_output_path")
+        if blend_filepath is not None and not isinstance(blend_filepath, str):
+            raise PermissionError("blend_filepath must be a workspace-relative string.")
+        if render_output_path is not None and not isinstance(render_output_path, str):
+            raise PermissionError("render_output_path must be a workspace-relative string.")
+        blend_filepath = blend_filepath.strip() if isinstance(blend_filepath, str) else None
+        render_output_path = render_output_path.strip() if isinstance(render_output_path, str) else None
+        validated = validate_blender_request(
+            WORKSPACE,
+            script_content,
+            blend_filepath or None,
+            render_output_path or None,
+        )
+        payload = {"script_content": script_content, **validated}
+        targets = []
+        if validated["blend_filepath"]:
+            targets.append(f"project {validated['blend_filepath']}")
+        if validated["render_output_path"]:
+            targets.append(f"render output {validated['render_output_path']}")
+        target_summary = f" · {' · '.join(targets)}" if targets else ""
+        return (
+            "blender_automation",
+            payload,
+            f"Run Blender Python automation with normal local-user permissions{target_summary}",
+        )
+    if tool_name == "send_engine_remote_command":
+        if is_replit_runtime() or not local_engine_tools_available():
+            raise PermissionError(
+                "Local engine commands are disabled. Enable local Blender and Unreal tools in Preferences in a localhost copy."
+            )
+        validated = validate_engine_remote_request(
+            str(arguments.get("engine", "")),
+            str(arguments.get("endpoint_url", "")),
+            arguments.get("payload"),
+        )
+        engine = validated["engine"]
+        return (
+            "engine_remote_command",
+            validated,
+            f"Send approved {engine} command to {validated['endpoint_url']}",
+        )
     if tool_name == "delete_workspace_file":
         relative_path = str(arguments.get("path", ""))
         path = safe_workspace_path(relative_path)
@@ -2050,6 +2120,22 @@ def workspace_action_requiring_approval(
     return None
 
 
+def workspace_approval_details(tool_name: str, arguments: dict[str, Any]) -> str | None:
+    if tool_name == "run_blender_automation":
+        return str(arguments.get("script_content", ""))
+    if tool_name == "send_engine_remote_command":
+        return json.dumps(
+            {
+                "engine": arguments.get("engine"),
+                "endpoint_url": arguments.get("endpoint_url"),
+                "payload": arguments.get("payload"),
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+    return None
+
+
 def apply_approved_workspace_action(action: str, payload: dict[str, Any]) -> str:
     if action == "elevated_command":
         command = validate_elevated_command(str(payload.get("command", "")))
@@ -2100,6 +2186,7 @@ def create_pending_approval(
     payload: dict[str, Any],
     summary: str,
     messages: list[dict[str, Any]],
+    details: str | None = None,
 ) -> str:
     approval_id = str(uuid.uuid4())
     db_run(
@@ -2109,12 +2196,13 @@ def create_pending_approval(
     )
     db_run(
         "UPDATE tasks SET status='awaiting_approval',current_step=?,pending_approval_id=?,"
-        "pending_approval_kind=?,approval_summary=?,messages_json=?,updated_at=? WHERE id=?",
+        "pending_approval_kind=?,approval_summary=?,pending_approval_details=?,messages_json=?,updated_at=? WHERE id=?",
         (
             "Waiting for your approval",
             approval_id,
             action,
             summary,
+            details,
             json.dumps(messages, ensure_ascii=False),
             utc_now(),
             task_id,
@@ -2323,6 +2411,15 @@ async def execute_tool(
             "error": "This command was not run. It must pause for exact-command approval in the task UI.",
             "approvalRequired": True,
         })
+    if name in {"run_blender_automation", "send_engine_remote_command"}:
+        if is_replit_runtime() or not local_engine_tools_available():
+            return json.dumps({
+                "error": "Local Blender and Unreal tools are disabled. Enable them in Preferences in a localhost copy."
+            })
+        return json.dumps({
+            "error": "This action was not run. It must pause for explicit task UI approval.",
+            "approvalRequired": True,
+        })
     return json.dumps({"error": f"Unknown tool: {name}"})
 
 
@@ -2351,6 +2448,8 @@ TOOLS = [
     {"type": "function", "function": {"name": "delegate_to_specialist", "description": "Ask a focused child worker to complete an independent subtask, then return its result.", "parameters": {"type": "object", "properties": {"task": {"type": "string"}}, "required": ["task"]}}},
     {"type": "function", "function": {"name": "run_command", "description": "When enabled on a local copy, run one read-only workspace command such as pwd, ls path, cat file.txt, head -n 20 file.txt, or tail -n 20 file.txt. Shell operators, arbitrary scripts, writes, deletes, system paths, and destructive commands are rejected. The subprocess uses workspace/ as cwd and has a 30-second timeout.", "parameters": {"type": "object", "properties": {"command": {"type": "string", "maxLength": 4000}}, "required": ["command"]}}},
     {"type": "function", "function": {"name": "run_terminal_command", "description": "Request one local terminal command, such as npm install, python -m pytest, or a workspace script. This tool is available only in a local exported copy when the user enables “Allow local terminal commands after approval”. It never runs immediately: every exact command pauses for explicit UI approval, then runs without elevation, with workspace/ as cwd, a cleaned environment, and a 30-second timeout. Shells, inline interpreter code, chaining, redirection, and known destructive or administrative commands are blocked. Do not use it to start long-running servers; use launch_workspace_app for previews.", "parameters": {"type": "object", "properties": {"command": {"type": "string", "maxLength": 4000, "description": "One exact command on one line; no shell operators or chained commands."}, "cwd": {"type": "string", "default": ".", "description": "Must be the workspace root (.)."}}, "required": ["command"]}}},
+    {"type": "function", "function": {"name": "run_blender_automation", "description": "Prepare one Blender bpy automation run. Available only in a local exported copy when the user enables local Blender and Unreal tools. Every generated script is shown in the approval UI and must be approved before it runs with normal local-user permissions; this is not a filesystem sandbox. The script is limited to 64 KB, paths must stay inside workspace/, Blender runs in background with embedded .blend auto-execution disabled, and the process has a 10-minute timeout. Returns stdout, stderr/error trace, status, and rendered output paths.", "parameters": {"type": "object", "properties": {"script_content": {"type": "string", "maxLength": 64000, "description": "The exact Python script using Blender's bpy API; shown to the user before execution."}, "blend_filepath": {"type": "string", "description": "Optional existing .blend file path relative to workspace/."}, "render_output_path": {"type": "string", "description": "Optional new PNG, JPG, EXR, TIF, or TIFF path relative to workspace/. Existing render files are not overwritten."}}, "required": ["script_content"]}}},
+    {"type": "function", "function": {"name": "send_engine_remote_command", "description": "Prepare one JSON command for a local Blender or Unreal Engine listener. Only localhost HTTP or WebSocket endpoints are allowed. The exact endpoint and payload are shown in the approval UI and are never sent until the user approves. Requests are limited to 32 KB and 12 seconds; HTTP redirects are not followed.", "parameters": {"type": "object", "properties": {"engine": {"type": "string", "enum": ["blender", "unreal"]}, "endpoint_url": {"type": "string", "maxLength": 2000, "description": "A local listener URL, such as http://localhost:30010/remote/object/call or ws://127.0.0.1:8765."}, "payload": {"type": "object", "additionalProperties": true}}, "required": ["engine", "endpoint_url", "payload"]}}},
 ]
 
 

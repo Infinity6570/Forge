@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import json
 import re
 import shlex
 import shutil
@@ -8,11 +9,30 @@ import signal
 import subprocess
 import tempfile
 from pathlib import Path
+from urllib.parse import urlsplit
 from typing import Any
+
+import httpx
+from websockets.asyncio.client import connect as websocket_connect
 
 MAX_TERMINAL_COMMAND_LENGTH = 4_000
 MAX_TERMINAL_OUTPUT_CHARS = 12_000
 TERMINAL_TIMEOUT_SECONDS = 30
+MAX_BLENDER_SCRIPT_BYTES = 64_000
+BLENDER_TIMEOUT_SECONDS = 600
+MAX_ENGINE_PAYLOAD_BYTES = 32_000
+ENGINE_REQUEST_TIMEOUT_SECONDS = 12
+MAX_ENGINE_RESPONSE_CHARS = 12_000
+RENDER_SUFFIXES = {".png", ".jpg", ".jpeg", ".exr", ".tif", ".tiff"}
+PRIVATE_ENGINE_PATHS = {
+    ".agent-packages",
+    "assistant.db",
+    "logs",
+    "notes",
+    "preview-runtime",
+    "uploads",
+    "vault",
+}
 
 _BLOCKED_PATTERNS = (
     r"\brmdir\b",
@@ -217,4 +237,334 @@ def run_approved_terminal_command(
                 "stdout": "",
                 "stderr": str(error)[-4_000:],
             }
+
+
+def _workspace_relative_path(
+    workspace: Path,
+    relative_path: str,
+    *,
+    allow_missing: bool,
+) -> Path:
+    if not isinstance(relative_path, str) or not relative_path.strip() or "\x00" in relative_path:
+        raise PermissionError("Provide a workspace-relative path.")
+    normalized = relative_path.replace("\\", "/")
+    segments = normalized.split("/")
+    if normalized.startswith("/") or re.match(r"^[A-Za-z]:", normalized) or any(
+        segment in {"", ".", ".."} for segment in segments
+    ):
+        raise PermissionError("Absolute paths, traversal, and empty path segments are blocked.")
+    if any(segment.startswith(".") or segment.casefold() in PRIVATE_ENGINE_PATHS for segment in segments):
+        raise PermissionError("Hidden or private assistant paths are not available to engine tools.")
+
+    root = workspace.resolve()
+    candidate = root.joinpath(*segments)
+    current = root
+    for segment in segments:
+        current = current / segment
+        if current.is_symlink():
+            raise PermissionError("Symbolic links are not available to engine tools.")
+    resolved = candidate.resolve(strict=False)
+    if not resolved.is_relative_to(root):
+        raise PermissionError("Engine paths must stay inside workspace/.")
+    if not allow_missing and not resolved.is_file():
+        raise PermissionError("The selected Blender project must be an existing workspace file.")
+    return resolved
+
+
+def validate_blender_request(
+    workspace: Path,
+    script_content: str,
+    blend_filepath: str | None = None,
+    render_output_path: str | None = None,
+) -> dict[str, str | None]:
+    if not isinstance(script_content, str) or not script_content.strip():
+        raise PermissionError("Provide a non-empty Blender Python script.")
+    if len(script_content.encode("utf-8")) > MAX_BLENDER_SCRIPT_BYTES:
+        raise PermissionError("Blender scripts are limited to 64 KB.")
+
+    blend_path: Path | None = None
+    blend_relative: str | None = None
+    if blend_filepath:
+        blend_path = _workspace_relative_path(workspace, blend_filepath, allow_missing=False)
+        if blend_path.suffix.casefold() != ".blend":
+            raise PermissionError("The Blender project path must end in .blend.")
+        blend_relative = blend_path.relative_to(workspace.resolve()).as_posix()
+
+    render_path: Path | None = None
+    render_relative: str | None = None
+    if render_output_path:
+        render_path = _workspace_relative_path(workspace, render_output_path, allow_missing=True)
+        if render_path.suffix.casefold() not in RENDER_SUFFIXES:
+            raise PermissionError("Choose a PNG, JPG, EXR, TIF, or TIFF render output path.")
+        if render_path.exists():
+            raise PermissionError("That render output already exists. Choose a new path to avoid overwriting it.")
+        render_relative = render_path.relative_to(workspace.resolve()).as_posix()
+
+    return {"blend_filepath": blend_relative, "render_output_path": render_relative}
+
+
+def _engine_child_environment(temporary_home: Path) -> dict[str, str]:
+    environment = {
+        "PATH": os.environ.get("PATH", os.defpath),
+        "HOME": str(temporary_home),
+        "USERPROFILE": str(temporary_home),
+        "TMP": str(temporary_home),
+        "TEMP": str(temporary_home),
+        "TMPDIR": str(temporary_home),
+        "LANG": os.environ.get("LANG", "C.UTF-8"),
+        "LC_ALL": os.environ.get("LC_ALL", "C.UTF-8"),
+        "PYTHONIOENCODING": "utf-8",
+        "PYTHONUNBUFFERED": "1",
+        "BLENDER_USER_CONFIG": str(temporary_home / "blender-config"),
+        "BLENDER_USER_SCRIPTS": str(temporary_home / "blender-scripts"),
+        "BLENDER_USER_DATAFILES": str(temporary_home / "blender-data"),
+    }
+    if os.name == "nt":
+        for name in ("SYSTEMROOT", "WINDIR", "COMSPEC", "PATHEXT"):
+            value = os.environ.get(name)
+            if value:
+                environment[name] = value
+    return environment
+
+
+def run_blender_automation(
+    workspace: Path,
+    script_content: str,
+    blend_filepath: str | None = None,
+    render_output_path: str | None = None,
+) -> dict[str, Any]:
+    """Run an explicitly approved Blender script from a local workspace."""
+    validated = validate_blender_request(
+        workspace, script_content, blend_filepath, render_output_path
+    )
+    root = workspace.resolve()
+    blender = shutil.which("blender")
+    if not blender:
+        return {
+            "ok": False,
+            "returnCode": -1,
+            "timedOut": False,
+            "error": "Blender CLI was not found on PATH. Install Blender locally before enabling this tool.",
+            "stdout": "",
+            "stderr": "",
+            "renderedOutputPaths": [],
+        }
+
+    blend = validated["blend_filepath"]
+    render = validated["render_output_path"]
+    blend_path = _workspace_relative_path(root, blend, allow_missing=False) if blend else None
+    render_path = _workspace_relative_path(root, render, allow_missing=True) if render else None
+    if render_path:
+        render_path.parent.mkdir(parents=True, exist_ok=True)
+        if render_path.exists():
+            raise PermissionError("The approved render output now exists; refusing to overwrite it.")
+
+    with tempfile.TemporaryDirectory(prefix="forge-blender-") as temporary:
+        temporary_root = Path(temporary)
+        script_path = temporary_root / "temp_blender_task.py"
+        script_path.write_text(script_content, encoding="utf-8")
+        argv = [blender]
+        if blend_path:
+            argv.append(str(blend_path))
+        argv.extend(["--background", "--disable-autoexec", "--python-exit-code", "1"])
+        if render_path:
+            argv.extend(["--render-output", str(render_path)])
+        argv.extend(["--python", str(script_path)])
+        environment = _engine_child_environment(temporary_root / "home")
+        Path(environment["HOME"]).mkdir(parents=True, exist_ok=True)
+        process_options: dict[str, Any] = {}
+        if os.name == "nt":
+            process_options["creationflags"] = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+        else:
+            process_options["start_new_session"] = True
+        try:
+            with tempfile.TemporaryFile() as stdout_file, tempfile.TemporaryFile() as stderr_file:
+                process = subprocess.Popen(
+                    argv,
+                    cwd=root,
+                    shell=False,
+                    env=environment,
+                    stdout=stdout_file,
+                    stderr=stderr_file,
+                    **process_options,
+                )
+                timed_out = False
+                try:
+                    process.wait(timeout=BLENDER_TIMEOUT_SECONDS)
+                except subprocess.TimeoutExpired:
+                    timed_out = True
+                    if os.name == "nt":
+                        taskkill = shutil.which("taskkill.exe") or shutil.which("taskkill")
+                        if taskkill:
+                            try:
+                                subprocess.run(
+                                    [taskkill, "/F", "/T", "/PID", str(process.pid)],
+                                    shell=False,
+                                    capture_output=True,
+                                    timeout=5,
+                                    env=environment,
+                                    check=False,
+                                )
+                            except (OSError, subprocess.SubprocessError):
+                                process.kill()
+                        else:
+                            process.kill()
+                    else:
+                        try:
+                            os.killpg(process.pid, signal.SIGKILL)
+                        except (ProcessLookupError, PermissionError):
+                            process.kill()
+                    try:
+                        process.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        process.kill()
+                        process.wait()
+
+                def tail_text(file_obj, limit: int) -> str:
+                    file_obj.seek(0, os.SEEK_END)
+                    size = file_obj.tell()
+                    file_obj.seek(max(0, size - limit))
+                    return file_obj.read().decode("utf-8", errors="replace")
+
+                stdout = tail_text(stdout_file, MAX_TERMINAL_OUTPUT_CHARS)
+                stderr = tail_text(stderr_file, 4_000)
+
+        except OSError as error:
+            return {
+                "ok": False,
+                "returnCode": -1,
+                "timedOut": False,
+                "error": str(error)[-1_000:],
+                "stdout": "",
+                "stderr": "",
+                "renderedOutputPaths": [],
+            }
+
+    rendered_paths: list[str] = []
+    if render_path:
+        if render_path.is_file():
+            rendered_paths.append(render_path.relative_to(root).as_posix())
+        elif render_path.parent.is_dir():
+            prefix = render_path.stem.casefold()
+            rendered_paths.extend(
+                item.relative_to(root).as_posix()
+                for item in sorted(render_path.parent.iterdir(), key=lambda entry: entry.name.casefold())
+                if item.is_file() and item.name.casefold().startswith(prefix)
+            )
+    return {
+        "ok": not timed_out and process.returncode == 0,
+        "returnCode": -1 if timed_out else int(process.returncode or 0),
+        "timedOut": timed_out,
+        "stdout": stdout,
+        "stderr": stderr,
+        "errorTrace": stderr if process.returncode != 0 or timed_out else "",
+        "renderOutputPath": render,
+        "renderedOutputPaths": rendered_paths,
+    }
+
+
+def validate_engine_endpoint(endpoint_url: str) -> str:
+    if not isinstance(endpoint_url, str) or len(endpoint_url) > 2_000:
+        raise PermissionError("Provide a valid local engine listener URL.")
+    try:
+        parsed = urlsplit(endpoint_url.strip())
+        port = parsed.port
+    except ValueError as error:
+        raise PermissionError("The engine listener URL has an invalid port.") from error
+    if (
+        parsed.scheme not in {"http", "ws"}
+        or parsed.hostname not in {"localhost", "127.0.0.1", "::1"}
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.fragment
+        or (port is not None and not 1 <= port <= 65535)
+    ):
+        raise PermissionError("Engine commands may only target an HTTP or WebSocket listener on localhost.")
+    return endpoint_url.strip()
+
+
+def validate_engine_remote_request(
+    engine: str,
+    endpoint_url: str,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    if engine not in {"unreal", "blender"}:
+        raise PermissionError("Choose either the unreal or blender engine.")
+    url = validate_engine_endpoint(endpoint_url)
+    if not isinstance(payload, dict):
+        raise PermissionError("Engine command payload must be a JSON object.")
+    try:
+        encoded = json.dumps(payload, ensure_ascii=False, allow_nan=False)
+    except (TypeError, ValueError) as error:
+        raise PermissionError("Engine command payload must contain valid JSON values.") from error
+    if len(encoded.encode("utf-8")) > MAX_ENGINE_PAYLOAD_BYTES:
+        raise PermissionError("Engine command payloads are limited to 32 KB.")
+    return {"engine": engine, "endpoint_url": url, "payload": payload}
+
+
+async def send_engine_remote_command(
+    engine: str,
+    endpoint_url: str,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    """Send one approved JSON command to a local Unreal/Blender engine listener."""
+    request = validate_engine_remote_request(engine, endpoint_url, payload)
+    url = str(request["endpoint_url"])
+    encoded = json.dumps(request["payload"], ensure_ascii=False, allow_nan=False)
+
+    if url.startswith("ws://"):
+        try:
+            async with websocket_connect(
+                url,
+                open_timeout=4,
+                close_timeout=2,
+                max_size=MAX_ENGINE_RESPONSE_CHARS * 4,
+                proxy=None,
+            ) as connection:
+                await connection.send(encoded)
+                reply = await asyncio.wait_for(connection.recv(), timeout=ENGINE_REQUEST_TIMEOUT_SECONDS)
+        except Exception as error:
+            return {"ok": False, "engine": engine, "transport": "websocket", "error": str(error)[:1_000]}
+        content = reply if isinstance(reply, str) else reply.decode("utf-8", errors="replace")
+        try:
+            response: Any = json.loads(content)
+        except json.JSONDecodeError:
+            response = content[:MAX_ENGINE_RESPONSE_CHARS]
+        return {"ok": True, "engine": engine, "transport": "websocket", "response": response}
+
+    try:
+        async with httpx.AsyncClient(
+            timeout=ENGINE_REQUEST_TIMEOUT_SECONDS,
+            trust_env=False,
+            follow_redirects=False,
+        ) as client:
+            response = await client.post(
+                url,
+                json=payload,
+                headers={"Accept": "application/json"},
+            )
+        body: Any
+        try:
+            body = response.json()
+        except ValueError:
+            body = response.text[:MAX_ENGINE_RESPONSE_CHARS]
+        if isinstance(body, str):
+            body = body[:MAX_ENGINE_RESPONSE_CHARS]
+        else:
+            body = json.loads(
+                json.dumps(body, ensure_ascii=False, default=str)[:MAX_ENGINE_RESPONSE_CHARS]
+            ) if len(json.dumps(body, ensure_ascii=False, default=str)) <= MAX_ENGINE_RESPONSE_CHARS else {
+                "truncated": True,
+                "preview": json.dumps(body, ensure_ascii=False, default=str)[:MAX_ENGINE_RESPONSE_CHARS],
+            }
+        return {
+            "ok": response.is_success,
+            "engine": engine,
+            "transport": "http",
+            "statusCode": response.status_code,
+            "response": body,
+            **({"error": "The local engine returned an HTTP error."} if not response.is_success else {}),
+        }
+    except httpx.HTTPError as error:
+        return {"ok": False, "engine": engine, "transport": "http", "error": str(error)[:1_000]}
 
