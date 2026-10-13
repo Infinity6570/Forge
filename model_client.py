@@ -5,6 +5,7 @@ import json
 import re
 import time
 import uuid
+from copy import deepcopy
 from types import SimpleNamespace
 from typing import Any
 
@@ -12,6 +13,9 @@ import anthropic
 from openai.types.chat import ChatCompletion
 
 from llm_protocol import to_wire
+
+THINKING_BINDING_BETA = "thinking-binding-controls-2026-08-01"
+THINKING_BLOCK_TYPES = {"thinking", "redacted_thinking"}
 
 
 def _get(value: Any, key: str, default: Any = None) -> Any:
@@ -145,6 +149,7 @@ def _anthropic_request(kwargs: dict[str, Any]) -> dict[str, Any]:
         "messages": messages,
         "max_tokens": max(8192, int(requested_max_tokens)),
         "cache_control": {"type": "ephemeral"},
+        "extra_headers": {"anthropic-beta": THINKING_BINDING_BETA},
     }
     if system:
         request["system"] = [{
@@ -175,6 +180,10 @@ def _anthropic_request(kwargs: dict[str, Any]) -> dict[str, Any]:
         if major >= 5 or (major == 4 and minor >= 7):
             # Adaptive thinking is the supported mode for Claude 4.7+ and 5.x.
             thinking = {"type": "adaptive"}
+            thinking["block_binding"] = {"prefix_mismatch_behavior": "drop_block"}
+            if major >= 5:
+                # This is a provider-authored summary, not raw chain-of-thought.
+                thinking["display"] = "summarized"
         elif major == 4 and minor >= 5:
             # Earlier Claude 4 models use a stable manual budget.
             thinking = {"type": "enabled", "budget_tokens": 4096}
@@ -189,7 +198,7 @@ def _anthropic_request(kwargs: dict[str, Any]) -> dict[str, Any]:
     return request
 
 
-def _chat_completion(response: Any) -> ChatCompletion:
+def _chat_completion(response: Any, *, show_thinking_summary: bool = False) -> ChatCompletion:
     raw_response = to_wire(response)
     content_parts: list[str] = []
     tool_calls: list[dict[str, Any]] = []
@@ -220,6 +229,8 @@ def _chat_completion(response: Any) -> ChatCompletion:
     raw_usage = raw_response.get("usage") if isinstance(raw_response, dict) else None
     if isinstance(raw_usage, dict):
         message["anthropic_usage"] = raw_usage
+    if show_thinking_summary:
+        message["anthropic_thinking_summary"] = True
     return ChatCompletion(
         id=_get(response, "id") or f"chatcmpl_{uuid.uuid4().hex}",
         choices=[{
@@ -233,6 +244,41 @@ def _chat_completion(response: Any) -> ChatCompletion:
     )
 
 
+def _is_invalid_thinking_signature(error: Exception) -> bool:
+    if getattr(error, "status_code", None) != 400:
+        return False
+    normalized = re.sub(r"[`'\".]", "", str(error).lower())
+    return "invalid signature in thinking block" in normalized
+
+
+def _without_historical_thinking(request: dict[str, Any]) -> tuple[dict[str, Any], bool]:
+    """Strip thought blocks from an isolated retry copy; never mutate saved turns."""
+    retry_request = deepcopy(request)
+    clean_messages: list[dict[str, Any]] = []
+    removed = False
+    for message in retry_request.get("messages") or []:
+        content = message.get("content")
+        if not isinstance(content, list):
+            clean_messages.append(message)
+            continue
+        filtered = [
+            block for block in content
+            if not (
+                isinstance(block, dict)
+                and block.get("type") in THINKING_BLOCK_TYPES
+            )
+        ]
+        if len(filtered) != len(content):
+            removed = True
+        if filtered or message.get("role") != "assistant":
+            message["content"] = filtered
+            clean_messages.append(message)
+        elif not filtered:
+            removed = True
+    retry_request["messages"] = clean_messages
+    return retry_request, removed
+
+
 class _AnthropicCompletions:
     def __init__(self, client: "AnthropicChatClient"):
         self._client = client
@@ -243,11 +289,37 @@ class _AnthropicCompletions:
         return await self._complete(kwargs)
 
     async def _complete(self, kwargs: dict[str, Any]) -> ChatCompletion:
-        response = await self._client._sdk.messages.create(**_anthropic_request(kwargs))
-        return _chat_completion(response)
+        request = _anthropic_request(kwargs)
+        try:
+            response = await self._client._sdk.messages.create(**request)
+        except Exception as error:
+            if not _is_invalid_thinking_signature(error):
+                raise
+            retry_request, stripped = _without_historical_thinking(request)
+            if not stripped:
+                raise
+            response = await self._client._sdk.messages.create(**retry_request)
+        show_summary = (request.get("thinking") or {}).get("display") == "summarized"
+        return _chat_completion(response, show_thinking_summary=show_summary)
 
     async def _stream(self, kwargs: dict[str, Any]):
         request = _anthropic_request(kwargs)
+        emitted = False
+        try:
+            async for chunk in self._stream_request(request):
+                emitted = True
+                yield chunk
+        except Exception as error:
+            # Do not replay a stream after text/tool deltas have escaped.
+            if emitted or not _is_invalid_thinking_signature(error):
+                raise
+            retry_request, stripped = _without_historical_thinking(request)
+            if not stripped:
+                raise
+            async for chunk in self._stream_request(retry_request):
+                yield chunk
+
+    async def _stream_request(self, request: dict[str, Any]):
         stream_id = f"chatcmpl_{uuid.uuid4().hex}"
         created = int(time.time())
         final_message: dict[str, Any] | None = None
@@ -338,6 +410,8 @@ class _AnthropicCompletions:
                 metadata["anthropic_content_blocks"] = blocks
             if isinstance(usage, dict):
                 metadata["anthropic_usage"] = usage
+            if (request.get("thinking") or {}).get("display") == "summarized":
+                metadata["anthropic_thinking_summary"] = True
             if metadata:
                 yield {
                     "id": stream_id,

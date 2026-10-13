@@ -1588,6 +1588,23 @@ async def create_completion_with_fallback(
         completion = await collect_completion(response, on_text)
         if provider == "anthropic" and completion.choices:
             assistant_message = completion.choices[0].message
+            if getattr(assistant_message, "anthropic_thinking_summary", False):
+                blocks = getattr(assistant_message, "anthropic_content_blocks", [])
+                summary = "\n".join(
+                    block.get("thinking", "").strip()
+                    for block in blocks
+                    if isinstance(block, dict)
+                    and block.get("type") == "thinking"
+                    and isinstance(block.get("thinking"), str)
+                    and block.get("thinking", "").strip()
+                )
+                if summary:
+                    log_task(
+                        task_id,
+                        f"Claude thinking summary:\n{summary}",
+                        "agent",
+                        update_step=False,
+                    )
             usage = getattr(assistant_message, "anthropic_usage", None)
             if isinstance(usage, dict):
                 cache_read = int(usage.get("cache_read_input_tokens") or 0)

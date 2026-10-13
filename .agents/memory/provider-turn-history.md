@@ -7,7 +7,13 @@ Treat provider assistant turns as opaque protocol data, not a list of fields to 
 
 **Why:** The user repeatedly reported Gemini HTTP 400 errors caused by stripped thought signatures. Signatures carry model context; projecting a turn down to function name, arguments, and ID destroys required metadata.
 
-**How to apply:** Apply the same preservation rule to streamed turns and paused approval history. Keep provider reasoning and cryptographic signatures internal rather than rendering them as chat text or diagnostic logs.
+**How to apply:** Apply the same preservation rule to streamed turns and paused approval history. Keep raw provider reasoning and cryptographic signatures internal rather than rendering them as chat text or diagnostic logs.
+
+Only surface Anthropic reasoning when the API explicitly returns `display: "summarized"` output, and keep that provider-authored summary separate from the final answer. Never expose raw reasoning deltas.
+
+**Why:** The user requested visible thinking output, while Anthropic documents summarized display as a user-facing summary rather than raw chain-of-thought.
+
+**How to apply:** Gate rendering on the request's summarized-display mode and show the summary in activity UI, not as reconstructed assistant text.
 
 For Gemini only, use Google's documented `skip_thought_signature_validator` fallback when a function-call signature is absent. Never replace a valid signature with the fallback.
 

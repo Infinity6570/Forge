@@ -4,7 +4,11 @@ from unittest.mock import patch
 
 import main
 from llm_protocol import collect_completion
-from model_client import AnthropicChatClient, _anthropic_messages, _anthropic_request
+from model_client import (
+    AnthropicChatClient,
+    _anthropic_messages,
+    _anthropic_request,
+)
 from openai.types.chat import ChatCompletion
 
 
@@ -41,6 +45,10 @@ class AnthropicPromptCacheTests(unittest.IsolatedAsyncioTestCase):
         })
 
         self.assertEqual(request["cache_control"], {"type": "ephemeral"})
+        self.assertEqual(
+            request["extra_headers"],
+            {"anthropic-beta": "thinking-binding-controls-2026-08-01"},
+        )
         self.assertEqual(request["system"], [{
             "type": "text",
             "text": "Stable assistant instructions",
@@ -49,7 +57,11 @@ class AnthropicPromptCacheTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(request["tools"][-1]["name"], "read_file")
         self.assertEqual(request["tools"][-1]["cache_control"], {"type": "ephemeral"})
         self.assertEqual(len(request["tools"]), 2)
-        self.assertEqual(request["thinking"], {"type": "adaptive"})
+        self.assertEqual(request["thinking"], {
+            "type": "adaptive",
+            "display": "summarized",
+            "block_binding": {"prefix_mismatch_behavior": "drop_block"},
+        })
         self.assertNotIn("temperature", request)
         self.assertEqual(request["max_tokens"], 8192)
 
@@ -202,6 +214,208 @@ class AnthropicPromptCacheTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(log_task.call_args.args[0], "task-test")
         self.assertIn("cache_read_input_tokens=42", log_task.call_args.args[1])
         self.assertIn("cache_creation_input_tokens=11", log_task.call_args.args[1])
+        self.assertFalse(log_task.call_args.kwargs["update_step"])
+
+    async def test_signature_mismatch_retries_with_a_copy_without_thinking_blocks(self):
+        historical_blocks = [
+            {"type": "thinking", "thinking": "summary", "signature": "bad-signature"},
+            {"type": "text", "text": "Searching"},
+            {"type": "tool_use", "id": "toolu_1", "name": "read_file", "input": {}},
+            {"type": "redacted_thinking", "data": "opaque"},
+        ]
+        original_messages = [
+            {"role": "system", "content": "Stable system instructions"},
+            {"role": "user", "content": "Inspect a file"},
+            {
+                "role": "assistant",
+                "content": "Searching",
+                "anthropic_content_blocks": historical_blocks,
+                "tool_calls": [{
+                    "id": "toolu_1",
+                    "type": "function",
+                    "function": {"name": "read_file", "arguments": "{}"},
+                }],
+            },
+            {"role": "tool", "tool_call_id": "toolu_1", "content": "file text"},
+        ]
+
+        class SignatureMismatch(Exception):
+            status_code = 400
+
+        class FakeMessages:
+            def __init__(self):
+                self.requests = []
+
+            async def create(self, **request):
+                self.requests.append(request)
+                if len(self.requests) == 1:
+                    raise SignatureMismatch(
+                        "400 Invalid signature in thinking block: prefix mismatch"
+                    )
+                return {
+                    "id": "msg_retry",
+                    "model": "claude-sonnet-5-5",
+                    "stop_reason": "end_turn",
+                    "content": [{"type": "text", "text": "Done"}],
+                    "usage": {},
+                }
+
+        class FakeSdk:
+            def __init__(self):
+                self.messages = FakeMessages()
+
+        sdk = FakeSdk()
+        client = AnthropicChatClient("test-key", sdk_client=sdk)
+        result = await client.chat.completions.create(
+            model="claude-sonnet-5-5",
+            messages=original_messages,
+            tools=[],
+        )
+
+        self.assertEqual(result.choices[0].message.content, "Done")
+        self.assertEqual(len(sdk.messages.requests), 2)
+        first_blocks = sdk.messages.requests[0]["messages"][1]["content"]
+        retry_blocks = sdk.messages.requests[1]["messages"][1]["content"]
+        self.assertEqual(first_blocks, historical_blocks)
+        self.assertEqual(
+            [block["type"] for block in retry_blocks],
+            ["text", "tool_use"],
+        )
+        self.assertEqual(original_messages[2]["anthropic_content_blocks"], historical_blocks)
+        self.assertEqual(
+            sdk.messages.requests[1]["system"],
+            sdk.messages.requests[0]["system"],
+        )
+        self.assertEqual(
+            sdk.messages.requests[1]["extra_headers"],
+            {"anthropic-beta": "thinking-binding-controls-2026-08-01"},
+        )
+
+    async def test_stream_signature_mismatch_retries_before_any_delta(self):
+        class SignatureMismatch(Exception):
+            status_code = 400
+
+        class Stream:
+            def __init__(self, fail=False):
+                self.fail = fail
+
+            async def __aenter__(self):
+                if self.fail:
+                    raise SignatureMismatch(
+                        "400 Invalid signature in thinking block: prefix mismatch"
+                    )
+                return self
+
+            async def __aexit__(self, *_):
+                return None
+
+            def __aiter__(self):
+                async def events():
+                    yield {
+                        "type": "content_block_delta",
+                        "index": 0,
+                        "delta": {"type": "text_delta", "text": "recovered"},
+                    }
+                    yield {"type": "message_delta", "delta": {"stop_reason": "end_turn"}}
+                return events()
+
+            async def get_final_message(self):
+                return {
+                    "id": "msg_retry",
+                    "model": "claude-sonnet-5-5",
+                    "content": [{"type": "text", "text": "recovered"}],
+                    "usage": {},
+                }
+
+        class FakeMessages:
+            def __init__(self):
+                self.requests = []
+
+            def stream(self, **request):
+                self.requests.append(request)
+                return Stream(fail=len(self.requests) == 1)
+
+        class FakeSdk:
+            def __init__(self):
+                self.messages = FakeMessages()
+
+        original_messages = [
+            {"role": "system", "content": "Stable system instructions"},
+            {"role": "user", "content": "Continue"},
+            {
+                "role": "assistant",
+                "content": "old",
+                "anthropic_content_blocks": [
+                    {"type": "thinking", "thinking": "summary", "signature": "bad"},
+                    {"type": "text", "text": "old"},
+                ],
+            },
+        ]
+        sdk = FakeSdk()
+        client = AnthropicChatClient("test-key", sdk_client=sdk)
+        visible = []
+        result = await collect_completion(
+            await client.chat.completions.create(
+                model="claude-sonnet-5-5",
+                messages=original_messages,
+                tools=[],
+                stream=True,
+            ),
+            lambda text: _append_visible(visible, text),
+        )
+
+        self.assertEqual(result.choices[0].message.content, "recovered")
+        self.assertEqual(visible, ["recovered"])
+        self.assertEqual(len(sdk.messages.requests), 2)
+        self.assertEqual(
+            [block["type"] for block in sdk.messages.requests[1]["messages"][1]["content"]],
+            ["text"],
+        )
+        self.assertEqual(
+            original_messages[2]["anthropic_content_blocks"][0]["type"],
+            "thinking",
+        )
+
+    async def test_provider_summarized_thinking_is_logged_as_visible_activity(self):
+        response = ChatCompletion.model_validate({
+            "id": "chatcmpl_test",
+            "object": "chat.completion",
+            "created": 1,
+            "model": "claude-opus-5-5",
+            "choices": [{
+                "index": 0,
+                "finish_reason": "stop",
+                "message": {
+                    "role": "assistant",
+                    "content": "Final answer",
+                    "anthropic_thinking_summary": True,
+                    "anthropic_content_blocks": [
+                        {"type": "thinking", "thinking": "I will check the source first.", "signature": "sig"},
+                        {"type": "text", "text": "Final answer"},
+                    ],
+                },
+            }],
+        })
+
+        class FakeCompletions:
+            async def create(self, **_kwargs):
+                return response
+
+        client = SimpleNamespace(chat=SimpleNamespace(completions=FakeCompletions()))
+        with patch.object(main, "log_task") as log_task:
+            await main.create_completion_with_fallback(
+                client,
+                {"model": "claude-opus-5-5", "messages": []},
+                "anthropic",
+                {"model": "claude-opus-5-5"},
+                "",
+                "task-summary",
+            )
+
+        self.assertEqual(log_task.call_args.args[0], "task-summary")
+        self.assertIn("Claude thinking summary:", log_task.call_args.args[1])
+        self.assertIn("I will check the source first.", log_task.call_args.args[1])
+        self.assertEqual(log_task.call_args.args[2], "agent")
         self.assertFalse(log_task.call_args.kwargs["update_step"])
 
 

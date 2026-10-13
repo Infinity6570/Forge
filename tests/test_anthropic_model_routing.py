@@ -134,7 +134,15 @@ class AnthropicProviderRoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(request["tools"][0]["cache_control"], {"type": "ephemeral"})
         self.assertEqual(request["cache_control"], {"type": "ephemeral"})
         self.assertEqual(request["max_tokens"], 8192)
-        self.assertEqual(request["thinking"], {"type": "adaptive"})
+        self.assertEqual(request["thinking"], {
+            "type": "adaptive",
+            "block_binding": {"prefix_mismatch_behavior": "drop_block"},
+            "display": "summarized",
+        })
+        self.assertEqual(
+            request["extra_headers"],
+            {"anthropic-beta": "thinking-binding-controls-2026-08-01"},
+        )
 
     async def test_anthropic_tool_use_response_maps_to_chat_completion(self) -> None:
         response = SimpleNamespace(
