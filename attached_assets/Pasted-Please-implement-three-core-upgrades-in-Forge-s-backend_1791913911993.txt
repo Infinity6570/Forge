@@ -1,0 +1,29 @@
+Please implement three core upgrades in Forge's backend (`model_client.py` / `agent_runner.py` / `agent_tools.py`) and frontend UI:
+
+1. Expose Full, Unabridged Model Thinking (Claude & Gemini):
+   - For Anthropic Claude models:
+     * Enable Extended Thinking in the API call (`client.messages.create` or `/v1/messages` payload):
+       - For Claude 4.7+ / 5.5 models, pass `thinking={"type": "adaptive"}` (with fallback to `thinking={"type": "enabled", "budget_tokens": 4096}` if needed, and ensure `max_tokens` is at least `8192`).
+       - IMPORTANT: Do NOT pass a custom `temperature` parameter when `thinking` is active, as Anthropic rejects requests that combine `temperature` with extended thinking.
+     * In the response/stream parser, iterate through `response.content` blocks:
+       - When `block.type == "thinking"`, extract the full, raw `block.thinking` text without truncating or hiding anything.
+       - Crucial for Multi-Turn Tool Loops: When appending the assistant's turn to `messages` before sending `tool_result`, preserve the exact `thinking` block (including `type`, `thinking`, and `signature`) in the assistant message content list so Claude retains its reasoning state and prompt cache across steps.
+   - For Google Gemini models:
+     * Pass `thinking_config=types.ThinkingConfig(include_thoughts=True)` in `GenerateContentConfig`.
+     * Extract all parts where `getattr(part, "thought", False) == True` in full without truncation.
+   - Frontend UI (Thinking Accordion):
+     * Instead of only showing generic labels like "Reasoning step 1 of 10", automatically render the complete, unredacted `thinking` text inside a scrollable, monospace terminal box under each Reasoning step in the UI so the user can read every word of the model's internal thought process in real time.
+
+2. Implement Anthropic Prompt Caching (90% Token Cost Reduction):
+   - In every Anthropic API request:
+     * Add top-level automatic caching: `cache_control={"type": "ephemeral"}`.
+     * Format the `system` prompt as a list block with cache control:
+       `system=[{"type": "text", "text": STATIC_SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}}]`
+     * Attach `"cache_control": {"type": "ephemeral"}` to the last tool in the `tools` list (`tools[-1]["cache_control"] = {"type": "ephemeral"}`).
+   - Keep the `system` prompt and `tools` list 100% static across turns (do not inject dynamic timestamps into the system string) and keep thinking settings consistent so the cache prefix is never invalidated.
+   - Log and display `cache_read_input_tokens` and `cache_creation_input_tokens` from `response.usage` in the Telemetry UI.
+
+3. Grant Unrestricted Workspace Read/Write & Shell Access:
+   - Remove the restriction returning `{"error": "Safe workspace commands are disabled..."}` and allow shell commands (`subprocess.run` in `./workspace`) and file tools (`write_file`, `create_file`, `delete_file`) to execute immediately without confirmation blocks.
+   - Ensure `tools` are passed on EVERY turn of the agent loop.
+   - Update the system prompt: "You have full autonomous read, write, overwrite, and shell execution privileges in `workspace/`. Never stop to ask 'should I go ahead?'—always create and write all requested code files directly to disk before completing the task."
