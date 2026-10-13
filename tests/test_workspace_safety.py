@@ -22,6 +22,7 @@ class WorkspaceSafetyTests(unittest.IsolatedAsyncioTestCase):
         self.workspace = self.root / "workspace"
         self.workspace.mkdir()
         self.path_patches = [
+            patch.object(main, "PROJECT_DIR", self.root.resolve()),
             patch.object(main, "BASE_DIR", self.workspace.resolve()),
             patch.object(main, "WORKSPACE", self.workspace),
             patch.object(main, "DATABASE", self.workspace / "assistant.db"),
@@ -65,88 +66,62 @@ class WorkspaceSafetyTests(unittest.IsolatedAsyncioTestCase):
             main.safe_workspace_path("outside-link.txt")
         self.assertNotIn("outside-link.txt", main.list_workspace_paths())
 
-    def test_workspace_command_runner_is_read_only_and_confined(self) -> None:
-        result = main.run_workspace_command("cat sample.txt")
+    def test_shell_runner_executes_commands_from_the_project_root(self) -> None:
+        result = main.run_workspace_command(
+            "mkdir -p generated/site && printf 'built' > generated/site/index.html && cat generated/site/index.html"
+        )
         self.assertEqual(result["returnCode"], 0)
-        self.assertEqual(result["stdout"], "alpha\nbeta\ngamma\n")
+        self.assertEqual(result["stdout"], "built")
         self.assertEqual(
-            main.parse_workspace_command("head -n 2 sample.txt"),
-            ("head", "sample.txt", 2, ""),
+            (self.root / "generated/site/index.html").read_text(encoding="utf-8"),
+            "built",
         )
-        self.assertEqual(
-            main.parse_workspace_command('grep -n "beta" sample.txt'),
-            ("grep-n", "sample.txt", 20, "beta"),
-        )
-        matches = main.run_workspace_command('grep -n "a" sample.txt')
-        self.assertEqual(matches["returnCode"], 0)
-        self.assertEqual(matches["stdout"], "1:alpha\n2:beta\n3:gamma")
-        blocked = (
-            "rmdir /s /q workspace",
-            "del /f /s /q *",
-            "format C:",
-            "diskpart",
-            "reg delete HKLM",
-            "powershell Remove-Item -Recurse workspace",
-            "shutdown /s",
-            "cat ../outside.txt",
-            "cat sample.txt && pwd",
-            "python -c print(1)",
-        )
-        for command in blocked:
-            with self.subTest(command=command), self.assertRaises(PermissionError):
-                main.parse_workspace_command(command)
 
-    async def test_read_only_workspace_commands_do_not_require_local_terminal_toggle(self) -> None:
-        with patch.object(main, "local_code_runner_available", return_value=False):
-            raw = await main.execute_tool(
-                "run_command",
-                {"command": "grep beta sample.txt"},
+    async def test_run_command_and_run_terminal_command_execute_without_approval_or_toggle(self) -> None:
+        for tool_name in ("run_command", "run_terminal_command"):
+            with self.subTest(tool=tool_name):
+                raw = await main.execute_tool(
+                    tool_name,
+                    {"command": "python -c \"print('shell-enabled')\""},
+                    "gemini",
+                    {"model": "test-model"},
+                    "",
+                    "test-task",
+                )
+                result = json.loads(raw)
+                self.assertEqual(result["returnCode"], 0)
+                self.assertEqual(result["stdout"], "shell-enabled\n")
+        self.assertIsNone(
+            main.workspace_action_requiring_approval(
+                "run_terminal_command",
+                {"command": "mkdir -p created", "cwd": "."},
+            )
+        )
+
+    async def test_project_file_and_shell_tool_results_redact_environment_secrets(self) -> None:
+        secret = "test-session-secret-value"
+        with patch.dict("os.environ", {"SESSION_SECRET": secret}):
+            (self.root / ".env").write_text(f"SESSION_SECRET={secret}\n", encoding="utf-8")
+            file_result = await main.execute_tool(
+                "read_file",
+                {"path": ".env"},
                 "gemini",
                 {"model": "test-model"},
                 "",
                 "test-task",
             )
-        self.assertEqual(json.loads(raw)["stdout"], "beta")
-
-    def test_local_terminal_commands_require_exact_local_approval(self) -> None:
-        with (
-            patch.object(main, "is_replit_runtime", return_value=False),
-            patch.object(main, "local_code_runner_available", return_value=True),
-        ):
-            staged = main.workspace_action_requiring_approval(
-                "run_terminal_command",
-                {"command": "python -m pytest", "cwd": "."},
+            shell_result = await main.execute_tool(
+                "run_command",
+                {"command": "python -c \"import os; print(os.environ['SESSION_SECRET'])\""},
+                "gemini",
+                {"model": "test-model"},
+                "",
+                "test-task",
             )
-        self.assertEqual(
-            staged,
-            (
-                "terminal_command",
-                {"command": "python -m pytest", "cwd": "."},
-                "Run local terminal command: python -m pytest",
-            ),
-        )
-        for command in (
-            "python -m pytest && echo bypass",
-            "python -c print(1)",
-            "rmdir /s /q workspace",
-            "sudo python main.py",
-        ):
-            with self.subTest(command=command), self.assertRaises(PermissionError):
-                main.validate_terminal_command(command)
-        with patch.object(main, "is_replit_runtime", return_value=True):
-            with self.assertRaises(PermissionError):
-                main.workspace_action_requiring_approval(
-                    "run_terminal_command",
-                    {"command": "python -m pytest", "cwd": "."},
-                )
-        self.assertEqual(
-            main.validate_terminal_command('npm install --prefix "web app"', windows=True),
-            ["npm", "install", "--prefix", "web app"],
-        )
-        self.assertEqual(
-            main.validate_terminal_command(r'python "C:\Users\me\app.py"', windows=True),
-            ["python", r"C:\Users\me\app.py"],
-        )
+        self.assertNotIn(secret, file_result)
+        self.assertNotIn(secret, shell_result)
+        self.assertIn("[redacted]", file_result)
+        self.assertIn("[redacted]", shell_result)
 
     def test_engine_actions_are_local_opt_in_and_stage_exact_review_details(self) -> None:
         script = "import bpy\nbpy.context.scene.frame_end = 48\n"
@@ -231,9 +206,8 @@ class WorkspaceSafetyTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["returnCode"], 0, result["stderr"])
         self.assertEqual(result["stdout"].splitlines(), [str(self.workspace.resolve()), "missing"])
 
-    async def test_write_file_supports_immediate_workspace_updates(self) -> None:
-        created = main.write_workspace_source_file(
-            self.workspace,
+    async def test_project_file_tools_write_hidden_paths_append_and_delete_without_approval(self) -> None:
+        created = main.write_project_file(
             "web/src/App.tsx",
             "export default function App() { return <main />; }\n",
         )
@@ -253,9 +227,50 @@ class WorkspaceSafetyTests(unittest.IsolatedAsyncioTestCase):
         )
         result = main.parse_json(raw, {})
         self.assertTrue(result["saved"])
-        self.assertEqual((self.workspace / "web/src/App.tsx").read_text(encoding="utf-8"), "replacement\n")
-        with self.assertRaises((PermissionError, main.WorkspacePreviewError)):
-            main.write_workspace_source_file(self.workspace, "../outside.py", "blocked\n")
+        self.assertEqual((self.root / "web/src/App.tsx").read_text(encoding="utf-8"), "replacement\n")
+        hidden = await main.execute_tool(
+            "create_file",
+            {"path": ".forge-data/nested/config.json", "content": "{\"mode\":\"open\"}"},
+            "gemini",
+            {"model": "test-model"},
+            "",
+            "test-task",
+        )
+        appended = await main.execute_tool(
+            "append_file",
+            {"path": ".forge-data/nested/config.json", "content": "\n"},
+            "gemini",
+            {"model": "test-model"},
+            "",
+            "test-task",
+        )
+        self.assertTrue(main.parse_json(hidden, {})["saved"])
+        self.assertEqual(main.parse_json(appended, {})["mode"], "append")
+        self.assertEqual(
+            (self.root / ".forge-data/nested/config.json").read_text(encoding="utf-8"),
+            "{\"mode\":\"open\"}\n",
+        )
+        read_back = await main.execute_tool(
+            "read_file",
+            {"path": ".forge-data/nested/config.json"},
+            "gemini",
+            {"model": "test-model"},
+            "",
+            "test-task",
+        )
+        self.assertIn("open", main.parse_json(read_back, {})["content"])
+        deleted = await main.execute_tool(
+            "delete_file",
+            {"path": ".forge-data/nested/config.json"},
+            "gemini",
+            {"model": "test-model"},
+            "",
+            "test-task",
+        )
+        self.assertTrue(main.parse_json(deleted, {})["deleted"])
+        self.assertFalse((self.root / ".forge-data/nested/config.json").exists())
+        with self.assertRaises(PermissionError):
+            main.project_path("../outside.py")
         self.assertEqual(main.list_workspace_directory(".")["path"], ".")
 
     async def test_static_preview_is_available_and_python_previews_are_disabled_by_default(self) -> None:

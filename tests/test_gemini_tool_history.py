@@ -19,7 +19,7 @@ class GeminiToolHistoryTests(unittest.IsolatedAsyncioTestCase):
         workspace = root / "workspace"
         workspace.mkdir()
         for name, value in {
-            "ROOT": root, "BASE_DIR": workspace.resolve(), "WORKSPACE": workspace, "DATABASE": workspace / "assistant.db",
+            "ROOT": root, "PROJECT_DIR": root.resolve(), "BASE_DIR": workspace.resolve(), "WORKSPACE": workspace, "DATABASE": workspace / "assistant.db",
             "UPLOADS": workspace / "uploads", "NOTES": workspace / "notes", "ENV_FILE": root / ".env",
         }.items():
             change = patch.object(main, name, value)

@@ -23,7 +23,7 @@ class ConversationTests(unittest.IsolatedAsyncioTestCase):
         self.directory = tempfile.TemporaryDirectory()
         root = Path(self.directory.name)
         workspace = root / "workspace"
-        self.paths = patch.multiple(main, ROOT=root, BASE_DIR=workspace.resolve(), WORKSPACE=workspace,
+        self.paths = patch.multiple(main, ROOT=root, PROJECT_DIR=root.resolve(), BASE_DIR=workspace.resolve(), WORKSPACE=workspace,
                                     DATABASE=workspace / "assistant.db", UPLOADS=workspace / "uploads",
                                     NOTES=workspace / "notes", ENV_FILE=root / ".env")
         self.paths.start()

@@ -26,6 +26,7 @@ class AutonomousExecutionTests(unittest.IsolatedAsyncioTestCase):
         workspace.mkdir()
         for name, value in {
             "ROOT": root,
+            "PROJECT_DIR": root.resolve(),
             "BASE_DIR": workspace.resolve(),
             "WORKSPACE": workspace,
             "DATABASE": workspace / "assistant.db",
@@ -87,7 +88,7 @@ class AutonomousExecutionTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(write_schema["parameters"]["required"], ["path", "content"])
         self.assertTrue(all("tools" in request.kwargs for request in create.await_args_list))
         self.assertEqual(
-            (main.WORKSPACE / "autonomous_app.py").read_text(encoding="utf-8"),
+            (main.PROJECT_DIR / "autonomous_app.py").read_text(encoding="utf-8"),
             "print('built')\n",
         )
         task = main.db_one("SELECT status,result FROM tasks WHERE id='build-write'")
