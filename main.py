@@ -111,7 +111,7 @@ MODEL_OPTIONS = {
         "gemini-3.8-flash",
         "gemma-4-31b-it",
     },
-    "anthropic": {"claude-3-opus", "claude-3-5-sonnet", "claude-opus-5.5"},
+    "anthropic": {"claude-haiku-5-5", "claude-sonnet-5-5", "claude-opus-5-5"},
     "openrouter": {
         "deepseek/deepseek-chat",
         "anthropic/claude-3.7-sonnet",
@@ -119,7 +119,6 @@ MODEL_OPTIONS = {
         "anthropic/claude-sonnet-5.5",
         "anthropic/claude-opus-5.5",
     },
-    "anthropic": {"claude-3-opus", "claude-3-5-sonnet", "claude-opus-5.5"},
     "ollama": {"qwen2.5-coder", "llama3.3", "deepseek-r1"},
 }
 MODEL_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,119}$")
@@ -172,7 +171,7 @@ DEFAULT_MODELS = {
     "openai": "gpt-4o-mini",
     "deepseek": "deepseek-chat",
     "gemini": "gemini-3.5-flash-lite",
-    "anthropic": "claude-3-5-sonnet",
+    "anthropic": "claude-sonnet-5-5",
     "openrouter": "deepseek/deepseek-chat",
     "ollama": "qwen2.5-coder",
 }
@@ -1402,12 +1401,18 @@ def resolve_direct_anthropic_model(
     anthropic_key_available: bool | None = None,
 ) -> tuple[str, str]:
     """Use the direct Anthropic API for OpenRouter Claude IDs when its key is available."""
-    if provider == "openrouter" and model_id.lower().startswith("anthropic/claude-"):
+    openrouter_to_anthropic_ids = {
+        "anthropic/claude-haiku-5.5": "claude-haiku-5-5",
+        "anthropic/claude-sonnet-5.5": "claude-sonnet-5-5",
+        "anthropic/claude-opus-5.5": "claude-opus-5-5",
+    }
+    direct_model_id = openrouter_to_anthropic_ids.get(model_id)
+    if provider == "openrouter" and direct_model_id:
         has_anthropic_key = (
             credential_for("anthropic") if anthropic_key_available is None else anthropic_key_available
         )
         if has_anthropic_key:
-            return "anthropic", model_id.split("/", 1)[1]
+            return "anthropic", direct_model_id
     return provider, model_id
 
 

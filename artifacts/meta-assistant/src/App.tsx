@@ -1195,9 +1195,9 @@ const models = {
     { id: 'gemma-4-31b-it', name: 'Gemma 4 31B', detail: 'Google open-weight model', descriptor: 'BALANCED', color: 'sage' },
   ],
   anthropic: [
-    { id: 'claude-3-opus', name: 'Claude 3 Opus', detail: 'Direct Anthropic API · high reasoning', descriptor: 'DEEP FOCUS', color: 'gold' },
-    { id: 'claude-3-5-sonnet', name: 'Claude 3.5 Sonnet', detail: 'Direct Anthropic API · balanced', descriptor: 'BALANCED', color: 'sage' },
-    { id: 'claude-opus-5.5', name: 'Claude Opus 5.5', detail: 'Direct Anthropic API · high capability', descriptor: 'DEEP FOCUS', color: 'gold' },
+    { id: 'claude-haiku-5-5', name: 'Claude Haiku 5.5', detail: 'Direct Anthropic API · fast everyday tasks', descriptor: 'QUICK', color: 'blue' },
+    { id: 'claude-sonnet-5-5', name: 'Claude Sonnet 5.5', detail: 'Direct Anthropic API · balanced capability', descriptor: 'BALANCED', color: 'sage' },
+    { id: 'claude-opus-5-5', name: 'Claude Opus 5.5', detail: 'Direct Anthropic API · highest capability', descriptor: 'DEEP FOCUS', color: 'gold' },
   ],
   openrouter: [
     { id: 'deepseek/deepseek-chat', name: 'DeepSeek Chat (OpenRouter)', detail: 'Balanced tool-calling model', descriptor: 'BALANCED', color: 'sage' },

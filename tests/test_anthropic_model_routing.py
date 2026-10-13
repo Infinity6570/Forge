@@ -58,9 +58,18 @@ class AnthropicProviderRoutingTests(unittest.IsolatedAsyncioTestCase):
         main.save_vault_values({"ANTHROPIC_API_KEY": "vault-anthropic-key"})
         self.assertEqual(
             main.resolve_direct_anthropic_model(
-                "openrouter", "anthropic/claude-3-5-sonnet"
+                "openrouter", "anthropic/claude-opus-5.5"
             ),
-            ("anthropic", "claude-3-5-sonnet"),
+            ("anthropic", "claude-opus-5-5"),
+        )
+
+    async def test_unmapped_openrouter_claude_ids_stay_on_openrouter(self) -> None:
+        main.save_vault_values({"ANTHROPIC_API_KEY": "vault-anthropic-key"})
+        self.assertEqual(
+            main.resolve_direct_anthropic_model(
+                "openrouter", "anthropic/claude-3.7-sonnet"
+            ),
+            ("openrouter", "anthropic/claude-3.7-sonnet"),
         )
 
     async def test_openrouter_model_stays_on_openrouter_without_direct_key(self) -> None:
@@ -100,7 +109,7 @@ class AnthropicProviderRoutingTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_anthropic_request_uses_official_message_shape(self) -> None:
         request = _anthropic_request({
-            "model": "claude-3-5-sonnet",
+            "model": "claude-sonnet-5-5",
             "messages": [
                 {"role": "system", "content": "Be concise."},
                 {"role": "user", "content": "Search."},
@@ -116,14 +125,14 @@ class AnthropicProviderRoutingTests(unittest.IsolatedAsyncioTestCase):
             "tool_choice": "auto",
         })
         self.assertEqual(request["system"], "Be concise.")
-        self.assertEqual(request["model"], "claude-3-5-sonnet")
+        self.assertEqual(request["model"], "claude-sonnet-5-5")
         self.assertEqual(request["tools"][0]["name"], "web_search")
         self.assertEqual(request["max_tokens"], 4096)
 
     async def test_anthropic_tool_use_response_maps_to_chat_completion(self) -> None:
         response = SimpleNamespace(
             id="msg_123",
-            model="claude-3-5-sonnet",
+            model="claude-sonnet-5-5",
             stop_reason="tool_use",
             content=[
                 SimpleNamespace(type="text", text="Searching."),
@@ -194,7 +203,7 @@ class AnthropicProviderRoutingTests(unittest.IsolatedAsyncioTestCase):
         client = AnthropicChatClient("test-key", sdk_client=sdk)
         stream = await client.chat.completions.create(
             stream=True,
-            model="claude-3-5-sonnet",
+            model="claude-sonnet-5-5",
             messages=[{"role": "user", "content": "Search for the latest release."}],
         )
         completion = await collect_completion(stream)

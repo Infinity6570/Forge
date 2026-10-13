@@ -105,7 +105,7 @@ class ProviderSettingsTests(unittest.IsolatedAsyncioTestCase):
         response = await self.put_settings(
             base_url="http://127.0.0.1",
             provider="anthropic",
-            model_id="claude-3-5-sonnet",
+            model_id="claude-sonnet-5-5",
             anthropicApiKey="sk-ant-local-test-key",
         )
 
@@ -119,15 +119,15 @@ class ProviderSettingsTests(unittest.IsolatedAsyncioTestCase):
         response = await self.put_settings(
             base_url="http://127.0.0.1",
             provider="openrouter",
-            model_id="anthropic/claude-3-5-sonnet",
+            model_id="anthropic/claude-opus-5.5",
             anthropicApiKey="sk-ant-local-test-key",
         )
 
         self.assertEqual(response.status_code, 200, response.text)
         self.assertEqual(response.json()["provider"], "anthropic")
-        self.assertEqual(response.json()["modelId"], "claude-3-5-sonnet")
+        self.assertEqual(response.json()["modelId"], "claude-opus-5-5")
         self.assertEqual(dotenv_values(self.env_file)["AGENT_PROVIDER"], "anthropic")
-        self.assertEqual(dotenv_values(self.env_file)["AGENT_MODEL"], "claude-3-5-sonnet")
+        self.assertEqual(dotenv_values(self.env_file)["AGENT_MODEL"], "claude-opus-5-5")
 
     async def test_same_origin_preview_can_write_provider_settings(self) -> None:
         preview_origin = "https://assistant.replit.dev"
@@ -330,6 +330,60 @@ class ProviderSettingsTests(unittest.IsolatedAsyncioTestCase):
             base_url="http://127.0.0.1",
             model_id=custom_id,
             geminiApiKey="test-gemini-key",
+        )
+        self.assertEqual(custom_response.status_code, 200, custom_response.text)
+        self.assertEqual(custom_response.json()["modelId"], custom_id)
+        self.assertEqual(dotenv_values(self.env_file)["AGENT_MODEL"], custom_id)
+
+    async def test_direct_anthropic_models_match_official_catalog_and_remain_distinct_from_openrouter(self) -> None:
+        source = APP_SOURCE.read_text()
+        ui_anthropic_models = re.search(
+            r"anthropic:\s*\[(.*?)\n\s*\],\s*openrouter:",
+            source,
+            flags=re.DOTALL,
+        )
+        ui_openrouter_models = re.search(
+            r"openrouter:\s*\[(.*?)\n\s*\],\s*ollama:",
+            source,
+            flags=re.DOTALL,
+        )
+        self.assertIsNotNone(ui_anthropic_models, "Could not find direct Anthropic model choices in the settings UI.")
+        self.assertIsNotNone(ui_openrouter_models, "Could not find OpenRouter model choices in the settings UI.")
+
+        direct_ids = set(re.findall(r"id:\s*'([^']+)'", ui_anthropic_models.group(1)))
+        openrouter_ids = set(re.findall(r"id:\s*'([^']+)'", ui_openrouter_models.group(1)))
+        # These API IDs appear in Anthropic's current models overview and Models API reference.
+        official_current_api_ids = {
+            "claude-haiku-5-5",
+            "claude-sonnet-5-5",
+            "claude-opus-5-5",
+        }
+        self.assertEqual(direct_ids, official_current_api_ids)
+        self.assertEqual(main.MODEL_OPTIONS["anthropic"], official_current_api_ids)
+        openrouter_anthropic_ids = {
+            model_id for model_id in openrouter_ids if model_id.startswith("anthropic/")
+        }
+        self.assertEqual(len(openrouter_anthropic_ids), 4)
+        self.assertTrue(direct_ids.isdisjoint(openrouter_ids))
+
+        for model_id in sorted(direct_ids):
+            with self.subTest(model_id=model_id):
+                response = await self.put_settings(
+                    base_url="http://127.0.0.1",
+                    provider="anthropic",
+                    model_id=model_id,
+                    anthropicApiKey="sk-ant-local-test-key",
+                )
+                self.assertEqual(response.status_code, 200, response.text)
+                self.assertEqual(response.json()["provider"], "anthropic")
+                self.assertEqual(response.json()["modelId"], model_id)
+
+        custom_id = "claude-sonnet-5-preview-custom"
+        custom_response = await self.put_settings(
+            base_url="http://127.0.0.1",
+            provider="anthropic",
+            model_id=custom_id,
+            anthropicApiKey="sk-ant-local-test-key",
         )
         self.assertEqual(custom_response.status_code, 200, custom_response.text)
         self.assertEqual(custom_response.json()["modelId"], custom_id)
