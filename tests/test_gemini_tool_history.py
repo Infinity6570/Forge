@@ -76,6 +76,63 @@ class GeminiToolHistoryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(task["result"], "Hello world")
         self.assertNotIn("opaque-regression-signature", task["logs_json"])
 
+    async def test_empty_final_turn_retries_with_tool_results_and_synthesis_instruction(self):
+        create = AsyncMock(side_effect=[
+            self.signed_stream(),
+            SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(
+                role="assistant", content=None, tool_calls=None
+            ))]),
+            self.text_stream(),
+        ])
+        client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+        with patch.object(main, "create_llm_client", return_value=client), patch.object(
+            main, "execute_tool", new=AsyncMock(return_value='{"weather":"clear"}')
+        ) as execute:
+            await main.run_agent_task("signed", [])
+
+        self.assertEqual(create.await_count, 3)
+        execute.assert_awaited_once()
+        synthesis = create.call_args.kwargs
+        self.assertNotIn("tools", synthesis)
+        sent = synthesis["messages"]
+        self.assertTrue(any(turn["role"] == "tool" and "clear" in turn["content"] for turn in sent))
+        self.assertIn("All actions have completed", sent[-1]["content"])
+        task = main.db_one("SELECT * FROM tasks WHERE id='signed'")
+        self.assertEqual(task["status"], "completed")
+        self.assertEqual(task["result"], "Hello world")
+        self.assertNotIn("The model returned no final text.", task["logs_json"])
+
+    async def test_tenth_tool_round_is_followed_by_synthesis_before_completion(self):
+        create = AsyncMock(side_effect=[self.signed_stream() for _ in range(10)] + [self.text_stream()])
+        client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+        with patch.object(main, "create_llm_client", return_value=client), patch.object(
+            main, "execute_tool", new=AsyncMock(return_value='{"step":"done"}')
+        ) as execute:
+            await main.run_agent_task("signed", [])
+
+        self.assertEqual(create.await_count, 11)
+        self.assertEqual(execute.await_count, 10)
+        final_request = create.call_args.kwargs
+        self.assertNotIn("tools", final_request)
+        self.assertIn("All actions have completed", final_request["messages"][-1]["content"])
+        self.assertEqual(main.db_one("SELECT status FROM tasks WHERE id='signed'")["status"], "completed")
+
+    async def test_empty_synthesis_fails_without_persisting_a_fake_assistant_answer(self):
+        empty = SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(
+            role="assistant", content=None, tool_calls=None
+        ))])
+        create = AsyncMock(side_effect=[empty, empty])
+        client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+        with patch.object(main, "create_llm_client", return_value=client):
+            await main.run_agent_task("signed", [])
+
+        task = main.db_one("SELECT * FROM tasks WHERE id='signed'")
+        self.assertEqual(create.await_count, 2)
+        self.assertEqual(task["status"], "failed")
+        self.assertIsNone(task["result"])
+        self.assertIn("no user-facing text", task["error"])
+        self.assertNotIn("The model returned no final text.", task["messages_json"])
+
     async def test_approval_pause_keeps_signed_history_without_overwriting_file(self):
         target = main.WORKSPACE / "index.html"
         target.write_text("old", encoding="utf-8")

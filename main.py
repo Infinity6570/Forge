@@ -2563,20 +2563,68 @@ async def run_agent_task(
             messages = resume_messages
         client = create_llm_client(provider)
         final_result = ""
+        last_preview_write = 0.0
+        last_streamed_text: str | None = None
+
+        async def publish_text(text: str | None) -> None:
+            nonlocal last_preview_write, last_streamed_text
+            last_streamed_text = text
+            TASK_TEXT_STREAMS.publish(task_id, text)
+            now = asyncio.get_running_loop().time()
+            if text is None or now - last_preview_write >= 0.15:
+                db_run(
+                    "UPDATE tasks SET result=?,updated_at=? WHERE id=? AND status='running'",
+                    (redact_provider_keys(text)[:100_000] if text else None, utc_now(), task_id),
+                )
+                last_preview_write = 0.0 if text is None else now
+
+        async def synthesize_final_response() -> str:
+            """Ask once for a user-facing answer after all available tool results."""
+            log_task(
+                task_id,
+                "Requesting a final response from the completed conversation and tool results.",
+                "info",
+            )
+            synthesis_messages = [
+                *messages,
+                {
+                    "role": "user",
+                    "content": (
+                        "All actions have completed. Please present a summary of what was accomplished "
+                        "and display the result to the user. Do not call tools; report any limitations "
+                        "clearly based on the conversation and tool results."
+                    ),
+                },
+            ]
+            synthesis_kwargs: dict[str, Any] = {
+                "model": model_state["model"],
+                "messages": synthesis_messages,
+                "stream": True,
+                "max_completion_tokens" if provider == "openai" else "max_tokens": 6000,
+            }
+            completion = await create_completion_with_fallback(
+                client, synthesis_kwargs, provider, model_state, fallback_model, task_id, publish_text
+            )
+            message = completion.choices[0].message
+            if message.tool_calls:
+                raise RuntimeError(
+                    "The provider requested another tool instead of producing a final response after synthesis."
+                )
+            text = message.content if isinstance(message.content, str) else ""
+            final_text = text.strip()
+            if not final_text:
+                raise RuntimeError(
+                    "The provider returned no user-facing text after the final synthesis request."
+                )
+            if last_streamed_text != final_text:
+                await publish_text(final_text)
+            final_turn = assistant_turn(message, provider)
+            final_turn["content"] = final_text
+            messages.append(final_turn)
+            return final_text
+
         for iteration in range(10):
             log_task(task_id, f"Reasoning step {iteration + 1} of 10", "info")
-            last_preview_write = 0.0
-
-            async def publish_text(text: str | None) -> None:
-                nonlocal last_preview_write
-                TASK_TEXT_STREAMS.publish(task_id, text)
-                now = asyncio.get_running_loop().time()
-                if text is None or now - last_preview_write >= 0.15:
-                    db_run(
-                        "UPDATE tasks SET result=?,updated_at=? WHERE id=? AND status='running'",
-                        (redact_provider_keys(text)[:100_000] if text else None, utc_now(), task_id),
-                    )
-                    last_preview_write = 0.0 if text is None else now
 
             kwargs: dict[str, Any] = {
                 "model": model_state["model"],
@@ -2592,8 +2640,14 @@ async def run_agent_task(
             message = completion.choices[0].message
             tool_calls = message.tool_calls or []
             if not tool_calls:
-                final_result = message.content or "The model returned no final text."
-                messages.append(assistant_turn(message, provider))
+                content = message.content if isinstance(message.content, str) else ""
+                if content.strip():
+                    final_result = content.strip()
+                    if last_streamed_text != final_result:
+                        await publish_text(final_result)
+                    final_turn = assistant_turn(message, provider)
+                    final_turn["content"] = final_result
+                    messages.append(final_turn)
                 break
             messages.append(assistant_turn(message, provider))
             approval_request: tuple[Any, str, dict[str, Any], str, str | None] | None = None
@@ -2679,8 +2733,7 @@ async def run_agent_task(
                 messages.append({"role": "tool", "tool_call_id": call.id, "content": output if call.function.name == "web_search" else output[:16_000]})
             THREADS.checkpoint(task_id, messages, history_start)
         if not final_result:
-            final_result = "The agent reached the 10-step tool limit. Review the activity log and submit a focused follow-up if needed."
-            messages.append({"role": "assistant", "content": final_result})
+            final_result = await synthesize_final_response()
         db_run(
             "UPDATE tasks SET status='completed',result=?,error=NULL,current_step='Completed',updated_at=? WHERE id=?",
             (redact_provider_keys(final_result)[:100_000], utc_now(), task_id),

@@ -184,6 +184,37 @@ class ConversationTests(unittest.IsolatedAsyncioTestCase):
         main.init_db()
         self.assertEqual(len((await self.client.get("/api/assistant/threads")).json()), 1)
 
+    async def test_legacy_empty_final_error_is_removed_and_task_is_not_left_completed(self):
+        client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(
+            create=AsyncMock(return_value=completion("A real answer."))
+        )))
+        with patch.object(main, "create_llm_client", return_value=client):
+            task = await self.send("Create a normal answer")
+
+        bad_text = "The model returned no final text."
+        timestamp = main.utc_now()
+        main.db_run(
+            "INSERT INTO conversation_messages(id,thread_id,task_id,sequence,role,content,protocol_json,thought_steps,created_at) "
+            "VALUES(?,?,?,?,?,?,?,?,?)",
+            ("legacy-empty-final", task["threadId"], task["id"], 99, "assistant", bad_text,
+             json.dumps({"role": "assistant", "content": bad_text}), "[]", timestamp),
+        )
+        main.db_run(
+            "UPDATE tasks SET status='completed',result=? WHERE id=?",
+            (bad_text, task["id"]),
+        )
+        main.db_run("DELETE FROM conversation_meta WHERE name='empty_final_response_cleanup'")
+        main.init_db()
+
+        stored_task = main.db_one("SELECT status,result,error FROM tasks WHERE id=?", (task["id"],))
+        self.assertEqual(stored_task["status"], "failed")
+        self.assertIsNone(stored_task["result"])
+        self.assertIn("No final response", stored_task["error"])
+        visible = (await self.client.get(f"/api/assistant/threads/{task['threadId']}")).json()["messages"]
+        self.assertNotIn(bad_text, [message["content"] for message in visible])
+        history = main.THREADS.history(task["threadId"], "future-task", "gemini")
+        self.assertNotIn(bad_text, [turn.get("content") for turn in history])
+
     async def test_restart_recovers_interrupted_runs_but_keeps_approval_gates(self):
         threads = {}
         with main.THREADS.transaction() as connection:

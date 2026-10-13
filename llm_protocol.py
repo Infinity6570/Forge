@@ -5,6 +5,7 @@ Provider signatures belong to conversation history, never to visible activity lo
 from __future__ import annotations
 
 from copy import deepcopy
+import json
 from typing import Any, Awaitable, Callable
 
 from openai.types.chat import ChatCompletion
@@ -77,6 +78,12 @@ def prepare_history(messages: list[dict[str, Any]], provider: str) -> list[dict[
         else to_wire(message)
         for message in messages
     ]
+    # Native candidate parts are retained in stored history for lossless replay
+    # and diagnostics, but the current Gemini client uses the OpenAI-compatible
+    # endpoint, whose wire format is tool_calls + extra_content.google.
+    if provider == "gemini":
+        for message in prepared:
+            message.pop("parts", None)
     # Raw stored turns stay lossless. Other providers do not accept Google's
     # opaque message extensions, so normalize only their outgoing wire copy.
     if provider in {"openai", "deepseek", "ollama"}:
@@ -108,20 +115,72 @@ async def collect_completion(response: Any, on_text: TextCallback | None = None)
     signatures are retained for protocol replay but are never rendered in the UI.
     """
     if not hasattr(response, "__aiter__"):
-        return response
+        raw_response = to_wire(response)
+        if not isinstance(raw_response, dict) or not raw_response.get("candidates") or raw_response.get("choices"):
+            if on_text:
+                choices = raw_response.get("choices", []) if isinstance(raw_response, dict) else []
+                if choices:
+                    content = (choices[0].get("message") or {}).get("content")
+                    await on_text(content if isinstance(content, str) else None)
+            return response
+
+        async def single_native_response():
+            yield raw_response
+
+        response = single_native_response()
     message: dict[str, Any] = {"role": "assistant"}
     calls: dict[int, dict[str, Any]] = {}
     response_id, model, created = "", "", 0
     finish_reason = None
     seen_choice = False
     last_text: str | None = None
+    native_parts: list[dict[str, Any]] = []
     try:
         async for chunk in response:
             raw = to_wire(chunk)
             response_id = raw.get("id", response_id)
             model = raw.get("model", model)
             created = raw.get("created", created)
-            for choice in raw.get("choices", []):
+            choices = raw.get("choices", [])
+            candidates = raw.get("candidates", [])
+            if not choices and candidates:
+                candidate = candidates[0]
+                seen_choice = True
+                content = candidate.get("content") or {}
+                for part_index, part in enumerate(content.get("parts") or []):
+                    native_parts.append(deepcopy(part))
+                    if isinstance(part.get("text"), str):
+                        message["content"] = message.get("content", "") + part["text"]
+                    function_call = part.get("functionCall") or part.get("function_call")
+                    if isinstance(function_call, dict):
+                        call = calls.setdefault(part_index, {})
+                        call.setdefault("id", f"gemini_call_{part_index}")
+                        call["type"] = "function"
+                        function = call.setdefault("function", {})
+                        function["name"] = function_call.get("name", "")
+                        arguments = function_call.get("args", function_call.get("arguments", {}))
+                        function["arguments"] = (
+                            arguments if isinstance(arguments, str)
+                            else json.dumps(arguments, ensure_ascii=False)
+                        )
+                        signature = part.get("thoughtSignature") or part.get("thought_signature")
+                        if signature:
+                            call.setdefault("extra_content", {}).setdefault("google", {})[
+                                "thought_signature"
+                            ] = signature
+                reason = candidate.get("finishReason") or candidate.get("finish_reason")
+                if reason:
+                    finish_reason = (
+                        "tool_calls" if reason in {"FUNCTION_CALL", "MALFORMED_FUNCTION_CALL"}
+                        else "length" if reason == "MAX_TOKENS"
+                        else "stop"
+                    )
+                visible_text = None if calls else message.get("content")
+                if on_text and visible_text != last_text:
+                    await on_text(visible_text)
+                    last_text = visible_text
+                continue
+            for choice in choices:
                 if choice.get("index", 0) != 0:
                     continue
                 seen_choice = True
@@ -166,6 +225,8 @@ async def collect_completion(response: Any, on_text: TextCallback | None = None)
         raise ValueError("The provider returned an empty completion stream.")
     if calls:
         message["tool_calls"] = [calls[index] for index in sorted(calls)]
+    if native_parts:
+        message["parts"] = native_parts
     message.setdefault("content", None)
     return ChatCompletion.model_validate({
         "id": response_id,

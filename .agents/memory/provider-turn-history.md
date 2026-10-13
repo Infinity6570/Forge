@@ -20,3 +20,9 @@ Keep native Google grounding separate from the normal OpenAI-compatible function
 **Why:** Older Gemini models, including Gemini 2.5, do not support the same hosted/custom tool combinations as Gemini 3. A separate native grounding request avoids changing or corrupting the signed outer conversation history.
 
 **How to apply:** Use the task's exact selected model for grounding; return the answer and untouched grounding metadata as the paired tool result. Do not silently substitute a grounding-capable model for unsupported Gemma selections.
+
+Treat an assistant turn with no user-facing text and no tool calls as incomplete, not successful. After tool results—or an otherwise empty turn—make one bounded final synthesis request; only complete and persist the task when it returns non-whitespace text. Never store an empty-response placeholder as an assistant answer.
+
+**Why:** Gemini can return function-call-only turns, and an empty final turn must not turn completed tool work into a false successful response or contaminate later chat context.
+
+**How to apply:** Keep the synthesis instruction ephemeral, include the full paired tool history, and mark the task failed if the synthesis attempt is also empty. Filter legacy empty-response records from replay.

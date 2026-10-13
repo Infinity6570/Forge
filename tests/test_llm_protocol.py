@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+import json
 from types import SimpleNamespace
 
 from openai.types.chat import ChatCompletion
@@ -131,3 +132,59 @@ class LLMProtocolTests(unittest.IsolatedAsyncioTestCase):
         self.assertIs(await collect_completion(response), response)
         with self.assertRaisesRegex(ValueError, "empty"):
             await collect_completion(FakeStream([]))
+
+    async def test_native_google_candidate_parts_capture_text_and_signed_function_calls(self):
+        async def native_stream():
+            yield {
+                "candidates": [{
+                    "finishReason": "FUNCTION_CALL",
+                    "content": {"parts": [
+                        {"text": "Searching now. "},
+                        {
+                            "functionCall": {"name": "web_search", "args": {"query": "weather"}},
+                            "thoughtSignature": "native-signature",
+                        },
+                    ]},
+                }],
+            }
+
+        updates = []
+
+        async def publish(text):
+            updates.append(text)
+
+        completion = await collect_completion(native_stream(), publish)
+        message = completion.choices[0].message
+        replay = assistant_turn(message, "gemini")
+        self.assertEqual(replay["parts"][1], {
+            "functionCall": {"name": "web_search", "args": {"query": "weather"}},
+            "thoughtSignature": "native-signature",
+        })
+        self.assertEqual(message.content, "Searching now. ")
+        self.assertEqual(replay["tool_calls"][0]["function"]["name"], "web_search")
+        self.assertEqual(
+            replay["tool_calls"][0]["extra_content"]["google"]["thought_signature"],
+            "native-signature",
+        )
+        self.assertEqual(json.loads(replay["tool_calls"][0]["function"]["arguments"]), {"query": "weather"})
+        self.assertEqual(updates, [])
+        self.assertNotIn("parts", prepare_history([replay], "gemini")[0])
+
+    async def test_native_google_text_part_without_choices_becomes_final_text(self):
+        response = {
+            "candidates": [{
+                "finishReason": "STOP",
+                "content": {"parts": [{"text": "Final answer from candidate parts."}]},
+            }],
+        }
+        updates = []
+
+        async def publish(text):
+            updates.append(text)
+
+        completion = await collect_completion(response, publish)
+        self.assertEqual(completion.choices[0].message.content, "Final answer from candidate parts.")
+        self.assertEqual(updates, ["Final answer from candidate parts."])
+        self.assertEqual(assistant_turn(completion.choices[0].message, "gemini")["parts"], [
+            {"text": "Final answer from candidate parts."}
+        ])
