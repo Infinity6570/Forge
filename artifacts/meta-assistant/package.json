@@ -9,7 +9,7 @@
     "serve": "vite preview --config vite.config.ts --host 0.0.0.0",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "tsx --test src/components/telemetry-records.test.tsx",
-    "test:browser": "python ../../tests/test_console_responsive_browser.py"
+    "test:browser": "python ../../tests/test_console_responsive_browser.py && python ../../tests/test_vault_recovery_browser.py"
   },
   "devDependencies": {
     "@hookform/resolvers": "^3.10.0",
