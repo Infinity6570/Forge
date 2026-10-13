@@ -110,6 +110,8 @@ export interface AssistantTask {
   pendingApprovalKind: string | null;
   /** @nullable */
   approvalSummary: string | null;
+  /** @nullable */
+  approvalDetails: string | null;
   requiresApproval: boolean;
   createdAt: string;
   updatedAt: string;
@@ -428,6 +430,7 @@ export interface AssistantSettings {
   hasOpenrouterKey: boolean;
   codeRunnerEnabled: boolean;
   appPreviewsEnabled: boolean;
+  engineToolsEnabled: boolean;
   searchMode?: AssistantSettingsSearchMode;
   searchApiProvider?: AssistantSettingsSearchApiProvider;
   searchChromiumFallback?: boolean;
@@ -837,5 +840,6 @@ export interface AssistantSettingsInput {
   openrouterApiKey?: string | null;
   codeRunnerEnabled?: boolean;
   appPreviewsEnabled?: boolean;
+  engineToolsEnabled?: boolean;
 }
 

@@ -161,6 +161,11 @@ button,input,textarea,select { font:inherit; }
 .focus-card h2 { font-family:var(--app-font-sans); }
 .model-recommendation,.fallback-recommendation,.elevated-approval { background:var(--surface-raised)!important; border-color:var(--border)!important; color:var(--text-primary)!important; }
 .model-recommendation strong,.model-recommendation p,.elevated-approval>strong { color:var(--text-primary)!important; }
+.engine-approval-review { margin-top:10px; color:var(--text-primary); }
+.engine-approval-review>p { margin:7px 0; color:var(--text-primary); font-size:11px; line-height:1.55; }
+.engine-approval-review details { border:1px solid var(--border); background:var(--bg-card); color:var(--text-primary); }
+.engine-approval-review summary { padding:8px 10px; color:var(--accent); cursor:pointer; font:11px var(--font-mono); }
+.engine-approval-review pre { max-height:280px; overflow:auto; margin:0; padding:10px; border-top:1px solid var(--border); color:var(--text-primary); background:var(--bg-main); white-space:pre; overflow-wrap:normal; font:11px/1.5 var(--font-mono); }
 .elevated-command,.preview-workspace,.preview-toolbar,.preview-choice,.preview-choice-wrap,.preview-address,.preview-frame-shell,.preview-state,
 .preview-state strong,.preview-state p,.preview-address button { background:var(--bg-card)!important; color:var(--text-primary)!important; border-color:var(--border)!important; }
 .preview-choice.selected,.preview-choice-wrap.selected { background:var(--surface-raised)!important; color:var(--accent)!important; }

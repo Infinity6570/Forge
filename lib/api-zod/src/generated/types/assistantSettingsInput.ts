@@ -44,4 +44,5 @@ export interface AssistantSettingsInput {
   openrouterApiKey?: string | null;
   codeRunnerEnabled?: boolean;
   appPreviewsEnabled?: boolean;
+  engineToolsEnabled?: boolean;
 }

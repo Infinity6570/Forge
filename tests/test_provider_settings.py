@@ -72,6 +72,7 @@ class ProviderSettingsTests(unittest.IsolatedAsyncioTestCase):
             "modelId": model_id,
             "codeRunnerEnabled": False,
             "appPreviewsEnabled": False,
+            "engineToolsEnabled": False,
             **extra,
         }
         async with httpx.AsyncClient(
@@ -148,6 +149,32 @@ class ProviderSettingsTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(dotenv_values(self.env_file)["RUN_LOCAL_APP_PREVIEWS"], "true")
         self.assertEqual(os.environ["RUN_LOCAL_APP_PREVIEWS"], "true")
         self.assertTrue(response.json()["appPreviewsEnabled"])
+
+    async def test_local_3d_engine_tools_require_local_opt_in_and_persist(self) -> None:
+        response = await self.put_settings(
+            base_url="http://127.0.0.1",
+            provider="openai",
+            model_id="gpt-4.1-mini",
+            openaiApiKey="local-test-openai-key",
+            engineToolsEnabled=True,
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(dotenv_values(self.env_file)["RUN_LOCAL_3D_ENGINE_TOOLS"], "true")
+        self.assertEqual(os.environ["RUN_LOCAL_3D_ENGINE_TOOLS"], "true")
+        self.assertTrue(response.json()["engineToolsEnabled"])
+
+    async def test_replit_cannot_enable_local_3d_engine_tools(self) -> None:
+        preview_origin = "https://assistant.replit.dev"
+        os.environ.update({
+            "REPL_ID": "test-repl",
+            "REPLIT_DEV_DOMAIN": "assistant.replit.dev",
+        })
+        response = await self.put_settings(
+            base_url=preview_origin,
+            origin=preview_origin,
+            engineToolsEnabled=True,
+        )
+        self.assertEqual(response.status_code, 403, response.text)
 
     async def test_replit_cannot_enable_local_python_previews(self) -> None:
         preview_origin = "https://assistant.replit.dev"

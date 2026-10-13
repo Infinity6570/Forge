@@ -366,6 +366,21 @@ function LogMessage({ message, kind }: { message: string; kind: string }) {
   })}</div>;
 }
 
+function EngineApprovalReview({ task }: { task: AssistantTask }) {
+  if (task.pendingApprovalKind !== 'blender_automation' && task.pendingApprovalKind !== 'engine_remote_command') return null;
+  const isBlender = task.pendingApprovalKind === 'blender_automation';
+  return <div className="engine-approval-review">
+    <p>{isBlender
+      ? 'This generated Blender Python script runs with your normal local-user permissions. It is not sandboxed and may access or modify any files your account can access.'
+      : 'This exact request will be sent to the local engine listener and may change the open Blender scene or Unreal project.'}</p>
+    <details open data-testid={`details-engine-approval-${task.id}`}>
+      <summary>{isBlender ? 'Review exact Blender script' : 'Review exact endpoint and JSON payload'}</summary>
+      <pre>{task.approvalDetails || '(No script or request details were supplied.)'}</pre>
+    </details>
+    {isBlender && <p className="settings-footnote">The run has a 10-minute timeout. Review the complete script before approving.</p>}
+  </div>;
+}
+
 function TaskActionDock({ task }: { task?: AssistantTask }) {
   const qc = useQueryClient();
   const approval = useChooseAssistantTaskApproval();
@@ -379,6 +394,9 @@ function TaskActionDock({ task }: { task?: AssistantTask }) {
     qc.invalidateQueries({ queryKey: getListAssistantTasksQueryKey() });
   };
   const isElevated = task.pendingApprovalKind === 'elevated_command';
+  const isBlenderApproval = task.pendingApprovalKind === 'blender_automation';
+  const isEngineApproval = task.pendingApprovalKind === 'engine_remote_command';
+  const isEngineAction = isBlenderApproval || isEngineApproval;
   const needsApproval = task.requiresApproval && !!task.pendingApprovalId;
   const needsModel = task.requiresModelConfirmation;
   const needsFallback = task.recommendationKind === 'fallback' && task.retryAvailable && task.status !== 'running';
@@ -400,11 +418,13 @@ function TaskActionDock({ task }: { task?: AssistantTask }) {
   const isTerminalCommand = task.pendingApprovalKind === 'terminal_command';
   return <section className="action-dock" aria-label="Task decisions" data-testid="task-action-dock">
     <div className="dock-heading"><span className="dock-alert" /><strong>Waiting for your decision</strong><span>{task.objective}</span></div>
-    {needsApproval && <div className={`dock-card ${isElevated || isTerminalCommand ? 'security-warning' : ''}`} data-testid={isElevated ? 'dock-elevated-approval' : isTerminalCommand ? 'dock-terminal-approval' : 'dock-workspace-approval'}>
+    {needsApproval && <div className={`dock-card ${isElevated || isTerminalCommand || isEngineAction ? 'security-warning' : ''}`} data-testid={isElevated ? 'dock-elevated-approval' : isTerminalCommand ? 'dock-terminal-approval' : isBlenderApproval ? 'dock-blender-approval' : isEngineApproval ? 'dock-engine-approval' : 'dock-workspace-approval'}>
       {isElevated ? <><strong>Administrative Privilege Requested:</strong><p>The agent is requesting permission to execute:</p><code>{task.approvalSummary}</code><span> with elevated system permissions.</span><p>Nothing runs until you approve. The invocation will be recorded in <code>logs/elevated_audit.log</code>.</p><p>If pkexec is unavailable, the sudo fallback requires an already-authorized non-interactive sudo session and fails closed otherwise.</p></>
         : isTerminalCommand ? <><strong>Local terminal command needs approval</strong><p>The agent requests to run this exact command with your normal local-user permissions:</p><code>{task.approvalSummary}</code><p>It runs from workspace/ with a cleaned environment and a 30-second limit. It is not elevated, but can still change local files or data. No command has run yet.</p></>
+          : isBlenderApproval ? <><strong>Blender automation needs approval</strong><p>{task.approvalSummary}</p><EngineApprovalReview task={task} /></>
+            : isEngineApproval ? <><strong>Local engine command needs approval</strong><p>{task.approvalSummary}</p><EngineApprovalReview task={task} /></>
           : <><strong>Workspace action needs your approval</strong><p>{task.approvalSummary} The agent is paused; no change has been made yet.</p></>}
-      <div className="model-recommendation-actions"><button className="button button-primary" onClick={() => decide(true)} disabled={approval.isPending} data-testid="button-dock-approve">{approval.isPending ? 'Applying…' : isElevated ? 'Approve & Run with UAC' : isTerminalCommand ? 'Approve & Run' : 'Approve and continue'}</button><button className="button button-quiet" onClick={() => decide(false)} disabled={approval.isPending} data-testid="button-dock-reject">{isElevated ? 'Reject Action' : isTerminalCommand ? 'Reject Command' : 'Reject and continue'}</button></div>
+      <div className="model-recommendation-actions"><button className="button button-primary" onClick={() => decide(true)} disabled={approval.isPending} data-testid="button-dock-approve">{approval.isPending ? 'Applying…' : isElevated ? 'Approve & Run with UAC' : isTerminalCommand ? 'Approve & Run' : isBlenderApproval ? 'Approve & Run in Blender' : isEngineApproval ? 'Approve & Send to Engine' : 'Approve and continue'}</button><button className="button button-quiet" onClick={() => decide(false)} disabled={approval.isPending} data-testid="button-dock-reject">{isElevated ? 'Reject Action' : isTerminalCommand ? 'Reject Command' : isEngineAction ? 'Reject 3D action' : 'Reject and continue'}</button></div>
     </div>}
     {needsModel && <div className="dock-card" data-testid="dock-model-recommendation"><strong>Recommendation:</strong><p>This task involves {task.recommendationReason}. Running on a high-capability model like {recommended} may produce better results. Would you like to switch for this task?</p><div className="model-recommendation-actions"><button className="button button-primary" onClick={() => choose(true)} disabled={model.isPending} data-testid="button-dock-switch-model">{model.isPending ? 'Saving choice…' : 'Switch to Recommended Model'}</button><button className="button button-quiet" onClick={() => choose(false)} disabled={model.isPending} data-testid="button-dock-stay-model">Stay on Current Model</button></div></div>}
     {needsFallback && <div className="dock-card security-warning" data-testid="dock-fallback-recommendation"><strong>Task encountered persistent errors on the current model.</strong><p>Would you like to retry this step with {recommended}?</p><div className="model-recommendation-actions"><button className="button button-primary" onClick={() => retryStep(true)} disabled={retry.isPending} data-testid="button-dock-retry-model">{retry.isPending ? 'Starting retry…' : 'Retry this step with Recommended Pro Model'}</button><button className="button button-quiet" onClick={() => retryStep(false)} disabled={retry.isPending} data-testid="button-dock-dismiss-retry">Not now</button></div></div>}
@@ -695,12 +715,15 @@ function TaskDetailDialog({ task, loading, error, retry, close, abort, aborting 
   };
   const elevatedApproval = task?.pendingApprovalKind === 'elevated_command';
   const terminalCommandApproval = task?.pendingApprovalKind === 'terminal_command';
+  const blenderApproval = task?.pendingApprovalKind === 'blender_automation';
+  const engineRemoteApproval = task?.pendingApprovalKind === 'engine_remote_command';
+  const engineApproval = blenderApproval || engineRemoteApproval;
   const elevationButtonLabel = typeof navigator !== 'undefined' && navigator.platform.toLowerCase().startsWith('win')
     ? 'Approve & Run with UAC'
     : 'Approve & Run with OS elevation';
   return <Modal title="Task details" onClose={close}>{loading ? <Skeleton rows={5} /> : error || !task ? <QueryProblem retry={retry} /> : <div className="detail-content"><div className="detail-objective"><StatusPill status={task.status} /><h3>{task.objective}</h3><p>Started {formatDate(task.createdAt)} <span>·</span> Updated {timeAgo(task.updatedAt)}</p></div>
     <p className="settings-footnote">Model used: <strong>{task.modelId}</strong></p>
-    {task.requiresApproval && task.pendingApprovalId && <section className={`model-recommendation approval-recommendation ${elevatedApproval || terminalCommandApproval ? 'elevated-approval' : ''}`} aria-live="polite" data-testid={elevatedApproval ? 'task-elevated-approval' : terminalCommandApproval ? 'task-terminal-approval' : 'task-workspace-approval'}>
+    {task.requiresApproval && task.pendingApprovalId && <section className={`model-recommendation approval-recommendation ${elevatedApproval || terminalCommandApproval || engineApproval ? 'elevated-approval' : ''}`} aria-live="polite" data-testid={elevatedApproval ? 'task-elevated-approval' : terminalCommandApproval ? 'task-terminal-approval' : blenderApproval ? 'task-blender-approval' : engineRemoteApproval ? 'task-engine-approval' : 'task-workspace-approval'}>
       {elevatedApproval ? <>
         <strong>Administrative Privilege Requested</strong>
         <p>The agent is requesting permission to execute this command with elevated system permissions:</p>
@@ -712,13 +735,21 @@ function TaskDetailDialog({ task, loading, error, retry, close, abort, aborting 
         <p>The agent requests to run this exact command with your normal local-user permissions:</p>
         <code className="elevated-command" data-testid="text-terminal-command">{task.approvalSummary}</code>
         <p>It runs from workspace/ with a cleaned environment and a 30-second limit. It is not elevated, but can still change local files or data. Nothing has run yet.</p>
+      </> : blenderApproval ? <>
+        <strong>Blender automation needs approval</strong>
+        <p>{task.approvalSummary}</p>
+        <EngineApprovalReview task={task} />
+      </> : engineRemoteApproval ? <>
+        <strong>Local engine command needs approval</strong>
+        <p>{task.approvalSummary}</p>
+        <EngineApprovalReview task={task} />
       </> : <>
         <strong>Workspace action needs your approval</strong>
         <p>{task.approvalSummary} The agent is paused; no change has been made yet.</p>
       </>}
       <div className="model-recommendation-actions">
-        <button className="button button-primary" onClick={() => decideApproval(true)} disabled={resolveApproval.isPending} data-testid="button-approve-workspace-action">{resolveApproval.isPending ? 'Applying…' : elevatedApproval ? elevationButtonLabel : terminalCommandApproval ? 'Approve & Run' : 'Approve and continue'}</button>
-        <button className="button button-quiet" onClick={() => decideApproval(false)} disabled={resolveApproval.isPending} data-testid="button-reject-workspace-action">{elevatedApproval ? 'Reject Action' : terminalCommandApproval ? 'Reject Command' : 'Reject and continue'}</button>
+        <button className="button button-primary" onClick={() => decideApproval(true)} disabled={resolveApproval.isPending} data-testid="button-approve-workspace-action">{resolveApproval.isPending ? 'Applying…' : elevatedApproval ? elevationButtonLabel : terminalCommandApproval ? 'Approve & Run' : blenderApproval ? 'Approve & Run in Blender' : engineRemoteApproval ? 'Approve & Send to Engine' : 'Approve and continue'}</button>
+        <button className="button button-quiet" onClick={() => decideApproval(false)} disabled={resolveApproval.isPending} data-testid="button-reject-workspace-action">{elevatedApproval ? 'Reject Action' : terminalCommandApproval ? 'Reject Command' : engineApproval ? 'Reject 3D action' : 'Reject and continue'}</button>
       </div>
     </section>}
     {task.requiresModelConfirmation && <section className="model-recommendation" aria-live="polite" data-testid="task-model-recommendation"><strong>Recommendation:</strong><p>This task involves {task.recommendationReason}. Running on a high-capability model like {recommendedName} may produce better results. Would you like to switch for this task?</p><div className="model-recommendation-actions"><button className="button button-primary" onClick={() => choose(true)} disabled={chooseModel.isPending} data-testid="button-switch-recommended-model">{chooseModel.isPending ? 'Saving choice…' : 'Switch to Recommended Model'}</button><button className="button button-quiet" onClick={() => choose(false)} disabled={chooseModel.isPending} data-testid="button-stay-current-model">Stay on Current Model</button></div></section>}
@@ -729,7 +760,7 @@ function TaskDetailDialog({ task, loading, error, retry, close, abort, aborting 
     {task.error && <div className="error-box"><strong><AlertCircle size={16} /> What happened</strong><p>{task.error}</p></div>}
     <div className="log-heading"><strong>Execution log</strong><span>{task.logs?.length ?? 0} entries</span></div>
     <div className="log-list">{task.logs?.length ? task.logs.map((log) => <div className="log-item" key={log.id}><span className={`log-dot ${log.kind}`} /><div><div className="log-meta"><strong>{log.kind}</strong><time>{formatDate(log.createdAt)}</time></div><span className="terminal-prefix" aria-hidden="true">{log.kind === 'tool' ? '[OP_RUNNER]' : 'FORGE://SYS_OUT >'}</span><p>{log.message}</p></div></div>) : <div className="log-empty">No execution updates yet. This view refreshes while your task is active.</div>}</div>
-    <div className="modal-actions"><button className="button button-quiet" onClick={close}>Close</button>{['queued', 'running'].includes(task.status) && !['Running approved command; waiting for operating-system elevation', 'Running approved local command (normal user permissions)'].includes(task.currentStep ?? '') && <button className="button button-danger" onClick={() => abort(task.id)} disabled={aborting} data-testid="button-abort-task"><StopCircle size={15} />{aborting ? 'Stopping…' : 'Stop task'}</button>}</div>
+    <div className="modal-actions"><button className="button button-quiet" onClick={close}>Close</button>{['queued', 'running'].includes(task.status) && !['Running approved command; waiting for operating-system elevation', 'Running approved local command (normal user permissions)', 'Running approved Blender automation (normal local-user permissions)'].includes(task.currentStep ?? '') && <button className="button button-danger" onClick={() => abort(task.id)} disabled={aborting} data-testid="button-abort-task"><StopCircle size={15} />{aborting ? 'Stopping…' : 'Stop task'}</button>}</div>
   </div>}</Modal>;
 }
 
@@ -1216,6 +1247,7 @@ function SettingsPage() {
   const [ollamaBaseUrl, setOllamaBaseUrl] = useState('http://localhost:11434/v1');
   const [codeRunnerEnabled, setCodeRunnerEnabled] = useState(false);
   const [appPreviewsEnabled, setAppPreviewsEnabled] = useState(false);
+  const [engineToolsEnabled, setEngineToolsEnabled] = useState(false);
   const [providerError, setProviderError] = useState('');
   const [providerSaved, setProviderSaved] = useState(false);
   const [backupPassword, setBackupPassword] = useState('');
@@ -1249,6 +1281,7 @@ function SettingsPage() {
     setOllamaBaseUrl(data.ollamaBaseUrl || 'http://localhost:11434/v1');
     setCodeRunnerEnabled(data.codeRunnerEnabled);
     setAppPreviewsEnabled(data.appPreviewsEnabled);
+    setEngineToolsEnabled(data.engineToolsEnabled);
   }, [settingsQuery.data]);
   useEffect(() => {
     if (vaultLocked) setVaultExpanded({ core: true, search: true, market: true });
@@ -1266,7 +1299,7 @@ function SettingsPage() {
   const saveProviderSettings = () => {
     setProviderError('');
     if (!credentialStatus) return;
-    const payload: AssistantSettingsInput = { provider: credentialStatus.provider, modelId: credentialStatus.modelId, codeRunnerEnabled, appPreviewsEnabled };
+    const payload: AssistantSettingsInput = { provider: credentialStatus.provider, modelId: credentialStatus.modelId, codeRunnerEnabled, appPreviewsEnabled, engineToolsEnabled };
     updateSettings.mutate({ data: payload }, {
       onSuccess: (result: AssistantSettings) => {
         syncSettings(result);
@@ -1481,8 +1514,9 @@ function SettingsPage() {
     <section className="settings-section safety-section"><div className="settings-section-heading"><div className="section-symbol amber"><ShieldCheck size={18} /></div><div><h2>Local execution</h2><p>Optional local tools, disabled by default and unavailable in Replit Cloud.</p></div></div>
       <div className="setting-row"><div className="setting-row-icon"><KeyRound size={16} /></div><div className="setting-copy"><strong>Allow local terminal commands after approval</strong><span>Local-only and off by default. Every exact command pauses for your approval, then runs without elevation from workspace/ with a cleaned environment and a 30-second limit. Shell chaining and known destructive commands remain blocked.</span><p className="settings-footnote" role="note">Approved commands can still modify local files or data with your normal user permissions.</p></div><button className={`switch ${codeRunnerEnabled ? 'on' : ''}`} role="switch" aria-checked={codeRunnerEnabled} disabled={!credentialStatus?.localSetupAllowed} onClick={() => { setCodeRunnerEnabled(!codeRunnerEnabled); setProviderSaved(false); }} aria-label="Allow local terminal commands after approval" data-testid="switch-local-code-runner"><span /></button></div>
       <div className="setting-row"><div className="setting-row-icon"><ShieldCheck size={16} /></div><div className="setting-copy"><strong>Enable Local App Previews (Unrestricted Workspace Execution)</strong><span>When enabled on localhost, generated Flask, Streamlit, FastAPI, and Vite apps can run from workspace/ with a cleaned environment, loopback binding, and a one-hour runtime limit. Closing the Live Preview tab stops the child processes.</span><p className="settings-footnote" role="note">Running generated Python apps executes code with standard local user permissions. Running generated Node apps also executes code with standard local user permissions.</p></div><button className={`switch ${appPreviewsEnabled ? 'on' : ''}`} role="switch" aria-checked={appPreviewsEnabled} disabled={!credentialStatus?.localSetupAllowed} onClick={() => { setAppPreviewsEnabled(!appPreviewsEnabled); setProviderSaved(false); }} aria-label="Enable Local App Previews (Unrestricted Workspace Execution)" data-testid="switch-local-app-previews"><span /></button></div>
+      <div className="setting-row"><div className="setting-row-icon"><ShieldCheck size={16} /></div><div className="setting-copy"><strong>Enable local Blender &amp; Unreal engine tools</strong><span>Off by default and only available in an exported localhost copy. Every exact script or local endpoint and JSON payload is shown for approval before execution or sending.</span><p className="settings-footnote" role="note">Blender scripts run as your normal local user and are not sandboxed. They can read or modify files your account can access. Blender runs have a 10-minute limit; engine requests are restricted to localhost.</p></div><button className={`switch ${engineToolsEnabled ? 'on' : ''}`} role="switch" aria-checked={engineToolsEnabled} disabled={!credentialStatus?.localSetupAllowed} onClick={() => { setEngineToolsEnabled(!engineToolsEnabled); setProviderSaved(false); }} aria-label="Enable local Blender and Unreal engine tools" data-testid="switch-local-engine-tools"><span /></button></div>
       <div className="setting-row"><div className="setting-row-icon"><Bell size={16} /></div><div className="setting-copy"><strong>Desktop notifications</strong><span>Show browser notifications when a scheduled reminder fires.</span></div><button className="button button-quiet button-small" onClick={() => { if ('Notification' in window) void Notification.requestPermission(); }} data-testid="button-enable-notifications">Enable alerts</button></div>
-      {!credentialStatus?.localSetupAllowed && <p className="settings-footnote"><LockKeyhole size={13} /> Local terminal commands and app previews can only be enabled from a localhost copy of the app. Replit Cloud keeps dynamic process previews disabled.</p>}
+      {!credentialStatus?.localSetupAllowed && <p className="settings-footnote"><LockKeyhole size={13} /> Local terminal commands, app previews, and engine tools can only be enabled from a localhost copy of the app. Replit Cloud keeps dynamic process previews and 3D engine tools disabled.</p>}
     </section>
     <section className="settings-section safety-section"><div className="settings-section-heading"><div className="section-symbol amber"><ShieldCheck size={18} /></div><div><h2>Safety &amp; permissions</h2><p>Make your boundaries explicit. Change these any time.</p></div></div>
       <div className="setting-row"><div className="setting-row-icon"><CheckCircle2 size={16} /></div><div className="setting-copy"><strong>Confirm before consequential actions</strong><span>Pause and ask before an action that changes or sends something.</span></div><button className={`switch ${confirmBeforeActions ? 'on' : ''}`} role="switch" aria-checked={confirmBeforeActions} onClick={() => onSetting(setConfirmBeforeActions, !confirmBeforeActions)} aria-label="Confirm before consequential actions" data-testid="switch-confirm-actions"><span /></button></div>

@@ -51,6 +51,7 @@ export const GetAssistantDashboardResponse = zod.object({
   "pendingApprovalId": zod.string().nullable(),
   "pendingApprovalKind": zod.string().nullable(),
   "approvalSummary": zod.string().nullable(),
+  "approvalDetails": zod.string().nullable(),
   "requiresApproval": zod.boolean(),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
@@ -143,6 +144,7 @@ export const GetConversationThreadResponse = zod.object({
   "pendingApprovalId": zod.string().nullable(),
   "pendingApprovalKind": zod.string().nullable(),
   "approvalSummary": zod.string().nullable(),
+  "approvalDetails": zod.string().nullable(),
   "requiresApproval": zod.boolean(),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
@@ -282,6 +284,7 @@ export const ListAssistantTasksResponseItem = zod.object({
   "pendingApprovalId": zod.string().nullable(),
   "pendingApprovalKind": zod.string().nullable(),
   "approvalSummary": zod.string().nullable(),
+  "approvalDetails": zod.string().nullable(),
   "requiresApproval": zod.boolean(),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
@@ -331,6 +334,7 @@ export const CreateAssistantTaskResponse = zod.object({
   "pendingApprovalId": zod.string().nullable(),
   "pendingApprovalKind": zod.string().nullable(),
   "approvalSummary": zod.string().nullable(),
+  "approvalDetails": zod.string().nullable(),
   "requiresApproval": zod.boolean(),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
@@ -369,6 +373,7 @@ export const GetAssistantTaskResponse = zod.object({
   "pendingApprovalId": zod.string().nullable(),
   "pendingApprovalKind": zod.string().nullable(),
   "approvalSummary": zod.string().nullable(),
+  "approvalDetails": zod.string().nullable(),
   "requiresApproval": zod.boolean(),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
@@ -417,6 +422,7 @@ export const AbortAssistantTaskResponse = zod.object({
   "pendingApprovalId": zod.string().nullable(),
   "pendingApprovalKind": zod.string().nullable(),
   "approvalSummary": zod.string().nullable(),
+  "approvalDetails": zod.string().nullable(),
   "requiresApproval": zod.boolean(),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
@@ -459,6 +465,7 @@ export const ChooseAssistantTaskModelResponse = zod.object({
   "pendingApprovalId": zod.string().nullable(),
   "pendingApprovalKind": zod.string().nullable(),
   "approvalSummary": zod.string().nullable(),
+  "approvalDetails": zod.string().nullable(),
   "requiresApproval": zod.boolean(),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
@@ -501,6 +508,7 @@ export const RetryAssistantTaskStepResponse = zod.object({
   "pendingApprovalId": zod.string().nullable(),
   "pendingApprovalKind": zod.string().nullable(),
   "approvalSummary": zod.string().nullable(),
+  "approvalDetails": zod.string().nullable(),
   "requiresApproval": zod.boolean(),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
@@ -548,6 +556,7 @@ export const ChooseAssistantTaskApprovalResponse = zod.object({
   "pendingApprovalId": zod.string().nullable(),
   "pendingApprovalKind": zod.string().nullable(),
   "approvalSummary": zod.string().nullable(),
+  "approvalDetails": zod.string().nullable(),
   "requiresApproval": zod.boolean(),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
@@ -708,6 +717,7 @@ export const GetAssistantSettingsResponse = zod.object({
   "hasOpenrouterKey": zod.boolean(),
   "codeRunnerEnabled": zod.boolean(),
   "appPreviewsEnabled": zod.boolean(),
+  "engineToolsEnabled": zod.boolean(),
   "searchMode": zod.enum(['native', 'api', 'chromium']).optional(),
   "searchApiProvider": zod.enum(['tavily', 'serper', 'brave']).optional(),
   "searchChromiumFallback": zod.boolean().optional(),
@@ -739,7 +749,7 @@ export const updateAssistantSettingsBodyGeminiApiKeyMax = 1000;
 
 export const updateAssistantSettingsBodyOpenrouterApiKeyMax = 1000;
 
-
+export const updateAssistantSettingsBodyEngineToolsEnabledDefault = false;
 
 export const UpdateAssistantSettingsBody = zod.object({
   "provider": zod.enum(['openai', 'deepseek', 'gemini', 'openrouter', 'ollama']),
@@ -751,7 +761,8 @@ export const UpdateAssistantSettingsBody = zod.object({
   "geminiApiKey": zod.string().max(updateAssistantSettingsBodyGeminiApiKeyMax).nullish(),
   "openrouterApiKey": zod.string().max(updateAssistantSettingsBodyOpenrouterApiKeyMax).nullish(),
   "codeRunnerEnabled": zod.boolean().optional(),
-  "appPreviewsEnabled": zod.boolean().optional()
+  "appPreviewsEnabled": zod.boolean().optional(),
+  "engineToolsEnabled": zod.boolean().default(updateAssistantSettingsBodyEngineToolsEnabledDefault)
 })
 
 export const UpdateAssistantSettingsResponse = zod.object({
@@ -767,6 +778,7 @@ export const UpdateAssistantSettingsResponse = zod.object({
   "hasOpenrouterKey": zod.boolean(),
   "codeRunnerEnabled": zod.boolean(),
   "appPreviewsEnabled": zod.boolean(),
+  "engineToolsEnabled": zod.boolean(),
   "searchMode": zod.enum(['native', 'api', 'chromium']).optional(),
   "searchApiProvider": zod.enum(['tavily', 'serper', 'brave']).optional(),
   "searchChromiumFallback": zod.boolean().optional(),
@@ -809,6 +821,7 @@ export const ApplyAssistantModelResponse = zod.object({
   "hasOpenrouterKey": zod.boolean(),
   "codeRunnerEnabled": zod.boolean(),
   "appPreviewsEnabled": zod.boolean(),
+  "engineToolsEnabled": zod.boolean(),
   "searchMode": zod.enum(['native', 'api', 'chromium']).optional(),
   "searchApiProvider": zod.enum(['tavily', 'serper', 'brave']).optional(),
   "searchChromiumFallback": zod.boolean().optional(),
@@ -888,6 +901,7 @@ export const SaveAssistantProviderKeysResponse = zod.object({
   "hasOpenrouterKey": zod.boolean(),
   "codeRunnerEnabled": zod.boolean(),
   "appPreviewsEnabled": zod.boolean(),
+  "engineToolsEnabled": zod.boolean(),
   "searchMode": zod.enum(['native', 'api', 'chromium']).optional(),
   "searchApiProvider": zod.enum(['tavily', 'serper', 'brave']).optional(),
   "searchChromiumFallback": zod.boolean().optional(),
@@ -1021,6 +1035,7 @@ export const UpdateAssistantSearchSettingsResponse = zod.object({
   "hasOpenrouterKey": zod.boolean(),
   "codeRunnerEnabled": zod.boolean(),
   "appPreviewsEnabled": zod.boolean(),
+  "engineToolsEnabled": zod.boolean(),
   "searchMode": zod.enum(['native', 'api', 'chromium']).optional(),
   "searchApiProvider": zod.enum(['tavily', 'serper', 'brave']).optional(),
   "searchChromiumFallback": zod.boolean().optional(),

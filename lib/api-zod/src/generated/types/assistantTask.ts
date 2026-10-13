@@ -42,6 +42,8 @@ export interface AssistantTask {
   pendingApprovalKind: string | null;
   /** @nullable */
   approvalSummary: string | null;
+  /** @nullable */
+  approvalDetails: string | null;
   requiresApproval: boolean;
   createdAt: Date;
   updatedAt: Date;

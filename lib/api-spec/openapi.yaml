@@ -760,7 +760,7 @@ components:
         pinned: { type: boolean }
     AssistantTask:
       type: object
-      required: [id, objective, status, currentStep, result, error, logs, provider, modelId, recommendationKind, recommendationReason, recommendedProvider, recommendedModelId, retryAvailable, requiresModelConfirmation, pendingApprovalId, pendingApprovalKind, approvalSummary, requiresApproval, createdAt, updatedAt]
+      required: [id, objective, status, currentStep, result, error, logs, provider, modelId, recommendationKind, recommendationReason, recommendedProvider, recommendedModelId, retryAvailable, requiresModelConfirmation, pendingApprovalId, pendingApprovalKind, approvalSummary, approvalDetails, requiresApproval, createdAt, updatedAt]
       properties:
         id: { type: string, format: uuid }
         objective: { type: string }
@@ -786,6 +786,7 @@ components:
         pendingApprovalId: { type: ["string", "null"] }
         pendingApprovalKind: { type: ["string", "null"] }
         approvalSummary: { type: ["string", "null"] }
+        approvalDetails: { type: ["string", "null"] }
         requiresApproval: { type: boolean }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
@@ -945,7 +946,7 @@ components:
         searchChromiumFallback: { type: boolean }
     AssistantSettings:
       type: object
-      required: [provider, modelId, fallbackModelId, ollamaBaseUrl, localSetupAllowed, providerSettingsAllowed, hasOpenaiKey, hasDeepseekKey, hasGeminiKey, hasOpenrouterKey, codeRunnerEnabled, appPreviewsEnabled]
+      required: [provider, modelId, fallbackModelId, ollamaBaseUrl, localSetupAllowed, providerSettingsAllowed, hasOpenaiKey, hasDeepseekKey, hasGeminiKey, hasOpenrouterKey, codeRunnerEnabled, appPreviewsEnabled, engineToolsEnabled]
       properties:
         provider: { type: string, enum: [openai, deepseek, gemini, openrouter, ollama] }
         modelId: { type: string }
@@ -959,6 +960,7 @@ components:
         hasOpenrouterKey: { type: boolean }
         codeRunnerEnabled: { type: boolean }
         appPreviewsEnabled: { type: boolean }
+        engineToolsEnabled: { type: boolean }
         searchMode: { type: string, enum: [native, api, chromium] }
         searchApiProvider: { type: string, enum: [tavily, serper, brave] }
         searchChromiumFallback: { type: boolean }
@@ -1062,4 +1064,5 @@ components:
         openrouterApiKey: { type: ["string", "null"], maxLength: 1000 }
         codeRunnerEnabled: { type: boolean }
         appPreviewsEnabled: { type: boolean }
+        engineToolsEnabled: { type: boolean, default: false }
 

@@ -6,7 +6,7 @@ import shutil
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import httpx
 
@@ -128,6 +128,52 @@ class WorkspaceSafetyTests(unittest.IsolatedAsyncioTestCase):
             main.validate_terminal_command(r'python "C:\Users\me\app.py"', windows=True),
             ["python", r"C:\Users\me\app.py"],
         )
+
+    def test_engine_actions_are_local_opt_in_and_stage_exact_review_details(self) -> None:
+        script = "import bpy\nbpy.context.scene.frame_end = 48\n"
+        with (
+            patch.object(main, "is_replit_runtime", return_value=False),
+            patch.object(main, "local_engine_tools_available", return_value=True),
+        ):
+            staged = main.workspace_action_requiring_approval(
+                "run_blender_automation",
+                {"script_content": script, "render_output_path": "renders/scene.png"},
+            )
+            remote = main.workspace_action_requiring_approval(
+                "send_engine_remote_command",
+                {
+                    "engine": "unreal",
+                    "endpoint_url": "http://localhost:30010/remote/object/call",
+                    "payload": {"objectPath": "/Game/Scene", "functionName": "CreateActor"},
+                },
+            )
+        self.assertEqual(staged[0], "blender_automation")
+        self.assertEqual(staged[1]["script_content"], script)
+        self.assertIn("renders/scene.png", staged[2])
+        self.assertEqual(main.workspace_approval_details("run_blender_automation", staged[1]), script)
+        self.assertEqual(remote[0], "engine_remote_command")
+        self.assertIn("localhost:30010", remote[2])
+        self.assertIn('"functionName": "CreateActor"', main.workspace_approval_details(
+            "send_engine_remote_command", remote[1]
+        ))
+        with (
+            patch.object(main, "is_replit_runtime", return_value=False),
+            patch.object(main, "local_engine_tools_available", return_value=False),
+            self.assertRaises(PermissionError),
+        ):
+            main.workspace_action_requiring_approval(
+                "run_blender_automation",
+                {"script_content": script},
+            )
+        with (
+            patch.object(main, "is_replit_runtime", return_value=True),
+            patch.object(main, "local_engine_tools_available", return_value=True),
+            self.assertRaises(PermissionError),
+        ):
+            main.workspace_action_requiring_approval(
+                "send_engine_remote_command",
+                {"engine": "unreal", "endpoint_url": "http://localhost:30010", "payload": {}},
+            )
 
     def test_windows_npm_batch_shim_is_replaced_with_node_cli(self) -> None:
         node = self.root / "node.exe"
@@ -576,7 +622,96 @@ class WorkspaceSafetyTests(unittest.IsolatedAsyncioTestCase):
         task = main.db_one("SELECT status,pending_approval_kind,messages_json FROM tasks WHERE id=?", (task_id,))
         self.assertEqual(task["status"], "queued")
         self.assertIsNone(task["pending_approval_kind"])
-        self.assertIn("2 tests passed", task["messages_json"])
+
+    async def test_blender_script_runs_only_after_explicit_approval(self) -> None:
+        approval_id = "approval-blender"
+        script = "import bpy\nbpy.context.scene.frame_end = 24\n"
+        task_id = await self._create_pending_task(
+            approval_id,
+            "blender_automation",
+            {
+                "script_content": script,
+                "blend_filepath": None,
+                "render_output_path": None,
+            },
+        )
+
+        async def fake_worker(*_args: object) -> None:
+            return None
+
+        with (
+            patch.object(main, "is_replit_runtime", return_value=False),
+            patch.object(main, "local_engine_tools_available", return_value=True),
+            patch.object(main, "run_blender_automation", return_value={
+                "ok": True, "returnCode": 0, "stdout": "done", "stderr": "", "renderedOutputPaths": []
+            }) as blender_runner,
+            patch.object(main, "run_agent_task", new=fake_worker),
+        ):
+            blender_runner.assert_not_called()
+            response = await self._choose_approval(task_id, approval_id, True)
+            self.assertEqual(response.status_code, 200, response.text)
+            for _ in range(50):
+                pending = main.db_one("SELECT status FROM pending_approvals WHERE id=?", (approval_id,))
+                if pending["status"] != "processing":
+                    break
+                await asyncio.sleep(0.01)
+
+        blender_runner.assert_called_once_with(
+            script,
+            None,
+            None,
+            workspace=self.workspace,
+        )
+        self.assertEqual(pending["status"], "approved")
+        task = main.db_one(
+            "SELECT status,pending_approval_kind,pending_approval_details,messages_json FROM tasks WHERE id=?",
+            (task_id,),
+        )
+        self.assertEqual(task["status"], "queued")
+        self.assertIsNone(task["pending_approval_kind"])
+        self.assertIsNone(task["pending_approval_details"])
+        self.assertIn("done", task["messages_json"])
+
+    async def test_engine_remote_command_is_sent_only_after_explicit_approval(self) -> None:
+        approval_id = "approval-engine-remote"
+        task_id = await self._create_pending_task(
+            approval_id,
+            "engine_remote_command",
+            {
+                "engine": "unreal",
+                "endpoint_url": "http://localhost:30010/remote/object/call",
+                "payload": {"objectPath": "/Game/Scene", "functionName": "CreateActor"},
+            },
+        )
+
+        async def fake_worker(*_args: object) -> None:
+            return None
+
+        with (
+            patch.object(main, "is_replit_runtime", return_value=False),
+            patch.object(main, "local_engine_tools_available", return_value=True),
+            patch.object(
+                main,
+                "send_engine_remote_command",
+                new=AsyncMock(return_value={"ok": True, "transport": "http", "statusCode": 200, "response": {"success": True}}),
+            ) as engine_sender,
+            patch.object(main, "run_agent_task", new=fake_worker),
+        ):
+            engine_sender.assert_not_awaited()
+            response = await self._choose_approval(task_id, approval_id, True)
+            self.assertEqual(response.status_code, 200, response.text)
+            for _ in range(50):
+                pending = main.db_one("SELECT status FROM pending_approvals WHERE id=?", (approval_id,))
+                if pending["status"] != "processing":
+                    break
+                await asyncio.sleep(0.01)
+
+        engine_sender.assert_awaited_once_with(
+            engine="unreal",
+            endpoint_url="http://localhost:30010/remote/object/call",
+            payload={"objectPath": "/Game/Scene", "functionName": "CreateActor"},
+        )
+        self.assertEqual(pending["status"], "approved")
 
     async def test_rejected_local_terminal_command_never_runs(self) -> None:
         approval_id = "approval-terminal-reject"

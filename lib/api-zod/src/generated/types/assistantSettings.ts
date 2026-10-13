@@ -22,6 +22,7 @@ export interface AssistantSettings {
   hasOpenrouterKey: boolean;
   codeRunnerEnabled: boolean;
   appPreviewsEnabled: boolean;
+  engineToolsEnabled: boolean;
   searchMode?: AssistantSettingsSearchMode;
   searchApiProvider?: AssistantSettingsSearchApiProvider;
   searchChromiumFallback?: boolean;

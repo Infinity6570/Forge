@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import asyncio
 import os
 import json
+import inspect
 import re
 import shlex
 import shutil
@@ -24,6 +26,7 @@ MAX_ENGINE_PAYLOAD_BYTES = 32_000
 ENGINE_REQUEST_TIMEOUT_SECONDS = 12
 MAX_ENGINE_RESPONSE_CHARS = 12_000
 RENDER_SUFFIXES = {".png", ".jpg", ".jpeg", ".exr", ".tif", ".tiff"}
+WEBSOCKET_CONNECT_SUPPORTS_PROXY = "proxy" in inspect.signature(websocket_connect).parameters
 PRIVATE_ENGINE_PATHS = {
     ".agent-packages",
     "assistant.db",
@@ -296,7 +299,13 @@ def validate_blender_request(
         render_path = _workspace_relative_path(workspace, render_output_path, allow_missing=True)
         if render_path.suffix.casefold() not in RENDER_SUFFIXES:
             raise PermissionError("Choose a PNG, JPG, EXR, TIF, or TIFF render output path.")
-        if render_path.exists():
+        if render_path.exists() or (
+            render_path.parent.is_dir()
+            and any(
+                item.is_file() and item.name.casefold().startswith(render_path.stem.casefold())
+                for item in render_path.parent.iterdir()
+            )
+        ):
             raise PermissionError("That render output already exists. Choose a new path to avoid overwriting it.")
         render_relative = render_path.relative_to(workspace.resolve()).as_posix()
 
@@ -328,12 +337,14 @@ def _engine_child_environment(temporary_home: Path) -> dict[str, str]:
 
 
 def run_blender_automation(
-    workspace: Path,
     script_content: str,
     blend_filepath: str | None = None,
     render_output_path: str | None = None,
+    *,
+    workspace: Path | None = None,
 ) -> dict[str, Any]:
     """Run an explicitly approved Blender script from a local workspace."""
+    workspace = workspace or Path(__file__).resolve().parents[1] / "workspace"
     validated = validate_blender_request(
         workspace, script_content, blend_filepath, render_output_path
     )
@@ -356,8 +367,12 @@ def run_blender_automation(
     render_path = _workspace_relative_path(root, render, allow_missing=True) if render else None
     if render_path:
         render_path.parent.mkdir(parents=True, exist_ok=True)
-        if render_path.exists():
-            raise PermissionError("The approved render output now exists; refusing to overwrite it.")
+        validate_blender_request(
+            root,
+            script_content,
+            validated["blend_filepath"],
+            validated["render_output_path"],
+        )
 
     with tempfile.TemporaryDirectory(prefix="forge-blender-") as temporary:
         temporary_root = Path(temporary)
@@ -477,6 +492,7 @@ def validate_engine_endpoint(endpoint_url: str) -> str:
         or parsed.username is not None
         or parsed.password is not None
         or parsed.fragment
+        or parsed.query
         or (port is not None and not 1 <= port <= 65535)
     ):
         raise PermissionError("Engine commands may only target an HTTP or WebSocket listener on localhost.")
@@ -514,18 +530,29 @@ async def send_engine_remote_command(
 
     if url.startswith("ws://"):
         try:
-            async with websocket_connect(
-                url,
-                open_timeout=4,
-                close_timeout=2,
-                max_size=MAX_ENGINE_RESPONSE_CHARS * 4,
-                proxy=None,
-            ) as connection:
+            connect_options: dict[str, Any] = {
+                "open_timeout": 4,
+                "close_timeout": 2,
+                "max_size": MAX_ENGINE_RESPONSE_CHARS * 4,
+            }
+            if WEBSOCKET_CONNECT_SUPPORTS_PROXY:
+                connect_options["proxy"] = None
+            async with websocket_connect(url, **connect_options) as connection:
                 await connection.send(encoded)
                 reply = await asyncio.wait_for(connection.recv(), timeout=ENGINE_REQUEST_TIMEOUT_SECONDS)
         except Exception as error:
             return {"ok": False, "engine": engine, "transport": "websocket", "error": str(error)[:1_000]}
         content = reply if isinstance(reply, str) else reply.decode("utf-8", errors="replace")
+        if len(content) > MAX_ENGINE_RESPONSE_CHARS:
+            return {
+                "ok": True,
+                "engine": engine,
+                "transport": "websocket",
+                "response": {
+                    "truncated": True,
+                    "preview": content[:MAX_ENGINE_RESPONSE_CHARS],
+                },
+            }
         try:
             response: Any = json.loads(content)
         except json.JSONDecodeError:
@@ -538,32 +565,37 @@ async def send_engine_remote_command(
             trust_env=False,
             follow_redirects=False,
         ) as client:
-            response = await client.post(
+            async with client.stream(
+                "POST",
                 url,
                 json=payload,
                 headers={"Accept": "application/json"},
-            )
-        body: Any
-        try:
-            body = response.json()
-        except ValueError:
-            body = response.text[:MAX_ENGINE_RESPONSE_CHARS]
-        if isinstance(body, str):
-            body = body[:MAX_ENGINE_RESPONSE_CHARS]
+            ) as response:
+                status_code = response.status_code
+                is_success = response.is_success
+                body_bytes = bytearray()
+                truncated = False
+                async for chunk in response.aiter_bytes():
+                    remaining = MAX_ENGINE_RESPONSE_CHARS - len(body_bytes)
+                    body_bytes.extend(chunk[:remaining])
+                    if len(chunk) > remaining:
+                        truncated = True
+                        break
+        body_text = bytes(body_bytes).decode("utf-8", errors="replace")
+        if truncated:
+            body: Any = {"truncated": True, "preview": body_text}
         else:
-            body = json.loads(
-                json.dumps(body, ensure_ascii=False, default=str)[:MAX_ENGINE_RESPONSE_CHARS]
-            ) if len(json.dumps(body, ensure_ascii=False, default=str)) <= MAX_ENGINE_RESPONSE_CHARS else {
-                "truncated": True,
-                "preview": json.dumps(body, ensure_ascii=False, default=str)[:MAX_ENGINE_RESPONSE_CHARS],
-            }
+            try:
+                body = json.loads(body_text)
+            except json.JSONDecodeError:
+                body = body_text
         return {
-            "ok": response.is_success,
+            "ok": is_success,
             "engine": engine,
             "transport": "http",
-            "statusCode": response.status_code,
+            "statusCode": status_code,
             "response": body,
-            **({"error": "The local engine returned an HTTP error."} if not response.is_success else {}),
+            **({"error": "The local engine returned an HTTP error."} if not is_success else {}),
         }
     except httpx.HTTPError as error:
         return {"ok": False, "engine": engine, "transport": "http", "error": str(error)[:1_000]}
