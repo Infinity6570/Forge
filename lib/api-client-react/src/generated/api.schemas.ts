@@ -50,6 +50,7 @@ export const AssistantTaskProvider = {
   openai: 'openai',
   deepseek: 'deepseek',
   gemini: 'gemini',
+  anthropic: 'anthropic',
   openrouter: 'openrouter',
   ollama: 'ollama',
 } as const;
@@ -75,6 +76,7 @@ export const AssistantTaskRecommendedProvider = {
   openai: 'openai',
   deepseek: 'deepseek',
   gemini: 'gemini',
+  anthropic: 'anthropic',
   openrouter: 'openrouter',
   ollama: 'ollama',
 } as const;
@@ -186,6 +188,7 @@ export const TaskInputProvider = {
   openai: 'openai',
   deepseek: 'deepseek',
   gemini: 'gemini',
+  anthropic: 'anthropic',
   openrouter: 'openrouter',
   ollama: 'ollama',
 } as const;
@@ -395,6 +398,7 @@ export const AssistantSettingsProvider = {
   openai: 'openai',
   deepseek: 'deepseek',
   gemini: 'gemini',
+  anthropic: 'anthropic',
   openrouter: 'openrouter',
   ollama: 'ollama',
 } as const;
@@ -427,6 +431,7 @@ export interface AssistantSettings {
   hasOpenaiKey: boolean;
   hasDeepseekKey: boolean;
   hasGeminiKey: boolean;
+  hasAnthropicKey: boolean;
   hasOpenrouterKey: boolean;
   codeRunnerEnabled: boolean;
   appPreviewsEnabled: boolean;
@@ -447,6 +452,7 @@ export const ModelSelectionInputProvider = {
   openai: 'openai',
   deepseek: 'deepseek',
   gemini: 'gemini',
+  anthropic: 'anthropic',
   openrouter: 'openrouter',
   ollama: 'ollama',
 } as const;
@@ -482,6 +488,11 @@ export interface ProviderKeysInput {
      * @nullable
      */
   geminiApiKey?: string | null;
+  /**
+     * @maxLength 1000
+     * @nullable
+     */
+  anthropicApiKey?: string | null;
   /**
      * @maxLength 1000
      * @nullable
@@ -563,6 +574,11 @@ export interface VaultKeysInput {
      * @nullable
      */
   geminiApiKey?: string | null;
+  /**
+     * @maxLength 1000
+     * @nullable
+     */
+  anthropicApiKey?: string | null;
   /**
      * @maxLength 1000
      * @nullable
@@ -660,6 +676,15 @@ export type VaultKeyStatusesGeminiApiKey = typeof VaultKeyStatusesGeminiApiKey[k
 
 
 export const VaultKeyStatusesGeminiApiKey = {
+  configured: 'configured',
+  not_set: 'not_set',
+  unavailable: 'unavailable',
+} as const;
+
+export type VaultKeyStatusesAnthropicApiKey = typeof VaultKeyStatusesAnthropicApiKey[keyof typeof VaultKeyStatusesAnthropicApiKey];
+
+
+export const VaultKeyStatusesAnthropicApiKey = {
   configured: 'configured',
   not_set: 'not_set',
   unavailable: 'unavailable',
@@ -778,6 +803,7 @@ export interface VaultKeyStatuses {
   openai_api_key: VaultKeyStatusesOpenaiApiKey;
   deepseek_api_key: VaultKeyStatusesDeepseekApiKey;
   gemini_api_key: VaultKeyStatusesGeminiApiKey;
+  anthropic_api_key: VaultKeyStatusesAnthropicApiKey;
   openrouter_api_key: VaultKeyStatusesOpenrouterApiKey;
   tavily_api_key: VaultKeyStatusesTavilyApiKey;
   serper_api_key: VaultKeyStatusesSerperApiKey;
@@ -799,6 +825,7 @@ export const AssistantSettingsInputProvider = {
   openai: 'openai',
   deepseek: 'deepseek',
   gemini: 'gemini',
+  anthropic: 'anthropic',
   openrouter: 'openrouter',
   ollama: 'ollama',
 } as const;
@@ -833,6 +860,11 @@ export interface AssistantSettingsInput {
      * @nullable
      */
   geminiApiKey?: string | null;
+  /**
+     * @maxLength 1000
+     * @nullable
+     */
+  anthropicApiKey?: string | null;
   /**
      * @maxLength 1000
      * @nullable

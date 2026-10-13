@@ -51,6 +51,7 @@ export * from './timerInputRecurrence';
 export * from './vaultKeysInput';
 export * from './vaultKeyStatuses';
 export * from './vaultKeyStatusesAlphaVantageApiKey';
+export * from './vaultKeyStatusesAnthropicApiKey';
 export * from './vaultKeyStatusesBraveSearchApiKey';
 export * from './vaultKeyStatusesCommodityApiKey';
 export * from './vaultKeyStatusesDeepseekApiKey';

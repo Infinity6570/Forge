@@ -192,10 +192,10 @@ class _AnthropicCompletions:
     def __init__(self, client: "AnthropicChatClient"):
         self._client = client
 
-    def create(self, **kwargs: Any) -> Any:
+    async def create(self, **kwargs: Any) -> Any:
         if kwargs.get("stream"):
             return self._stream(kwargs)
-        return self._complete(kwargs)
+        return await self._complete(kwargs)
 
     async def _complete(self, kwargs: dict[str, Any]) -> ChatCompletion:
         response = await self._client._sdk.messages.create(**_anthropic_request(kwargs))

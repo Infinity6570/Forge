@@ -41,6 +41,11 @@ export interface AssistantSettingsInput {
      * @maxLength 1000
      * @nullable
      */
+  anthropicApiKey?: string | null;
+  /**
+     * @maxLength 1000
+     * @nullable
+     */
   openrouterApiKey?: string | null;
   codeRunnerEnabled?: boolean;
   appPreviewsEnabled?: boolean;

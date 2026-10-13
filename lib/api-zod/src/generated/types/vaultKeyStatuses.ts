@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { VaultKeyStatusesAlphaVantageApiKey } from './vaultKeyStatusesAlphaVantageApiKey';
+import type { VaultKeyStatusesAnthropicApiKey } from './vaultKeyStatusesAnthropicApiKey';
 import type { VaultKeyStatusesBraveSearchApiKey } from './vaultKeyStatusesBraveSearchApiKey';
 import type { VaultKeyStatusesCommodityApiKey } from './vaultKeyStatusesCommodityApiKey';
 import type { VaultKeyStatusesDeepseekApiKey } from './vaultKeyStatusesDeepseekApiKey';
@@ -27,6 +28,7 @@ export interface VaultKeyStatuses {
   openai_api_key: VaultKeyStatusesOpenaiApiKey;
   deepseek_api_key: VaultKeyStatusesDeepseekApiKey;
   gemini_api_key: VaultKeyStatusesGeminiApiKey;
+  anthropic_api_key: VaultKeyStatusesAnthropicApiKey;
   openrouter_api_key: VaultKeyStatusesOpenrouterApiKey;
   tavily_api_key: VaultKeyStatusesTavilyApiKey;
   serper_api_key: VaultKeyStatusesSerperApiKey;

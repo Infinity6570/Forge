@@ -101,6 +101,34 @@ class ProviderSettingsTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(os.environ["OPENAI_API_KEY"], "local-test-openai-key")
         self.assertEqual(self.env_file.stat().st_mode & 0o777, 0o600)
 
+    async def test_anthropic_key_is_saved_separately_and_reported_configured(self) -> None:
+        response = await self.put_settings(
+            base_url="http://127.0.0.1",
+            provider="anthropic",
+            model_id="claude-3-5-sonnet",
+            anthropicApiKey="sk-ant-local-test-key",
+        )
+
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(dotenv_values(self.env_file)["ANTHROPIC_API_KEY"], "sk-ant-local-test-key")
+        self.assertEqual(main.credential_for("anthropic"), "sk-ant-local-test-key")
+        self.assertTrue(response.json()["hasAnthropicKey"])
+        self.assertEqual(response.json()["provider"], "anthropic")
+
+    async def test_claude_selection_uses_newly_saved_anthropic_key_directly(self) -> None:
+        response = await self.put_settings(
+            base_url="http://127.0.0.1",
+            provider="openrouter",
+            model_id="anthropic/claude-3-5-sonnet",
+            anthropicApiKey="sk-ant-local-test-key",
+        )
+
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["provider"], "anthropic")
+        self.assertEqual(response.json()["modelId"], "claude-3-5-sonnet")
+        self.assertEqual(dotenv_values(self.env_file)["AGENT_PROVIDER"], "anthropic")
+        self.assertEqual(dotenv_values(self.env_file)["AGENT_MODEL"], "claude-3-5-sonnet")
+
     async def test_same_origin_preview_can_write_provider_settings(self) -> None:
         preview_origin = "https://assistant.replit.dev"
         os.environ.update(
@@ -271,7 +299,7 @@ class ProviderSettingsTests(unittest.IsolatedAsyncioTestCase):
     async def test_every_listed_gemini_model_and_custom_id_can_be_saved(self) -> None:
         source = APP_SOURCE.read_text()
         ui_gemini_models = re.search(
-            r"gemini:\s*\[(.*?)\n\s*\],\s*openrouter:",
+            r"gemini:\s*\[(.*?)\n\s*\],\s*anthropic:",
             source,
             flags=re.DOTALL,
         )

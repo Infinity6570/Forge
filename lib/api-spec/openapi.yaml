@@ -779,7 +779,7 @@ components:
         modelId: { type: string }
         recommendationKind: { type: ["string", "null"], enum: [complexity, fallback, null] }
         recommendationReason: { type: ["string", "null"] }
-        recommendedProvider: { type: ["string", "null"], enum: [openai, deepseek, gemini, openrouter, ollama, null] }
+        recommendedProvider: { type: ["string", "null"], enum: [openai, deepseek, gemini, anthropic, openrouter, ollama, null] }
         recommendedModelId: { type: ["string", "null"] }
         retryAvailable: { type: boolean }
         requiresModelConfirmation: { type: boolean }

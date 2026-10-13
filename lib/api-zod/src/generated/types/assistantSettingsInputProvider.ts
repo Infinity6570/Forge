@@ -13,6 +13,7 @@ export const AssistantSettingsInputProvider = {
   openai: 'openai',
   deepseek: 'deepseek',
   gemini: 'gemini',
+  anthropic: 'anthropic',
   openrouter: 'openrouter',
   ollama: 'ollama',
 } as const;

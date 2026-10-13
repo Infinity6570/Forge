@@ -40,11 +40,11 @@ export const GetAssistantDashboardResponse = zod.object({
   "message": zod.string(),
   "createdAt": zod.coerce.date()
 })),
-  "provider": zod.enum(['openai', 'deepseek', 'gemini', 'openrouter', 'ollama']),
+  "provider": zod.enum(['openai', 'deepseek', 'gemini', 'anthropic', 'openrouter', 'ollama']),
   "modelId": zod.string(),
   "recommendationKind": zod.union([zod.literal('complexity'),zod.literal('fallback'),zod.literal(null)]).nullable(),
   "recommendationReason": zod.string().nullable(),
-  "recommendedProvider": zod.union([zod.literal('openai'),zod.literal('deepseek'),zod.literal('gemini'),zod.literal('openrouter'),zod.literal('ollama'),zod.literal(null)]).nullable(),
+  "recommendedProvider": zod.union([zod.literal('openai'),zod.literal('deepseek'),zod.literal('gemini'),zod.literal('anthropic'),zod.literal('openrouter'),zod.literal('ollama'),zod.literal(null)]).nullable(),
   "recommendedModelId": zod.string().nullable(),
   "retryAvailable": zod.boolean(),
   "requiresModelConfirmation": zod.boolean(),
@@ -133,11 +133,11 @@ export const GetConversationThreadResponse = zod.object({
   "message": zod.string(),
   "createdAt": zod.coerce.date()
 })),
-  "provider": zod.enum(['openai', 'deepseek', 'gemini', 'openrouter', 'ollama']),
+  "provider": zod.enum(['openai', 'deepseek', 'gemini', 'anthropic', 'openrouter', 'ollama']),
   "modelId": zod.string(),
   "recommendationKind": zod.union([zod.literal('complexity'),zod.literal('fallback'),zod.literal(null)]).nullable(),
   "recommendationReason": zod.string().nullable(),
-  "recommendedProvider": zod.union([zod.literal('openai'),zod.literal('deepseek'),zod.literal('gemini'),zod.literal('openrouter'),zod.literal('ollama'),zod.literal(null)]).nullable(),
+  "recommendedProvider": zod.union([zod.literal('openai'),zod.literal('deepseek'),zod.literal('gemini'),zod.literal('anthropic'),zod.literal('openrouter'),zod.literal('ollama'),zod.literal(null)]).nullable(),
   "recommendedModelId": zod.string().nullable(),
   "retryAvailable": zod.boolean(),
   "requiresModelConfirmation": zod.boolean(),
@@ -273,11 +273,11 @@ export const ListAssistantTasksResponseItem = zod.object({
   "message": zod.string(),
   "createdAt": zod.coerce.date()
 })),
-  "provider": zod.enum(['openai', 'deepseek', 'gemini', 'openrouter', 'ollama']),
+  "provider": zod.enum(['openai', 'deepseek', 'gemini', 'anthropic', 'openrouter', 'ollama']),
   "modelId": zod.string(),
   "recommendationKind": zod.union([zod.literal('complexity'),zod.literal('fallback'),zod.literal(null)]).nullable(),
   "recommendationReason": zod.string().nullable(),
-  "recommendedProvider": zod.union([zod.literal('openai'),zod.literal('deepseek'),zod.literal('gemini'),zod.literal('openrouter'),zod.literal('ollama'),zod.literal(null)]).nullable(),
+  "recommendedProvider": zod.union([zod.literal('openai'),zod.literal('deepseek'),zod.literal('gemini'),zod.literal('anthropic'),zod.literal('openrouter'),zod.literal('ollama'),zod.literal(null)]).nullable(),
   "recommendedModelId": zod.string().nullable(),
   "retryAvailable": zod.boolean(),
   "requiresModelConfirmation": zod.boolean(),
@@ -304,7 +304,7 @@ export const createAssistantTaskBodyModelIdMax = 120;
 export const CreateAssistantTaskBody = zod.object({
   "objective": zod.string().min(1).max(createAssistantTaskBodyObjectiveMax),
   "threadId": zod.string().nullish(),
-  "provider": zod.enum(['openai', 'deepseek', 'gemini', 'openrouter', 'ollama']).optional(),
+  "provider": zod.enum(['openai', 'deepseek', 'gemini', 'anthropic', 'openrouter', 'ollama']).optional(),
   "modelId": zod.string().max(createAssistantTaskBodyModelIdMax).optional(),
   "fileIds": zod.array(zod.string().uuid()).optional()
 })
@@ -323,11 +323,11 @@ export const CreateAssistantTaskResponse = zod.object({
   "message": zod.string(),
   "createdAt": zod.coerce.date()
 })),
-  "provider": zod.enum(['openai', 'deepseek', 'gemini', 'openrouter', 'ollama']),
+  "provider": zod.enum(['openai', 'deepseek', 'gemini', 'anthropic', 'openrouter', 'ollama']),
   "modelId": zod.string(),
   "recommendationKind": zod.union([zod.literal('complexity'),zod.literal('fallback'),zod.literal(null)]).nullable(),
   "recommendationReason": zod.string().nullable(),
-  "recommendedProvider": zod.union([zod.literal('openai'),zod.literal('deepseek'),zod.literal('gemini'),zod.literal('openrouter'),zod.literal('ollama'),zod.literal(null)]).nullable(),
+  "recommendedProvider": zod.union([zod.literal('openai'),zod.literal('deepseek'),zod.literal('gemini'),zod.literal('anthropic'),zod.literal('openrouter'),zod.literal('ollama'),zod.literal(null)]).nullable(),
   "recommendedModelId": zod.string().nullable(),
   "retryAvailable": zod.boolean(),
   "requiresModelConfirmation": zod.boolean(),
@@ -362,11 +362,11 @@ export const GetAssistantTaskResponse = zod.object({
   "message": zod.string(),
   "createdAt": zod.coerce.date()
 })),
-  "provider": zod.enum(['openai', 'deepseek', 'gemini', 'openrouter', 'ollama']),
+  "provider": zod.enum(['openai', 'deepseek', 'gemini', 'anthropic', 'openrouter', 'ollama']),
   "modelId": zod.string(),
   "recommendationKind": zod.union([zod.literal('complexity'),zod.literal('fallback'),zod.literal(null)]).nullable(),
   "recommendationReason": zod.string().nullable(),
-  "recommendedProvider": zod.union([zod.literal('openai'),zod.literal('deepseek'),zod.literal('gemini'),zod.literal('openrouter'),zod.literal('ollama'),zod.literal(null)]).nullable(),
+  "recommendedProvider": zod.union([zod.literal('openai'),zod.literal('deepseek'),zod.literal('gemini'),zod.literal('anthropic'),zod.literal('openrouter'),zod.literal('ollama'),zod.literal(null)]).nullable(),
   "recommendedModelId": zod.string().nullable(),
   "retryAvailable": zod.boolean(),
   "requiresModelConfirmation": zod.boolean(),
@@ -411,11 +411,11 @@ export const AbortAssistantTaskResponse = zod.object({
   "message": zod.string(),
   "createdAt": zod.coerce.date()
 })),
-  "provider": zod.enum(['openai', 'deepseek', 'gemini', 'openrouter', 'ollama']),
+  "provider": zod.enum(['openai', 'deepseek', 'gemini', 'anthropic', 'openrouter', 'ollama']),
   "modelId": zod.string(),
   "recommendationKind": zod.union([zod.literal('complexity'),zod.literal('fallback'),zod.literal(null)]).nullable(),
   "recommendationReason": zod.string().nullable(),
-  "recommendedProvider": zod.union([zod.literal('openai'),zod.literal('deepseek'),zod.literal('gemini'),zod.literal('openrouter'),zod.literal('ollama'),zod.literal(null)]).nullable(),
+  "recommendedProvider": zod.union([zod.literal('openai'),zod.literal('deepseek'),zod.literal('gemini'),zod.literal('anthropic'),zod.literal('openrouter'),zod.literal('ollama'),zod.literal(null)]).nullable(),
   "recommendedModelId": zod.string().nullable(),
   "retryAvailable": zod.boolean(),
   "requiresModelConfirmation": zod.boolean(),
@@ -454,11 +454,11 @@ export const ChooseAssistantTaskModelResponse = zod.object({
   "message": zod.string(),
   "createdAt": zod.coerce.date()
 })),
-  "provider": zod.enum(['openai', 'deepseek', 'gemini', 'openrouter', 'ollama']),
+  "provider": zod.enum(['openai', 'deepseek', 'gemini', 'anthropic', 'openrouter', 'ollama']),
   "modelId": zod.string(),
   "recommendationKind": zod.union([zod.literal('complexity'),zod.literal('fallback'),zod.literal(null)]).nullable(),
   "recommendationReason": zod.string().nullable(),
-  "recommendedProvider": zod.union([zod.literal('openai'),zod.literal('deepseek'),zod.literal('gemini'),zod.literal('openrouter'),zod.literal('ollama'),zod.literal(null)]).nullable(),
+  "recommendedProvider": zod.union([zod.literal('openai'),zod.literal('deepseek'),zod.literal('gemini'),zod.literal('anthropic'),zod.literal('openrouter'),zod.literal('ollama'),zod.literal(null)]).nullable(),
   "recommendedModelId": zod.string().nullable(),
   "retryAvailable": zod.boolean(),
   "requiresModelConfirmation": zod.boolean(),
@@ -497,11 +497,11 @@ export const RetryAssistantTaskStepResponse = zod.object({
   "message": zod.string(),
   "createdAt": zod.coerce.date()
 })),
-  "provider": zod.enum(['openai', 'deepseek', 'gemini', 'openrouter', 'ollama']),
+  "provider": zod.enum(['openai', 'deepseek', 'gemini', 'anthropic', 'openrouter', 'ollama']),
   "modelId": zod.string(),
   "recommendationKind": zod.union([zod.literal('complexity'),zod.literal('fallback'),zod.literal(null)]).nullable(),
   "recommendationReason": zod.string().nullable(),
-  "recommendedProvider": zod.union([zod.literal('openai'),zod.literal('deepseek'),zod.literal('gemini'),zod.literal('openrouter'),zod.literal('ollama'),zod.literal(null)]).nullable(),
+  "recommendedProvider": zod.union([zod.literal('openai'),zod.literal('deepseek'),zod.literal('gemini'),zod.literal('anthropic'),zod.literal('openrouter'),zod.literal('ollama'),zod.literal(null)]).nullable(),
   "recommendedModelId": zod.string().nullable(),
   "retryAvailable": zod.boolean(),
   "requiresModelConfirmation": zod.boolean(),
@@ -545,11 +545,11 @@ export const ChooseAssistantTaskApprovalResponse = zod.object({
   "message": zod.string(),
   "createdAt": zod.coerce.date()
 })),
-  "provider": zod.enum(['openai', 'deepseek', 'gemini', 'openrouter', 'ollama']),
+  "provider": zod.enum(['openai', 'deepseek', 'gemini', 'anthropic', 'openrouter', 'ollama']),
   "modelId": zod.string(),
   "recommendationKind": zod.union([zod.literal('complexity'),zod.literal('fallback'),zod.literal(null)]).nullable(),
   "recommendationReason": zod.string().nullable(),
-  "recommendedProvider": zod.union([zod.literal('openai'),zod.literal('deepseek'),zod.literal('gemini'),zod.literal('openrouter'),zod.literal('ollama'),zod.literal(null)]).nullable(),
+  "recommendedProvider": zod.union([zod.literal('openai'),zod.literal('deepseek'),zod.literal('gemini'),zod.literal('anthropic'),zod.literal('openrouter'),zod.literal('ollama'),zod.literal(null)]).nullable(),
   "recommendedModelId": zod.string().nullable(),
   "retryAvailable": zod.boolean(),
   "requiresModelConfirmation": zod.boolean(),
@@ -705,7 +705,7 @@ export const DeleteAssistantFileResponse = zod.void()
  * @summary Read model selection and credential presence
  */
 export const GetAssistantSettingsResponse = zod.object({
-  "provider": zod.enum(['openai', 'deepseek', 'gemini', 'openrouter', 'ollama']),
+  "provider": zod.enum(['openai', 'deepseek', 'gemini', 'anthropic', 'openrouter', 'ollama']),
   "modelId": zod.string(),
   "fallbackModelId": zod.string(),
   "ollamaBaseUrl": zod.string(),
@@ -714,6 +714,7 @@ export const GetAssistantSettingsResponse = zod.object({
   "hasOpenaiKey": zod.boolean(),
   "hasDeepseekKey": zod.boolean(),
   "hasGeminiKey": zod.boolean(),
+  "hasAnthropicKey": zod.boolean(),
   "hasOpenrouterKey": zod.boolean(),
   "codeRunnerEnabled": zod.boolean(),
   "appPreviewsEnabled": zod.boolean(),
@@ -747,18 +748,21 @@ export const updateAssistantSettingsBodyDeepseekApiKeyMax = 1000;
 
 export const updateAssistantSettingsBodyGeminiApiKeyMax = 1000;
 
+export const updateAssistantSettingsBodyAnthropicApiKeyMax = 1000;
+
 export const updateAssistantSettingsBodyOpenrouterApiKeyMax = 1000;
 
 export const updateAssistantSettingsBodyEngineToolsEnabledDefault = false;
 
 export const UpdateAssistantSettingsBody = zod.object({
-  "provider": zod.enum(['openai', 'deepseek', 'gemini', 'openrouter', 'ollama']),
+  "provider": zod.enum(['openai', 'deepseek', 'gemini', 'anthropic', 'openrouter', 'ollama']),
   "modelId": zod.string().min(1).max(updateAssistantSettingsBodyModelIdMax).regex(updateAssistantSettingsBodyModelIdRegExp),
   "fallbackModelId": zod.string().max(updateAssistantSettingsBodyFallbackModelIdMax).regex(updateAssistantSettingsBodyFallbackModelIdRegExp).optional(),
   "ollamaBaseUrl": zod.string().max(updateAssistantSettingsBodyOllamaBaseUrlMax).optional(),
   "openaiApiKey": zod.string().max(updateAssistantSettingsBodyOpenaiApiKeyMax).nullish(),
   "deepseekApiKey": zod.string().max(updateAssistantSettingsBodyDeepseekApiKeyMax).nullish(),
   "geminiApiKey": zod.string().max(updateAssistantSettingsBodyGeminiApiKeyMax).nullish(),
+  "anthropicApiKey": zod.string().max(updateAssistantSettingsBodyAnthropicApiKeyMax).nullish(),
   "openrouterApiKey": zod.string().max(updateAssistantSettingsBodyOpenrouterApiKeyMax).nullish(),
   "codeRunnerEnabled": zod.boolean().optional(),
   "appPreviewsEnabled": zod.boolean().optional(),
@@ -766,7 +770,7 @@ export const UpdateAssistantSettingsBody = zod.object({
 })
 
 export const UpdateAssistantSettingsResponse = zod.object({
-  "provider": zod.enum(['openai', 'deepseek', 'gemini', 'openrouter', 'ollama']),
+  "provider": zod.enum(['openai', 'deepseek', 'gemini', 'anthropic', 'openrouter', 'ollama']),
   "modelId": zod.string(),
   "fallbackModelId": zod.string(),
   "ollamaBaseUrl": zod.string(),
@@ -775,6 +779,7 @@ export const UpdateAssistantSettingsResponse = zod.object({
   "hasOpenaiKey": zod.boolean(),
   "hasDeepseekKey": zod.boolean(),
   "hasGeminiKey": zod.boolean(),
+  "hasAnthropicKey": zod.boolean(),
   "hasOpenrouterKey": zod.boolean(),
   "codeRunnerEnabled": zod.boolean(),
   "appPreviewsEnabled": zod.boolean(),
@@ -803,13 +808,13 @@ export const applyAssistantModelBodyFallbackModelIdRegExp = new RegExp('^$|^[A-Z
 
 
 export const ApplyAssistantModelBody = zod.object({
-  "provider": zod.enum(['openai', 'deepseek', 'gemini', 'openrouter', 'ollama']),
+  "provider": zod.enum(['openai', 'deepseek', 'gemini', 'anthropic', 'openrouter', 'ollama']),
   "modelId": zod.string().min(1).max(applyAssistantModelBodyModelIdMax).regex(applyAssistantModelBodyModelIdRegExp),
   "fallbackModelId": zod.string().max(applyAssistantModelBodyFallbackModelIdMax).regex(applyAssistantModelBodyFallbackModelIdRegExp).optional()
 })
 
 export const ApplyAssistantModelResponse = zod.object({
-  "provider": zod.enum(['openai', 'deepseek', 'gemini', 'openrouter', 'ollama']),
+  "provider": zod.enum(['openai', 'deepseek', 'gemini', 'anthropic', 'openrouter', 'ollama']),
   "modelId": zod.string(),
   "fallbackModelId": zod.string(),
   "ollamaBaseUrl": zod.string(),
@@ -818,6 +823,7 @@ export const ApplyAssistantModelResponse = zod.object({
   "hasOpenaiKey": zod.boolean(),
   "hasDeepseekKey": zod.boolean(),
   "hasGeminiKey": zod.boolean(),
+  "hasAnthropicKey": zod.boolean(),
   "hasOpenrouterKey": zod.boolean(),
   "codeRunnerEnabled": zod.boolean(),
   "appPreviewsEnabled": zod.boolean(),
@@ -840,6 +846,8 @@ export const saveAssistantProviderKeysBodyOpenaiApiKeyMax = 1000;
 export const saveAssistantProviderKeysBodyDeepseekApiKeyMax = 1000;
 
 export const saveAssistantProviderKeysBodyGeminiApiKeyMax = 1000;
+
+export const saveAssistantProviderKeysBodyAnthropicApiKeyMax = 1000;
 
 export const saveAssistantProviderKeysBodyOpenrouterApiKeyMax = 1000;
 
@@ -873,6 +881,7 @@ export const SaveAssistantProviderKeysBody = zod.object({
   "openaiApiKey": zod.string().max(saveAssistantProviderKeysBodyOpenaiApiKeyMax).nullish(),
   "deepseekApiKey": zod.string().max(saveAssistantProviderKeysBodyDeepseekApiKeyMax).nullish(),
   "geminiApiKey": zod.string().max(saveAssistantProviderKeysBodyGeminiApiKeyMax).nullish(),
+  "anthropicApiKey": zod.string().max(saveAssistantProviderKeysBodyAnthropicApiKeyMax).nullish(),
   "openrouterApiKey": zod.string().max(saveAssistantProviderKeysBodyOpenrouterApiKeyMax).nullish(),
   "ollamaBaseUrl": zod.string().max(saveAssistantProviderKeysBodyOllamaBaseUrlMax).optional(),
   "tavilyApiKey": zod.string().max(saveAssistantProviderKeysBodyTavilyApiKeyMax).nullish(),
@@ -889,7 +898,7 @@ export const SaveAssistantProviderKeysBody = zod.object({
 })
 
 export const SaveAssistantProviderKeysResponse = zod.object({
-  "provider": zod.enum(['openai', 'deepseek', 'gemini', 'openrouter', 'ollama']),
+  "provider": zod.enum(['openai', 'deepseek', 'gemini', 'anthropic', 'openrouter', 'ollama']),
   "modelId": zod.string(),
   "fallbackModelId": zod.string(),
   "ollamaBaseUrl": zod.string(),
@@ -898,6 +907,7 @@ export const SaveAssistantProviderKeysResponse = zod.object({
   "hasOpenaiKey": zod.boolean(),
   "hasDeepseekKey": zod.boolean(),
   "hasGeminiKey": zod.boolean(),
+  "hasAnthropicKey": zod.boolean(),
   "hasOpenrouterKey": zod.boolean(),
   "codeRunnerEnabled": zod.boolean(),
   "appPreviewsEnabled": zod.boolean(),
@@ -920,6 +930,7 @@ export const GetVaultKeysResponse = zod.object({
   "openai_api_key": zod.enum(['configured', 'not_set', 'unavailable']),
   "deepseek_api_key": zod.enum(['configured', 'not_set', 'unavailable']),
   "gemini_api_key": zod.enum(['configured', 'not_set', 'unavailable']),
+  "anthropic_api_key": zod.enum(['configured', 'not_set', 'unavailable']),
   "openrouter_api_key": zod.enum(['configured', 'not_set', 'unavailable']),
   "tavily_api_key": zod.enum(['configured', 'not_set', 'unavailable']),
   "serper_api_key": zod.enum(['configured', 'not_set', 'unavailable']),
@@ -944,6 +955,8 @@ export const saveVaultKeysBodyOpenaiApiKeyMax = 1000;
 export const saveVaultKeysBodyDeepseekApiKeyMax = 1000;
 
 export const saveVaultKeysBodyGeminiApiKeyMax = 1000;
+
+export const saveVaultKeysBodyAnthropicApiKeyMax = 1000;
 
 export const saveVaultKeysBodyOpenrouterApiKeyMax = 1000;
 
@@ -978,6 +991,7 @@ export const SaveVaultKeysBody = zod.object({
   "openaiApiKey": zod.string().max(saveVaultKeysBodyOpenaiApiKeyMax).nullish(),
   "deepseekApiKey": zod.string().max(saveVaultKeysBodyDeepseekApiKeyMax).nullish(),
   "geminiApiKey": zod.string().max(saveVaultKeysBodyGeminiApiKeyMax).nullish(),
+  "anthropicApiKey": zod.string().max(saveVaultKeysBodyAnthropicApiKeyMax).nullish(),
   "openrouterApiKey": zod.string().max(saveVaultKeysBodyOpenrouterApiKeyMax).nullish(),
   "ollamaBaseUrl": zod.string().max(saveVaultKeysBodyOllamaBaseUrlMax).nullish(),
   "tavilyApiKey": zod.string().max(saveVaultKeysBodyTavilyApiKeyMax).nullish(),
@@ -998,6 +1012,7 @@ export const SaveVaultKeysResponse = zod.object({
   "openai_api_key": zod.enum(['configured', 'not_set', 'unavailable']),
   "deepseek_api_key": zod.enum(['configured', 'not_set', 'unavailable']),
   "gemini_api_key": zod.enum(['configured', 'not_set', 'unavailable']),
+  "anthropic_api_key": zod.enum(['configured', 'not_set', 'unavailable']),
   "openrouter_api_key": zod.enum(['configured', 'not_set', 'unavailable']),
   "tavily_api_key": zod.enum(['configured', 'not_set', 'unavailable']),
   "serper_api_key": zod.enum(['configured', 'not_set', 'unavailable']),
@@ -1023,7 +1038,7 @@ export const UpdateAssistantSearchSettingsBody = zod.object({
 })
 
 export const UpdateAssistantSearchSettingsResponse = zod.object({
-  "provider": zod.enum(['openai', 'deepseek', 'gemini', 'openrouter', 'ollama']),
+  "provider": zod.enum(['openai', 'deepseek', 'gemini', 'anthropic', 'openrouter', 'ollama']),
   "modelId": zod.string(),
   "fallbackModelId": zod.string(),
   "ollamaBaseUrl": zod.string(),
@@ -1032,6 +1047,7 @@ export const UpdateAssistantSearchSettingsResponse = zod.object({
   "hasOpenaiKey": zod.boolean(),
   "hasDeepseekKey": zod.boolean(),
   "hasGeminiKey": zod.boolean(),
+  "hasAnthropicKey": zod.boolean(),
   "hasOpenrouterKey": zod.boolean(),
   "codeRunnerEnabled": zod.boolean(),
   "appPreviewsEnabled": zod.boolean(),

@@ -19,6 +19,7 @@ export interface AssistantSettings {
   hasOpenaiKey: boolean;
   hasDeepseekKey: boolean;
   hasGeminiKey: boolean;
+  hasAnthropicKey: boolean;
   hasOpenrouterKey: boolean;
   codeRunnerEnabled: boolean;
   appPreviewsEnabled: boolean;

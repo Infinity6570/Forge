@@ -26,6 +26,11 @@ export interface ProviderKeysInput {
      * @maxLength 1000
      * @nullable
      */
+  anthropicApiKey?: string | null;
+  /**
+     * @maxLength 1000
+     * @nullable
+     */
   openrouterApiKey?: string | null;
   /** @maxLength 500 */
   ollamaBaseUrl?: string;

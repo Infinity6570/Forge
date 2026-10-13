@@ -119,6 +119,7 @@ MODEL_OPTIONS = {
         "anthropic/claude-sonnet-5.5",
         "anthropic/claude-opus-5.5",
     },
+    "anthropic": {"claude-3-opus", "claude-3-5-sonnet", "claude-opus-5.5"},
     "ollama": {"qwen2.5-coder", "llama3.3", "deepseek-r1"},
 }
 MODEL_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,119}$")
@@ -1369,10 +1370,17 @@ def credential_for(provider: str) -> str | None:
     return get_api_key(key_name) if key_name else None
 
 
-def resolve_direct_anthropic_model(provider: str, model_id: str) -> tuple[str, str]:
+def resolve_direct_anthropic_model(
+    provider: str,
+    model_id: str,
+    anthropic_key_available: bool | None = None,
+) -> tuple[str, str]:
     """Use the direct Anthropic API for OpenRouter Claude IDs when its key is available."""
     if provider == "openrouter" and model_id.lower().startswith("anthropic/claude-"):
-        if credential_for("anthropic"):
+        has_anthropic_key = (
+            credential_for("anthropic") if anthropic_key_available is None else anthropic_key_available
+        )
+        if has_anthropic_key:
             return "anthropic", model_id.split("/", 1)[1]
     return provider, model_id
 
@@ -1467,7 +1475,7 @@ def create_llm_client(provider: str) -> Any:
 
 
 async def create_completion_with_fallback(
-    client: AsyncOpenAI,
+    client: Any,
     kwargs: dict[str, Any],
     provider: str,
     model_state: dict[str, str],
@@ -3894,7 +3902,15 @@ async def update_settings(body: SettingsInput, request: Request) -> dict[str, An
         "ANTHROPIC_API_KEY": body.anthropicApiKey,
         "OPENROUTER_API_KEY": body.openrouterApiKey,
     }
-    settings_provider, settings_model = resolve_direct_anthropic_model(body.provider, body.modelId)
+    anthropic_key_available = bool(
+        credential_for("anthropic")
+        or (body.anthropicApiKey and body.anthropicApiKey.strip())
+    )
+    settings_provider, settings_model = resolve_direct_anthropic_model(
+        body.provider,
+        body.modelId,
+        anthropic_key_available,
+    )
     required_key_name = KEY_NAMES.get(settings_provider)
     pending_key = values.get(required_key_name) if required_key_name else None
     if settings_provider != "ollama" and not credential_for(settings_provider) and not (pending_key and pending_key.strip()):
