@@ -1086,6 +1086,64 @@ def tool_activity_summary(name: str, args: dict[str, Any], *, finished: bool = F
     return redact_provider_keys(f"{verb}: {target}".replace("\n", " ")[:240])
 
 
+WORKSPACE_WRITE_TOOL_NAMES = frozenset({
+    "write_file",
+    "write_workspace_preview_file",
+    "write_workspace_app_script",
+})
+
+
+def build_request_requires_workspace_write(objective: str) -> bool:
+    """Identify app/code build requests that must not complete as prose-only answers."""
+    text = re.sub(r"\s+", " ", str(objective)).casefold()
+    action = re.search(r"\b(?:build|create|make|redesign|implement|develop|code|write|update)\b", text)
+    if not action:
+        return False
+    target = re.search(
+        r"\b(?:app|application|website|web\s+site|web\s+app|site|page|homepage|home\s+page|"
+        r"frontend|front-end|backend|back-end|ui|interface|component|"
+        r"script|program|software|feature|project|tool|code|file|"
+        r"python|javascript|typescript|react|html|css)\b",
+        text,
+    )
+    return bool(target)
+
+
+def successful_workspace_write_path(tool_name: str, output: str) -> str | None:
+    if tool_name not in WORKSPACE_WRITE_TOOL_NAMES:
+        return None
+    try:
+        result = json.loads(output)
+    except (json.JSONDecodeError, TypeError):
+        return None
+    if not isinstance(result, dict) or result.get("saved") is not True:
+        return None
+    path = result.get("path")
+    return path if isinstance(path, str) and path.strip() else None
+
+
+def successful_workspace_writes_in_history(messages: list[dict[str, Any]] | None) -> set[str]:
+    if not messages:
+        return set()
+    tool_names: dict[str, str] = {}
+    saved_paths: set[str] = set()
+    for turn in messages:
+        if turn.get("role") == "assistant":
+            for call in turn.get("tool_calls") or []:
+                function = call.get("function") or {}
+                call_id = call.get("id")
+                name = function.get("name")
+                if isinstance(call_id, str) and isinstance(name, str):
+                    tool_names[call_id] = name
+        elif turn.get("role") == "tool":
+            call_id = turn.get("tool_call_id")
+            name = tool_names.get(call_id) if isinstance(call_id, str) else None
+            saved_path = successful_workspace_write_path(name or "", str(turn.get("content") or ""))
+            if saved_path:
+                saved_paths.add(saved_path)
+    return saved_paths
+
+
 def finish_tool_activity(task_id: str, log_id: str | None, name: str, args: dict[str, Any], output: str, failed: bool) -> None:
     row = db_one("SELECT logs_json FROM tasks WHERE id = ?", (task_id,))
     if not row or not log_id:
@@ -2520,6 +2578,8 @@ async def run_agent_task(
         return
     provider = row["provider"]
     model_state = {"model": row["model_id"]}
+    requires_workspace_write = build_request_requires_workspace_write(row["objective"])
+    successful_workspace_write_paths = successful_workspace_writes_in_history(resume_messages)
     fallback_model = os.getenv("GEMINI_FALLBACK_MODEL", "").strip()
     messages: list[dict[str, Any]] = []
     history_start = row["thread_context_start"]
@@ -2567,6 +2627,14 @@ async def run_agent_task(
             system = (
                 "You are the supervisor for a local personal assistant. Break down the user's objective, use tools when useful, "
                 "and provide a concise, evidence-based final result. You may use at most 10 tool rounds. "
+                "You are an autonomous full-stack development engine, NOT a planning consultant. "
+                "NEVER stop to ask the user 'should I go ahead?' or 'reply go ahead to proceed'. "
+                "NEVER provide a prose-only file plan instead of executing the requested build. "
+                "When asked to build, update, redesign, or code an app or project, immediately call write_file "
+                "(or write_workspace_preview_file/write_workspace_app_script for their supported file types) for the requested files "
+                "within this execution session. If a target exists, overwrite it without asking; the user has authorized "
+                "workspace file updates for requested builds. After writing, verify the files using workspace tools before "
+                "claiming completion. Only mark the task complete after the requested files have been written and verified. "
                 "Never claim that an operation succeeded unless its tool result confirms it. Do not perform deletion without "
                 "the approval tool flow; deletion pauses for an explicit user decision in the task details UI. "
                 "The user has explicitly authorized creating, overwriting, and updating files within workspace/ for requested "
@@ -2646,6 +2714,9 @@ async def run_agent_task(
                 "stream": True,
                 "max_completion_tokens" if provider == "openai" else "max_tokens": 6000,
             }
+            if provider == "anthropic":
+                synthesis_kwargs["tools"] = TOOLS
+                synthesis_kwargs["tool_choice"] = "auto"
             completion = await create_completion_with_fallback(
                 client, synthesis_kwargs, provider, model_state, fallback_model, task_id, publish_text
             )
@@ -2685,6 +2756,33 @@ async def run_agent_task(
             tool_calls = message.tool_calls or []
             if not tool_calls:
                 content = message.content if isinstance(message.content, str) else ""
+                if requires_workspace_write and not successful_workspace_write_paths:
+                    implementation_nudge = (
+                        "Proceed immediately to create these files using write_file now. "
+                        "Do not reply with another plan or ask for confirmation. Use the available "
+                        "workspace write tools, then verify the files."
+                    )
+                    last_user_turn = next(
+                        (turn for turn in reversed(messages) if turn.get("role") == "user"),
+                        None,
+                    )
+                    if last_user_turn:
+                        previous_content = last_user_turn.get("content")
+                        if not isinstance(previous_content, str) or implementation_nudge not in previous_content:
+                            last_user_turn["content"] = (
+                                f"{previous_content}\n\n{implementation_nudge}"
+                                if isinstance(previous_content, str) and previous_content
+                                else implementation_nudge
+                            )
+                    else:
+                        messages.append({"role": "user", "content": implementation_nudge})
+                    log_task(
+                        task_id,
+                        "Build request returned no file write; requesting immediate implementation.",
+                        "warning",
+                    )
+                    await publish_text(None)
+                    continue
                 if content.strip():
                     final_result = content.strip()
                     if last_streamed_text != final_result:
@@ -2764,6 +2862,9 @@ async def run_agent_task(
                 except (json.JSONDecodeError, TypeError):
                     pass
                 finish_tool_activity(task_id, tool_log_id, call.function.name, args, output, tool_failed)
+                saved_path = successful_workspace_write_path(call.function.name, output)
+                if saved_path:
+                    successful_workspace_write_paths.add(saved_path)
                 if call.function.name == "delegate_to_specialist" and persistent_specialist_failure(output):
                     save_fallback_recommendation(
                         task_id,
@@ -2777,7 +2878,18 @@ async def run_agent_task(
                 messages.append({"role": "tool", "tool_call_id": call.id, "content": output if call.function.name == "web_search" else output[:16_000]})
             THREADS.checkpoint(task_id, messages, history_start)
         if not final_result:
+            if requires_workspace_write and not successful_workspace_write_paths:
+                raise RuntimeError(
+                    "The build request did not write any files after the automatic implementation prompt; "
+                    "the task cannot be marked complete."
+                )
             final_result = await synthesize_final_response()
+        for relative_path in successful_workspace_write_paths:
+            written_path = safe_workspace_path(relative_path)
+            if not written_path.is_file():
+                raise RuntimeError(
+                    f"A requested workspace file could not be verified after writing: {relative_path}"
+                )
         db_run(
             "UPDATE tasks SET status='completed',result=?,error=NULL,current_step='Completed',updated_at=? WHERE id=?",
             (redact_provider_keys(final_result)[:100_000], utc_now(), task_id),
