@@ -34,7 +34,7 @@ from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from dotenv import load_dotenv, set_key
 from fastapi import FastAPI, File, Form, HTTPException, Request, Response, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from openai import APIStatusError, AsyncOpenAI
 from llm_protocol import TextCallback, assistant_turn, collect_completion, prepare_history
@@ -3156,13 +3156,39 @@ def _workspace_preview_file(asset_path: str) -> FileResponse:
 
 
 @app.get("/workspace-preview", include_in_schema=False)
+async def redirect_workspace_preview_root(request: Request) -> RedirectResponse:
+    query = f"?{request.url.query}" if request.url.query else ""
+    return RedirectResponse(
+        f"/workspace-preview/{query}",
+        status_code=307,
+        headers={"Cache-Control": "no-store"},
+    )
+
+
 @app.get("/workspace-preview/", include_in_schema=False)
 async def get_workspace_preview_root() -> FileResponse:
     return _workspace_preview_file("index.html")
 
 
 @app.get("/workspace-preview/{asset_path:path}", include_in_schema=False)
-async def get_workspace_preview_path(asset_path: str) -> FileResponse:
+async def get_workspace_preview_path(asset_path: str, request: Request) -> Response:
+    relative = asset_path.strip("/")
+    if relative and not asset_path.endswith("/"):
+        try:
+            candidate = resolve_workspace_path(WORKSPACE, Path(relative))
+        except PermissionError as error:
+            raise HTTPException(
+                status_code=403,
+                detail="Workspace paths cannot escape the workspace.",
+            ) from error
+        if candidate.is_dir():
+            canonical_path = f"/workspace-preview/{quote(relative, safe='/')}/"
+            query = f"?{request.url.query}" if request.url.query else ""
+            return RedirectResponse(
+                f"{canonical_path}{query}",
+                status_code=307,
+                headers={"Cache-Control": "no-store"},
+            )
     return _workspace_preview_file(asset_path)
 
 

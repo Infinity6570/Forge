@@ -422,19 +422,34 @@ class WorkspaceSafetyTests(unittest.IsolatedAsyncioTestCase):
                 transport=httpx.ASGITransport(app=main.app),
                 base_url="http://127.0.0.1",
             ) as client:
-                entry_response = await client.get("/workspace-preview/dental-clinic")
-                css_response = await client.get("/workspace-preview/dental-clinic/assets/site.css")
+                entry_response = await client.get(
+                    "/workspace-preview/dental-clinic?cache=preview",
+                    follow_redirects=True,
+                )
+                relative_css_path = entry_response.url.path.rsplit("/", 1)[0] + "/assets/site.css"
+                css_response = await client.get(relative_css_path)
+                bare_directory_response = await client.get("/workspace-preview/dental-clinic")
                 js_response = await client.get(
                     "/workspace-preview/dental-clinic/assets/site.js",
                     headers={"Origin": "null"},
                 )
+                root_redirect_response = await client.get("/workspace-preview")
                 entries_response = await client.get("/api/workspace/html-entries")
                 status_response = await client.get("/api/workspace/preview")
                 traversal_response = await client.get("/workspace-preview/%2E%2E%2Fsample.html")
         self.assertEqual(entry_response.status_code, 200, entry_response.text)
+        self.assertEqual(entry_response.url.path, "/workspace-preview/dental-clinic/")
+        self.assertEqual(entry_response.url.query, b"cache=preview")
         self.assertIn("Nested preview", entry_response.text)
         self.assertIn("sandbox", entry_response.headers["content-security-policy"])
         self.assertEqual(entry_response.headers["x-frame-options"], "SAMEORIGIN")
+        self.assertEqual(bare_directory_response.status_code, 307)
+        self.assertEqual(
+            bare_directory_response.headers["location"],
+            "/workspace-preview/dental-clinic/",
+        )
+        self.assertEqual(root_redirect_response.status_code, 307)
+        self.assertEqual(root_redirect_response.headers["location"], "/workspace-preview/")
         self.assertEqual(css_response.headers["content-type"].split(";")[0], "text/css")
         self.assertIn("color: cyan", css_response.text)
         self.assertIn("dataset.ready", js_response.text)
