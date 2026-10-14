@@ -2252,6 +2252,7 @@ html[data-theme] .inspector-content .preview-frame {
   pointer-events:none;
 }
 html[data-theme="scifi"][data-cyber-fx="on"] .ambient-background { display:block; }
+html[data-theme="scifi"] #root { background:transparent; }
 html[data-theme="scifi"] body {
   background:
     radial-gradient(ellipse at 76% 43%,rgba(3,34,49,.42),transparent 42%),
@@ -2304,6 +2305,10 @@ html[data-theme="scifi"] .right-inspector {
 html[data-theme="scifi"] .topbar {
   background-color:rgba(4,9,20,.82)!important;
   box-shadow:0 8px 26px rgba(0,0,0,.2),inset 0 -1px rgba(0,243,255,.08);
+}
+html[data-theme="scifi"] .activity-panel {
+  -webkit-backdrop-filter:blur(3px) saturate(130%);
+  backdrop-filter:blur(3px) saturate(130%);
 }
 html[data-theme="scifi"] .panel:hover,
 html[data-theme="scifi"] .activity-panel:hover,

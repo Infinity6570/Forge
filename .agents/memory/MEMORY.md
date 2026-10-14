@@ -6,3 +6,4 @@
 - [Conversation UI boundary](conversation-ui-boundary.md) — Preferences stays inline; task submission never auto-opens diagnostics, while explicit model-picker popovers remain allowed.
 - [Conversation isolation](conversation-isolation.md) — chat histories stay isolated; serialize runs per chat, retain Task Activity on deletion, and never auto-replay interrupted actions.
 - [Standalone TSX tests](standalone-tsx-tests.md) — Node `tsx --test` may use classic JSX; test-rendered TSX components need a React namespace import.
+- [Ambient visual effects](ambient-visual-effects.md) — Sci-Fi decoration follows Cyber FX and motion preferences; reading surfaces need restrained blur.

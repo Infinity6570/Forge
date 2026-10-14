@@ -47,6 +47,7 @@ export function AmbientBackground() {
     let particles: Array<{ x: number; y: number; vx: number; vy: number; radius: number; hue: number }> = [];
 
     const resize = () => {
+      window.cancelAnimationFrame(frameId);
       width = window.innerWidth;
       height = window.innerHeight;
       pixelRatio = Math.min(window.devicePixelRatio || 1, 1.5);
