@@ -2238,3 +2238,105 @@ html[data-theme] .inspector-content .preview-frame {
     height:100dvh!important;
   }
 }
+
+/* Ambient Forge cyberdeck backdrop and frosted-glass surfaces. */
+#root { position:relative;isolation:isolate; }
+.ambient-background {
+  position:fixed;
+  z-index:-1;
+  inset:0;
+  display:none;
+  width:100vw;
+  height:100vh;
+  opacity:.3;
+  pointer-events:none;
+}
+html[data-theme="scifi"][data-cyber-fx="on"] .ambient-background { display:block; }
+html[data-theme="scifi"] body {
+  background:
+    radial-gradient(ellipse at 76% 43%,rgba(3,34,49,.42),transparent 42%),
+    radial-gradient(ellipse at 14% 82%,rgba(18,8,37,.34),transparent 42%),
+    var(--bg-main)!important;
+}
+html[data-theme="scifi"] .app-frame {
+  position:relative;
+  isolation:isolate;
+  background:transparent!important;
+}
+html[data-theme="scifi"] .main-area,
+html[data-theme="scifi"] .center-pane {
+  background-color:transparent!important;
+}
+html[data-theme="scifi"] .sidebar,
+html[data-theme="scifi"] .topbar,
+html[data-theme="scifi"] .right-inspector,
+html[data-theme="scifi"] .panel,
+html[data-theme="scifi"] .activity-panel,
+html[data-theme="scifi"] .composer-panel,
+html[data-theme="scifi"] .stat-card,
+html[data-theme="scifi"] .mini-resource,
+html[data-theme="scifi"] .tasks-table-panel,
+html[data-theme="scifi"] .settings-section,
+html[data-theme="scifi"] .note-card,
+html[data-theme="scifi"] .file-card,
+html[data-theme="scifi"] .modal-card,
+html[data-theme="scifi"] .task-overview-strip,
+html[data-theme="scifi"] .agent-card,
+html[data-theme="scifi"] .action-dock,
+html[data-theme="scifi"] .workspace-card,
+html[data-theme="scifi"] .library-panel,
+html[data-theme="scifi"] .telemetry-section,
+html[data-theme="scifi"] .preview-workspace,
+html[data-theme="scifi"] .preview-toolbar,
+html[data-theme="scifi"] .preview-address,
+html[data-theme="scifi"] .preview-frame-shell {
+  border-color:rgba(0,243,255,.24)!important;
+  background-color:rgba(5,11,25,.65)!important;
+  -webkit-backdrop-filter:blur(15px) saturate(138%);
+  backdrop-filter:blur(15px) saturate(138%);
+  box-shadow:0 12px 32px rgba(0,0,0,.22),inset 0 1px rgba(226,247,255,.035),0 0 14px rgba(0,243,255,.075);
+  transition:border-color .2s ease,box-shadow .2s ease,background-color .2s ease;
+}
+html[data-theme="scifi"] .sidebar,
+html[data-theme="scifi"] .right-inspector {
+  background-color:rgba(3,8,19,.88)!important;
+}
+html[data-theme="scifi"] .topbar {
+  background-color:rgba(4,9,20,.82)!important;
+  box-shadow:0 8px 26px rgba(0,0,0,.2),inset 0 -1px rgba(0,243,255,.08);
+}
+html[data-theme="scifi"] .panel:hover,
+html[data-theme="scifi"] .activity-panel:hover,
+html[data-theme="scifi"] .stat-card:hover,
+html[data-theme="scifi"] .settings-section:hover,
+html[data-theme="scifi"] .workspace-card:hover,
+html[data-theme="scifi"] .note-card:hover,
+html[data-theme="scifi"] .file-card:hover {
+  border-color:rgba(0,243,255,.43)!important;
+  box-shadow:0 14px 34px rgba(0,0,0,.28),inset 0 1px rgba(226,247,255,.05),0 0 18px rgba(0,243,255,.13);
+}
+html[data-theme="scifi"] :is(.button,.icon-button,.nav-link,.theme-option,.cyber-fx-toggle,.filter-pill,.preview-mode-switcher button) {
+  transition:color .18s ease,background-color .18s ease,border-color .18s ease,box-shadow .18s ease,transform .18s ease;
+}
+html[data-theme="scifi"] :is(.button,.icon-button,.nav-link,.theme-option,.cyber-fx-toggle,.filter-pill,.preview-mode-switcher button):hover:not(:disabled) {
+  border-color:rgba(0,243,255,.55);
+  box-shadow:0 0 13px rgba(0,243,255,.17),inset 0 0 10px rgba(0,243,255,.045);
+}
+html[data-theme="scifi"] .button:hover:not(:disabled),
+html[data-theme="scifi"] .icon-button:hover,
+html[data-theme="scifi"] .nav-link:hover,
+html[data-theme="scifi"] .theme-option:hover,
+html[data-theme="scifi"] .preview-mode-switcher button:hover {
+  transform:translateY(-1px);
+}
+html[data-theme="scifi"][data-cyber-fx="on"] body::after {
+  animation:forge-scanline-drift 24s linear infinite;
+  background-position:0 0;
+}
+@keyframes forge-scanline-drift {
+  to { background-position:0 12px; }
+}
+@media(prefers-reduced-motion:reduce) {
+  .ambient-background { opacity:.15; }
+  html[data-theme="scifi"][data-cyber-fx="on"] body::after { animation:none!important; }
+}
