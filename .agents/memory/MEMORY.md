@@ -7,3 +7,4 @@
 - [Conversation isolation](conversation-isolation.md) — chat histories stay isolated; serialize runs per chat, retain Task Activity on deletion, and never auto-replay interrupted actions.
 - [Standalone TSX tests](standalone-tsx-tests.md) — Node `tsx --test` may use classic JSX; test-rendered TSX components need a React namespace import.
 - [Ambient visual effects](ambient-visual-effects.md) — Sci-Fi decoration follows Cyber FX and motion preferences; reading surfaces need restrained blur.
+- [Default supportive persona](supportive-persona.md) — empathetic, grounded collaboration is always on, alongside existing technical instructions.
