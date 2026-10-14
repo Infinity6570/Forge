@@ -49,6 +49,7 @@ from workspace_preview import (
     WorkspacePreviewError,
     WorkspacePreviewManager,
     local_app_previews_enabled,
+    list_workspace_html_entries,
     resolve_workspace_asset,
     resolve_workspace_path,
     resolve_workspace_source_file,
@@ -3043,8 +3044,12 @@ app.add_middleware(
 @app.middleware("http")
 async def preview_null_origin_cors(request: Request, call_next):
     preview_path = request.url.path.startswith(
-        ("/api/workspace/preview/static/", "/api/workspace/preview/server/")
-    )
+        (
+            "/api/workspace/preview/static/",
+            "/api/workspace/preview/server/",
+            "/workspace-preview/",
+        )
+    ) or request.url.path in {"/workspace-preview", "/workspace-preview/"}
     origin = request.headers.get("origin")
     if origin == "null" and request.url.path.startswith("/api/") and not preview_path:
         if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
@@ -3083,6 +3088,11 @@ async def get_workspace_preview() -> dict[str, Any]:
     return PREVIEW_MANAGER.get_status()
 
 
+@app.get("/api/workspace/html-entries", include_in_schema=False)
+async def get_workspace_html_entries() -> list[dict[str, Any]]:
+    return list_workspace_html_entries(WORKSPACE)
+
+
 @app.post("/api/workspace/preview/stop", include_in_schema=False)
 async def stop_workspace_preview_app(body: WorkspacePreviewStopInput) -> dict[str, Any]:
     if not PREVIEW_MANAGER.stop(body.appId):
@@ -3095,22 +3105,44 @@ async def stop_all_workspace_preview_apps() -> dict[str, Any]:
     return {"stopped": PREVIEW_MANAGER.stop_all(), "preview": PREVIEW_MANAGER.get_status()}
 
 
-@app.get("/api/workspace/preview/static/{asset_path:path}", include_in_schema=False)
-async def get_workspace_preview_asset(asset_path: str) -> FileResponse:
+def _workspace_preview_file(asset_path: str) -> FileResponse:
     try:
-        path = resolve_workspace_asset(WORKSPACE, asset_path or "index.html")
+        relative = asset_path.strip("/") or "index.html"
+        path = resolve_workspace_asset(WORKSPACE, relative)
+        if path.is_dir():
+            path = resolve_workspace_asset(WORKSPACE, f"{relative.rstrip('/')}/index.html")
     except PermissionError as error:
         raise HTTPException(status_code=403, detail="Workspace paths cannot escape the workspace.") from error
     except (WorkspacePreviewError, OSError) as error:
         raise HTTPException(status_code=404, detail="Workspace preview asset not found.") from error
     content_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
-    headers = {"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"}
+    headers = {
+        "Cache-Control": "no-store",
+        "X-Content-Type-Options": "nosniff",
+        "X-Frame-Options": "SAMEORIGIN",
+    }
     if content_type.startswith("text/html"):
         headers["Content-Security-Policy"] = (
             "sandbox allow-scripts allow-forms allow-downloads; frame-ancestors 'self'"
         )
         headers["Referrer-Policy"] = "no-referrer"
     return FileResponse(path, media_type=content_type, headers=headers)
+
+
+@app.get("/workspace-preview", include_in_schema=False)
+@app.get("/workspace-preview/", include_in_schema=False)
+async def get_workspace_preview_root() -> FileResponse:
+    return _workspace_preview_file("index.html")
+
+
+@app.get("/workspace-preview/{asset_path:path}", include_in_schema=False)
+async def get_workspace_preview_path(asset_path: str) -> FileResponse:
+    return _workspace_preview_file(asset_path)
+
+
+@app.get("/api/workspace/preview/static/{asset_path:path}", include_in_schema=False)
+async def get_workspace_preview_asset(asset_path: str) -> FileResponse:
+    return _workspace_preview_file(asset_path)
 
 
 @app.api_route(

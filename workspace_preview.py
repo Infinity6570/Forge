@@ -106,7 +106,8 @@ def resolve_workspace_asset(workspace: Path, relative_path: str, *, allow_missin
     resolved_parts = path.relative_to(root).parts
     if (
         not resolved_parts
-        or resolved_parts[0].lower() in {"uploads", "notes", "preview-runtime"}
+        or any(part.lower() in {"uploads", "notes", "preview-runtime"} for part in resolved_parts)
+        or any(part.lower() in GENERATED_SOURCE_DIRS for part in resolved_parts)
         or any(part.startswith(".") for part in resolved_parts)
         or path.suffix.lower() not in STATIC_SUFFIXES
     ):
@@ -197,7 +198,81 @@ def resolve_workspace_vite_project(workspace: Path, relative_path: str) -> Path:
 
 def static_preview_url(relative_path: str) -> str:
     parts = _safe_relative_parts(relative_path)
-    return f"/api/workspace/preview/static/{quote('/'.join(parts), safe='/')}"
+    return f"/workspace-preview/{quote('/'.join(parts), safe='/')}"
+
+
+def list_workspace_html_entries(workspace: Path) -> list[dict[str, Any]]:
+    """List safe HTML entry points, newest project asset update first."""
+    root = workspace.resolve()
+    excluded_dirs = {
+        "uploads",
+        "notes",
+        "preview-runtime",
+        *GENERATED_SOURCE_DIRS,
+    }
+    html_entries: list[dict[str, Any]] = []
+    web_assets: list[tuple[tuple[str, ...], int]] = []
+    pending_dirs = [root]
+
+    while pending_dirs:
+        directory = pending_dirs.pop()
+        try:
+            children = list(directory.iterdir())
+        except OSError:
+            continue
+        for child in children:
+            try:
+                if child.is_symlink():
+                    continue
+                relative_parts = child.relative_to(root).parts
+                if any(part.startswith(".") or part.lower() in excluded_dirs for part in relative_parts):
+                    continue
+                if child.is_dir():
+                    pending_dirs.append(child)
+                    continue
+                if not child.is_file() or child.suffix.lower() not in {".html", ".htm", ".css", ".js", ".mjs"}:
+                    continue
+                resolved = resolve_workspace_asset(root, child.relative_to(root).as_posix())
+                if resolved.stat().st_size > MAX_PREVIEW_FILE_BYTES:
+                    continue
+                web_assets.append((relative_parts, resolved.stat().st_mtime_ns))
+                if child.suffix.lower() not in {".html", ".htm"}:
+                    continue
+                stat = resolved.stat()
+                html_entries.append({
+                    "path": child.relative_to(root).as_posix(),
+                    "previewUrl": static_preview_url(child.relative_to(root).as_posix()),
+                    "modifiedAt": datetime.fromtimestamp(stat.st_mtime, timezone.utc).isoformat(),
+                    "projectModifiedAt": str(stat.st_mtime_ns),
+                    "_directoryParts": relative_parts[:-1],
+                    "_htmlModifiedNs": stat.st_mtime_ns,
+                })
+            except (OSError, PermissionError, WorkspacePreviewError, ValueError):
+                continue
+
+    for asset_parts, modified_ns in web_assets:
+        owners = [
+            entry for entry in html_entries
+            if len(entry["_directoryParts"]) <= len(asset_parts)
+            and asset_parts[:len(entry["_directoryParts"])] == entry["_directoryParts"]
+        ]
+        if not owners:
+            continue
+        owner = max(owners, key=lambda entry: len(entry["_directoryParts"]))
+        if modified_ns > int(owner["projectModifiedAt"]):
+            owner["projectModifiedAt"] = str(modified_ns)
+
+    for entry in html_entries:
+        entry.pop("_directoryParts")
+        entry.pop("_htmlModifiedNs")
+    html_entries.sort(
+        key=lambda entry: (
+            int(entry["projectModifiedAt"]),
+            entry["path"].casefold(),
+        ),
+        reverse=True,
+    )
+    return html_entries
 
 
 def write_workspace_asset(
@@ -643,19 +718,15 @@ class WorkspacePreviewManager:
 
     def get_status(self) -> dict[str, Any]:
         self._purge_exited()
-        entry_path = "index.html"
-        try:
-            entry = resolve_workspace_asset(self.workspace, entry_path)
-            if entry.suffix.lower() not in {".html", ".htm"}:
-                entry = None
-        except (WorkspacePreviewError, OSError):
-            entry = None
+        html_entries = list_workspace_html_entries(self.workspace)
+        selected_entry = html_entries[0] if html_entries else None
         with self._lock:
             apps = [self._public_app(app) for app in self._apps.values()]
         return {
-            "staticAvailable": entry is not None,
-            "staticEntryPath": entry_path if entry is not None else None,
-            "staticPreviewUrl": static_preview_url(entry_path) if entry is not None else None,
+            "staticAvailable": selected_entry is not None,
+            "staticEntryPath": selected_entry["path"] if selected_entry else None,
+            "staticPreviewUrl": selected_entry["previewUrl"] if selected_entry else None,
+            "htmlEntries": html_entries,
             "pythonPreviewsEnabled": local_app_previews_enabled(),
             "localAppPreviewsEnabled": local_app_previews_enabled(),
             "pythonPreviewRuntimeLimitSeconds": MAX_PREVIEW_RUNTIME_SECONDS,

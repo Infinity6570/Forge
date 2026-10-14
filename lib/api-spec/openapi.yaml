@@ -578,6 +578,20 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/WorkspacePreviewStatus"
+  /workspace/html-entries:
+    get:
+      operationId: listWorkspaceHtmlEntries
+      tags: [assistant]
+      summary: List HTML entry points available for workspace preview
+      responses:
+        "200":
+          description: HTML entry points sorted by most recently updated project asset
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/WorkspaceHtmlEntry"
   /workspace/preview/stop:
     post:
       operationId: stopWorkspacePreviewApp
@@ -913,11 +927,15 @@ components:
         startedAt: { type: string, format: date-time }
     WorkspacePreviewStatus:
       type: object
-      required: [staticAvailable, staticEntryPath, staticPreviewUrl, pythonPreviewsEnabled, localAppPreviewsEnabled, pythonPreviewRuntimeLimitSeconds, apps]
+      required: [staticAvailable, staticEntryPath, staticPreviewUrl, htmlEntries, pythonPreviewsEnabled, localAppPreviewsEnabled, pythonPreviewRuntimeLimitSeconds, apps]
       properties:
         staticAvailable: { type: boolean }
         staticEntryPath: { type: ["string", "null"] }
         staticPreviewUrl: { type: ["string", "null"] }
+        htmlEntries:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkspaceHtmlEntry"
         pythonPreviewsEnabled: { type: boolean }
         localAppPreviewsEnabled: { type: boolean, description: "Whether local Python and Vite app previews are enabled; always false in Replit Cloud." }
         pythonPreviewRuntimeLimitSeconds: { type: integer, minimum: 1 }
@@ -925,6 +943,14 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/WorkspacePreviewApp"
+    WorkspaceHtmlEntry:
+      type: object
+      required: [path, previewUrl, modifiedAt, projectModifiedAt]
+      properties:
+        path: { type: string }
+        previewUrl: { type: string }
+        modifiedAt: { type: string, format: date-time }
+        projectModifiedAt: { type: string, description: "Nanosecond timestamp used to detect in-place HTML, CSS, and JavaScript edits." }
     WorkspacePreviewStopAllResult:
       type: object
       required: [stopped, preview]
