@@ -5,6 +5,7 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { WorkspaceHtmlEntry } from './workspaceHtmlEntry';
 import type { WorkspacePreviewApp } from './workspacePreviewApp';
 
 export interface WorkspacePreviewStatus {
@@ -13,6 +14,7 @@ export interface WorkspacePreviewStatus {
   staticEntryPath: string | null;
   /** @nullable */
   staticPreviewUrl: string | null;
+  htmlEntries: WorkspaceHtmlEntry[];
   pythonPreviewsEnabled: boolean;
   /** Whether local Python and Vite app previews are enabled; always false in Replit Cloud. */
   localAppPreviewsEnabled: boolean;

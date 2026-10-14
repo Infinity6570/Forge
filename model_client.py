@@ -147,7 +147,7 @@ def _anthropic_request(kwargs: dict[str, Any]) -> dict[str, Any]:
     request: dict[str, Any] = {
         "model": model,
         "messages": messages,
-        "max_tokens": max(8192, int(requested_max_tokens)),
+        "max_tokens": max(16384, int(requested_max_tokens)),
         "cache_control": {"type": "ephemeral"},
         "extra_headers": {"anthropic-beta": THINKING_BINDING_BETA},
     }

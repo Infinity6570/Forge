@@ -133,7 +133,7 @@ class AnthropicProviderRoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(request["tools"][0]["name"], "web_search")
         self.assertEqual(request["tools"][0]["cache_control"], {"type": "ephemeral"})
         self.assertEqual(request["cache_control"], {"type": "ephemeral"})
-        self.assertEqual(request["max_tokens"], 8192)
+        self.assertEqual(request["max_tokens"], 16384)
         self.assertEqual(request["thinking"], {
             "type": "adaptive",
             "block_binding": {"prefix_mismatch_behavior": "drop_block"},

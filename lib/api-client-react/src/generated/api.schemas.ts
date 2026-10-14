@@ -343,12 +343,21 @@ export interface WorkspacePreviewApp {
   startedAt: string;
 }
 
+export interface WorkspaceHtmlEntry {
+  path: string;
+  previewUrl: string;
+  modifiedAt: string;
+  /** Nanosecond timestamp used to detect in-place HTML, CSS, and JavaScript edits. */
+  projectModifiedAt: string;
+}
+
 export interface WorkspacePreviewStatus {
   staticAvailable: boolean;
   /** @nullable */
   staticEntryPath: string | null;
   /** @nullable */
   staticPreviewUrl: string | null;
+  htmlEntries: WorkspaceHtmlEntry[];
   pythonPreviewsEnabled: boolean;
   /** Whether local Python and Vite app previews are enabled; always false in Replit Cloud. */
   localAppPreviewsEnabled: boolean;

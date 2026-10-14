@@ -45,6 +45,7 @@ import type {
   TimerInput,
   VaultKeyStatuses,
   VaultKeysInput,
+  WorkspaceHtmlEntry,
   WorkspacePreviewStatus,
   WorkspacePreviewStopAllResult,
   WorkspacePreviewStopInput
@@ -3024,6 +3025,83 @@ export function useGetWorkspacePreview<TData = Awaited<ReturnType<typeof getWork
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetWorkspacePreviewQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getListWorkspaceHtmlEntriesUrl = () => {
+
+
+
+
+  return `/api/workspace/html-entries`
+}
+
+/**
+ * @summary List HTML entry points available for workspace preview
+ */
+export const listWorkspaceHtmlEntries = async ( options?: Parameters<typeof customFetch>[1]): Promise<WorkspaceHtmlEntry[]> => {
+
+  return customFetch<WorkspaceHtmlEntry[]>(getListWorkspaceHtmlEntriesUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListWorkspaceHtmlEntriesQueryKey = () => {
+    return [
+    `/api/workspace/html-entries`
+    ] as const;
+    }
+
+
+export const getListWorkspaceHtmlEntriesQueryOptions = <TData = Awaited<ReturnType<typeof listWorkspaceHtmlEntries>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listWorkspaceHtmlEntries>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListWorkspaceHtmlEntriesQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listWorkspaceHtmlEntries>>> = ({ signal }) => listWorkspaceHtmlEntries({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listWorkspaceHtmlEntries>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListWorkspaceHtmlEntriesQueryResult = NonNullable<Awaited<ReturnType<typeof listWorkspaceHtmlEntries>>>
+export type ListWorkspaceHtmlEntriesQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List HTML entry points available for workspace preview
+ */
+
+export function useListWorkspaceHtmlEntries<TData = Awaited<ReturnType<typeof listWorkspaceHtmlEntries>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listWorkspaceHtmlEntries>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListWorkspaceHtmlEntriesQueryOptions(options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

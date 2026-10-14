@@ -1080,6 +1080,12 @@ export const GetWorkspacePreviewResponse = zod.object({
   "staticAvailable": zod.boolean(),
   "staticEntryPath": zod.string().nullable(),
   "staticPreviewUrl": zod.string().nullable(),
+  "htmlEntries": zod.array(zod.object({
+  "path": zod.string(),
+  "previewUrl": zod.string(),
+  "modifiedAt": zod.coerce.date(),
+  "projectModifiedAt": zod.string().describe('Nanosecond timestamp used to detect in-place HTML, CSS, and JavaScript edits.')
+})),
   "pythonPreviewsEnabled": zod.boolean(),
   "localAppPreviewsEnabled": zod.boolean().describe('Whether local Python and Vite app previews are enabled; always false in Replit Cloud.'),
   "pythonPreviewRuntimeLimitSeconds": zod.number().int().min(1),
@@ -1094,6 +1100,18 @@ export const GetWorkspacePreviewResponse = zod.object({
   "startedAt": zod.coerce.date()
 }))
 })
+
+
+/**
+ * @summary List HTML entry points available for workspace preview
+ */
+export const ListWorkspaceHtmlEntriesResponseItem = zod.object({
+  "path": zod.string(),
+  "previewUrl": zod.string(),
+  "modifiedAt": zod.coerce.date(),
+  "projectModifiedAt": zod.string().describe('Nanosecond timestamp used to detect in-place HTML, CSS, and JavaScript edits.')
+})
+export const ListWorkspaceHtmlEntriesResponse = zod.array(ListWorkspaceHtmlEntriesResponseItem)
 
 
 /**
@@ -1112,6 +1130,12 @@ export const StopWorkspacePreviewAppResponse = zod.object({
   "staticAvailable": zod.boolean(),
   "staticEntryPath": zod.string().nullable(),
   "staticPreviewUrl": zod.string().nullable(),
+  "htmlEntries": zod.array(zod.object({
+  "path": zod.string(),
+  "previewUrl": zod.string(),
+  "modifiedAt": zod.coerce.date(),
+  "projectModifiedAt": zod.string().describe('Nanosecond timestamp used to detect in-place HTML, CSS, and JavaScript edits.')
+})),
   "pythonPreviewsEnabled": zod.boolean(),
   "localAppPreviewsEnabled": zod.boolean().describe('Whether local Python and Vite app previews are enabled; always false in Replit Cloud.'),
   "pythonPreviewRuntimeLimitSeconds": zod.number().int().min(1),
@@ -1144,6 +1168,12 @@ export const StopAllWorkspacePreviewAppsResponse = zod.object({
   "staticAvailable": zod.boolean(),
   "staticEntryPath": zod.string().nullable(),
   "staticPreviewUrl": zod.string().nullable(),
+  "htmlEntries": zod.array(zod.object({
+  "path": zod.string(),
+  "previewUrl": zod.string(),
+  "modifiedAt": zod.coerce.date(),
+  "projectModifiedAt": zod.string().describe('Nanosecond timestamp used to detect in-place HTML, CSS, and JavaScript edits.')
+})),
   "pythonPreviewsEnabled": zod.boolean(),
   "localAppPreviewsEnabled": zod.boolean().describe('Whether local Python and Vite app previews are enabled; always false in Replit Cloud.'),
   "pythonPreviewRuntimeLimitSeconds": zod.number().int().min(1),

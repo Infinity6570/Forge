@@ -804,7 +804,8 @@ function safePreviewUrl(value?: string | null, allowLocalPort = false, expectedP
   try {
     const parsed = new URL(value, window.location.origin);
     const previewPath = parsed.pathname.startsWith('/api/workspace/preview/static/')
-      || parsed.pathname.startsWith('/api/workspace/preview/server/');
+      || parsed.pathname.startsWith('/api/workspace/preview/server/')
+      || parsed.pathname.startsWith('/workspace-preview/');
     const localPortPath = parsed.pathname.startsWith('/api/workspace/preview/server/');
     const loopback = allowLocalPort
       && localPortPath
@@ -826,26 +827,52 @@ function safePreviewUrl(value?: string | null, allowLocalPort = false, expectedP
 function WorkspacePreview({ isMaximized, onToggleMaximized }: { isMaximized: boolean; onToggleMaximized: () => void }) {
   const qc = useQueryClient();
   const previewQuery = useGetWorkspacePreview({
-    query: { queryKey: getGetWorkspacePreviewQueryKey(), staleTime: 0, refetchOnMount: 'always', refetchInterval: 15000 },
+    query: { queryKey: getGetWorkspacePreviewQueryKey(), staleTime: 0, refetchOnMount: 'always', refetchInterval: 2500 },
   });
   const stopApp = useStopWorkspacePreviewApp();
   const [selectedId, setSelectedId] = useState('static');
+  const [selectedHtmlPath, setSelectedHtmlPath] = useState('');
   const [previewMode, setPreviewMode] = useState<'static' | 'server'>('static');
   const [refreshKey, setRefreshKey] = useState(0);
   const [navigatedUrl, setNavigatedUrl] = useState('');
   const [addressValue, setAddressValue] = useState('');
   const [addressError, setAddressError] = useState(false);
+  const htmlVersionsRef = useRef<Record<string, string>>({});
+  const htmlEntriesInitializedRef = useRef(false);
   const preview = previewQuery.data;
+  const htmlEntries = preview?.htmlEntries ?? [];
+  const htmlSignature = htmlEntries.map((entry) => `${entry.path}:${entry.projectModifiedAt}`).join('|');
   const apps = preview?.apps ?? [];
   const localPortPreviewsEnabled = preview?.localAppPreviewsEnabled ?? preview?.pythonPreviewsEnabled ?? false;
   const selectedApp = apps.find((app) => app.id === selectedId) ?? apps[0];
-  const activeId = previewMode === 'static' ? (preview?.staticAvailable ? 'static' : '') : selectedApp?.id ?? '';
+  const activeHtmlEntry = htmlEntries.find((entry) => entry.path === selectedHtmlPath) ?? htmlEntries[0];
+  const activeId = previewMode === 'static' ? activeHtmlEntry?.path ?? '' : selectedApp?.id ?? '';
   const activeApp = apps.find((app) => app.id === activeId);
-  const rawUrl = activeId === 'static'
-    ? preview?.staticPreviewUrl
+  const staticUrl = activeHtmlEntry
+    ? `${activeHtmlEntry.previewUrl}?t=${encodeURIComponent(activeHtmlEntry.projectModifiedAt)}`
+    : undefined;
+  const rawUrl = previewMode === 'static'
+    ? staticUrl
     : localPortPreviewsEnabled ? activeApp?.localUrl : activeApp?.previewUrl;
   const iframeUrl = safePreviewUrl(navigatedUrl || rawUrl, localPortPreviewsEnabled, activeApp?.port);
-  const label = activeId === 'static' ? 'Workspace preview' : activeApp?.entryPath ?? 'Running app';
+  const label = previewMode === 'static' ? activeHtmlEntry?.path ?? 'Workspace preview' : activeApp?.entryPath ?? 'Running app';
+  useEffect(() => {
+    if (!preview) return;
+    const previousVersions = htmlVersionsRef.current;
+    const changedEntry = htmlEntries.find((entry) => previousVersions[entry.path] !== entry.projectModifiedAt);
+    if (!htmlEntriesInitializedRef.current) {
+      htmlEntriesInitializedRef.current = true;
+      setSelectedHtmlPath(preview.staticEntryPath ?? htmlEntries[0]?.path ?? '');
+    } else if (changedEntry) {
+      setSelectedHtmlPath(changedEntry.path);
+      setNavigatedUrl('');
+      setRefreshKey((current) => current + 1);
+    } else if (htmlEntries.length && !htmlEntries.some((entry) => entry.path === selectedHtmlPath)) {
+      setSelectedHtmlPath(htmlEntries[0].path);
+      setNavigatedUrl('');
+    }
+    htmlVersionsRef.current = Object.fromEntries(htmlEntries.map((entry) => [entry.path, entry.projectModifiedAt]));
+  }, [htmlSignature, preview?.staticEntryPath, selectedHtmlPath]);
   useEffect(() => {
     const nextUrl = safePreviewUrl(rawUrl, localPortPreviewsEnabled, activeApp?.port);
     setNavigatedUrl(nextUrl);
@@ -897,8 +924,9 @@ function WorkspacePreview({ isMaximized, onToggleMaximized }: { isMaximized: boo
 
   return <section className="preview-workspace" aria-label="Live app previews" data-testid="workspace-live-preview">
     <div className="preview-toolbar">
-      <div className="preview-view-label"><span className="preview-status-dot" /><div><strong>Live preview</strong><span>Private workspace · updates every 15 seconds</span></div></div>
+      <div className="preview-view-label"><span className="preview-status-dot" /><div><strong>Live preview</strong><span>Workspace HTML · auto-checks for edits</span></div></div>
       <div className="preview-toolbar-actions">
+        {previewMode === 'static' && htmlEntries.length > 0 && <label className="preview-entry-label"><span>ENTRY</span><select className="preview-entry-select" aria-label="Choose HTML preview entry" value={activeHtmlEntry?.path ?? ''} onChange={(event) => { setSelectedHtmlPath(event.currentTarget.value); setNavigatedUrl(''); setRefreshKey((current) => current + 1); }} data-testid="select-html-preview-entry">{htmlEntries.map((entry) => <option key={entry.path} value={entry.path}>{entry.path}</option>)}</select></label>}
         {iframeUrl && <a className="button button-quiet button-small preview-open" href={iframeUrl} target="_blank" rel="noopener noreferrer" data-testid="link-open-preview"><ExternalLink size={14} /> Open in New Tab</a>}
         <button type="button" className="button button-quiet button-small" onClick={() => { setRefreshKey((n) => n + 1); void previewQuery.refetch(); }} disabled={previewQuery.isFetching} data-testid="button-refresh-preview"><RefreshCw size={14} className={previewQuery.isFetching ? 'preview-spinning' : ''} />{previewQuery.isFetching ? 'Refreshing' : 'Refresh'}</button>
         <button type="button" className={`button button-quiet button-small preview-maximize ${isMaximized ? 'is-maximized' : ''}`} onClick={onToggleMaximized} aria-pressed={isMaximized} aria-label={isMaximized ? 'Restore split view' : 'Expand live preview'} data-testid="button-toggle-preview-maximize"><span aria-hidden="true">{isMaximized ? '❐' : '⛶'}</span>{isMaximized ? 'RESTORE' : 'FULL VIEW'}</button>
@@ -908,15 +936,15 @@ function WorkspacePreview({ isMaximized, onToggleMaximized }: { isMaximized: boo
       : previewQuery.isError ? <div className="preview-state preview-error"><div className="preview-state-icon"><AlertCircle size={20} /></div><strong>Preview status is unavailable</strong><p>We couldn’t reach the workspace preview service.</p><button className="button button-primary button-small" onClick={() => void previewQuery.refetch()} data-testid="button-retry-preview"><RefreshCw size={14} /> Try again</button></div>
         : <>
           <div className="preview-mode-switcher" role="tablist" aria-label="Preview mode">
-            <button role="tab" aria-selected={previewMode === 'static'} className={previewMode === 'static' ? 'selected' : ''} onClick={() => { setPreviewMode('static'); setSelectedId('static'); }} data-testid="tab-preview-static">STATIC FILE</button>
+            <button role="tab" aria-selected={previewMode === 'static'} className={previewMode === 'static' ? 'selected' : ''} onClick={() => { setPreviewMode('static'); setSelectedId('static'); if (!selectedHtmlPath) setSelectedHtmlPath(preview?.staticEntryPath ?? ''); }} data-testid="tab-preview-static">STATIC FILE</button>
             <button role="tab" aria-selected={previewMode === 'server'} className={previewMode === 'server' ? 'selected' : ''} onClick={() => setPreviewMode('server')} data-testid="tab-preview-server">LOCALHOST PORT TUNNEL <span>{apps.length}</span></button>
             <small>{localPortPreviewsEnabled ? 'LOCAL RUNTIME ENABLED' : 'LOCAL RUNTIME DISABLED'}</small>
           </div>
           {previewMode === 'static' && preview?.staticAvailable && <div className="preview-controls">
             <div className="preview-choices" role="group" aria-label="Static preview source">
-              <button className="preview-choice selected" onClick={() => setSelectedId('static')} aria-pressed="true" data-testid="preview-choice-static"><span className="choice-symbol">S</span><span><strong>Workspace</strong><small>{preview.staticEntryPath || 'Static site'}</small></span></button>
+               <button className="preview-choice selected" onClick={() => { if (activeHtmlEntry) setSelectedHtmlPath(activeHtmlEntry.path); }} aria-pressed="true" data-testid="preview-choice-static"><span className="choice-symbol">S</span><span><strong>Workspace</strong><small>{activeHtmlEntry?.path || preview.staticEntryPath || 'Static site'}</small></span></button>
             </div>
-            <div className="preview-app-meta"><span className="preview-status-dot" /> Static workspace file</div>
+             <div className="preview-app-meta"><span className="preview-status-dot" /> Serving {activeHtmlEntry?.path ?? preview.staticEntryPath}</div>
           </div>}
           {previewMode === 'server' && apps.length > 0 && <div className="preview-controls">
             <div className="preview-choices" role="group" aria-label="Choose a running local app">
@@ -927,7 +955,7 @@ function WorkspacePreview({ isMaximized, onToggleMaximized }: { isMaximized: boo
             </div>
             {activeApp && <div className="preview-app-meta"><span className="preview-status-dot" /> Running on port {activeApp.port} <span className="preview-meta-divider" /> Started {timeAgo(activeApp.startedAt)}</div>}
           </div>}
-          {previewMode === 'static' && !preview?.staticAvailable && <div className="preview-state preview-empty"><div className="preview-empty-art"><span /><span /><span /><div className="preview-holo-terminal" aria-hidden="true"><i /><i /><i /><i /></div></div><strong>No static entry file</strong><p>Create a requested static page in workspace/ or select the localhost port tunnel for a running Flask, Streamlit, FastAPI, or Vite app.</p></div>}
+          {previewMode === 'static' && !preview?.staticAvailable && <div className="preview-state preview-empty"><div className="preview-empty-art"><span /><span /><span /><div className="preview-holo-terminal" aria-hidden="true"><i /><i /><i /><i /></div></div><strong>No HTML entry found</strong><p>Create an HTML file anywhere inside workspace/. Nested project folders are scanned automatically.</p></div>}
           {previewMode === 'server' && apps.length === 0 && <div className="preview-state preview-empty"><div className="preview-empty-art"><span /><span /><span /><div className="preview-holo-terminal" aria-hidden="true"><i /><i /><i /><i /></div></div><strong>No local app is running</strong><p>{localPortPreviewsEnabled ? 'Ask Forge to build and launch a Python or Vite app. The process will appear here on an ephemeral localhost port.' : 'Enable Local App Previews in Preferences in an exported local copy. Dynamic process previews are always disabled in Replit Cloud.'}</p></div>}
           {((previewMode === 'static' && !!preview?.staticAvailable) || (previewMode === 'server' && !!activeApp)) && <>
             <div className="preview-address-row">

@@ -63,7 +63,7 @@ class AnthropicPromptCacheTests(unittest.IsolatedAsyncioTestCase):
             "block_binding": {"prefix_mismatch_behavior": "drop_block"},
         })
         self.assertNotIn("temperature", request)
-        self.assertEqual(request["max_tokens"], 8192)
+        self.assertEqual(request["max_tokens"], 16384)
 
     def test_legacy_supported_model_uses_stable_manual_budget(self):
         request = _anthropic_request({

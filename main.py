@@ -1045,7 +1045,7 @@ def tool_activity_summary(name: str, args: dict[str, Any], *, finished: bool = F
     elif name in {"run_command", "run_terminal_command", "execute_elevated_command"}:
         verb = "Ran command" if finished else "Running command"
         target = str(args.get("command", ""))
-    elif name in {"write_workspace_preview_file", "write_workspace_app_script", "write_file"}:
+    elif name in {"write_workspace_preview_file", "write_workspace_app_script", "write_file", "replace_in_file"}:
         verb = "Edited" if finished else "Editing"
         target = str(args.get("path", "workspace file"))
     elif name in {"create_file", "append_file"}:
@@ -1079,6 +1079,7 @@ def tool_activity_summary(name: str, args: dict[str, Any], *, finished: bool = F
 
 WORKSPACE_WRITE_TOOL_NAMES = frozenset({
     "write_file",
+    "replace_in_file",
     "create_file",
     "append_file",
     "write_workspace_preview_file",
@@ -2431,6 +2432,28 @@ async def execute_tool(
             return json.dumps(result, ensure_ascii=False)
         except (PermissionError, OSError) as error:
             return json.dumps({"error": str(error)[:500]}, ensure_ascii=False)
+    if name == "replace_in_file":
+        relative_path = str(arguments.get("path", ""))
+        old_text = arguments.get("old_text")
+        new_text = arguments.get("new_text")
+        if not isinstance(old_text, str) or not old_text:
+            return json.dumps({"error": "old_text must be a non-empty string."})
+        if not isinstance(new_text, str):
+            return json.dumps({"error": "new_text must be a UTF-8 string."})
+        try:
+            current = read_project_file(relative_path)
+            content = current.get("content")
+            if not isinstance(content, str):
+                return json.dumps({"error": "The target file is not readable UTF-8 text."})
+            matches = content.count(old_text)
+            if matches != 1:
+                reason = "not found" if matches == 0 else f"found {matches} times"
+                return json.dumps({"error": f"Exact old_text must occur once; it was {reason}."})
+            result = write_project_file(relative_path, content.replace(old_text, new_text, 1), mode="write")
+            result["replacements"] = 1
+            return json.dumps(result, ensure_ascii=False)
+        except (PermissionError, OSError, UnicodeDecodeError) as error:
+            return json.dumps({"error": str(error)[:500]}, ensure_ascii=False)
     if name in {"delete_file", "delete_workspace_file"}:
         try:
             return json.dumps(delete_project_file(str(arguments.get("path", ""))), ensure_ascii=False)
@@ -2576,6 +2599,7 @@ TOOLS = [
     {"type": "function", "function": {"name": "write_file", "description": "Immediately create or overwrite any UTF-8 text file inside the project, including hidden files and configuration files. Parent directories are created automatically. Paths are project-root-relative or absolute within the project.", "parameters": {"type": "object", "properties": {"path": {"type": "string"}, "content": {"type": "string", "maxLength": 2097152}}, "required": ["path", "content"]}}},
     {"type": "function", "function": {"name": "create_file", "description": "Immediately create or overwrite any UTF-8 text file inside the project. Parent directories are created automatically.", "parameters": {"type": "object", "properties": {"path": {"type": "string"}, "content": {"type": "string", "maxLength": 2097152}}, "required": ["path", "content"]}}},
     {"type": "function", "function": {"name": "append_file", "description": "Immediately append UTF-8 text to any file inside the project, creating parent directories and the file if needed.", "parameters": {"type": "object", "properties": {"path": {"type": "string"}, "content": {"type": "string", "maxLength": 2097152}}, "required": ["path", "content"]}}},
+    {"type": "function", "function": {"name": "replace_in_file", "description": "Replace one exact, unique text occurrence in a UTF-8 project file. The replacement is refused if old_text is missing or ambiguous.", "parameters": {"type": "object", "properties": {"path": {"type": "string"}, "old_text": {"type": "string", "minLength": 1, "maxLength": 2097152}, "new_text": {"type": "string", "maxLength": 2097152}}, "required": ["path", "old_text", "new_text"]}}},
     {"type": "function", "function": {"name": "write_workspace_preview_file", "description": "When the user explicitly requests a static website, write or update UTF-8 HTML, CSS, JavaScript, JSON, SVG, or font/image assets inside workspace/. Keep linked assets relative and use index.html as the entry point. Existing workspace assets may be replaced immediately for the requested build or redesign. Do not write private data, executables, or files outside workspace/.", "parameters": {"type": "object", "properties": {"path": {"type": "string", "description": "Workspace-relative web asset path, such as index.html or assets/site.css."}, "content": {"type": "string", "maxLength": 2097152}}, "required": ["path", "content"]}}},
     {"type": "function", "function": {"name": "delete_workspace_file", "description": "Immediately delete one regular file anywhere inside the project, including hidden files. No confirmation is requested.", "parameters": {"type": "object", "properties": {"path": {"type": "string", "description": "Project-root-relative or absolute path to a file inside the project."}}, "required": ["path"]}}},
     {"type": "function", "function": {"name": "delete_file", "description": "Immediately delete one regular file anywhere inside the project, including hidden files. No confirmation is requested.", "parameters": {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]}}},
@@ -2661,7 +2685,7 @@ async def run_agent_task(
                 "Never claim that an operation succeeded unless its tool result confirms it. "
                 "The user has explicitly authorized immediate read, create, overwrite, append, and delete operations across "
                 "the entire project directory, including hidden files. Use read_file/list_directory and write_file/create_file/"
-                "append_file/delete_file as needed; writers create parent directories automatically. Do not pause for confirmation "
+                "append_file/replace_in_file/delete_file as needed; writers create parent directories automatically. Do not pause for confirmation "
                 "for project file operations. "
                 "Never execute an administrative command directly. If a user task genuinely requires administrator privileges, "
                 "request exactly one single-line command with execute_elevated_command; the backend pauses for explicit UI approval. "
@@ -3108,9 +3132,11 @@ async def stop_all_workspace_preview_apps() -> dict[str, Any]:
 def _workspace_preview_file(asset_path: str) -> FileResponse:
     try:
         relative = asset_path.strip("/") or "index.html"
-        path = resolve_workspace_asset(WORKSPACE, relative)
-        if path.is_dir():
-            path = resolve_workspace_asset(WORKSPACE, f"{relative.rstrip('/')}/index.html")
+        candidate = resolve_workspace_path(WORKSPACE, Path(relative))
+        path = resolve_workspace_asset(
+            WORKSPACE,
+            f"{relative.rstrip('/')}/index.html" if candidate.is_dir() else relative,
+        )
     except PermissionError as error:
         raise HTTPException(status_code=403, detail="Workspace paths cannot escape the workspace.") from error
     except (WorkspacePreviewError, OSError) as error:

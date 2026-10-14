@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import shutil
 import tempfile
 import unittest
@@ -250,6 +251,42 @@ class WorkspaceSafetyTests(unittest.IsolatedAsyncioTestCase):
             (self.root / ".forge-data/nested/config.json").read_text(encoding="utf-8"),
             "{\"mode\":\"open\"}\n",
         )
+        replaced = await main.execute_tool(
+            "replace_in_file",
+            {
+                "path": ".forge-data/nested/config.json",
+                "old_text": "{\"mode\":\"open\"}",
+                "new_text": "{\"mode\":\"closed\"}",
+            },
+            "gemini",
+            {"model": "test-model"},
+            "",
+            "test-task",
+        )
+        replaced_result = main.parse_json(replaced, {})
+        self.assertTrue(replaced_result["saved"])
+        self.assertEqual(replaced_result["replacements"], 1)
+        self.assertEqual(
+            main.successful_workspace_write_path("replace_in_file", replaced),
+            ".forge-data/nested/config.json",
+        )
+        ambiguous = await main.execute_tool(
+            "replace_in_file",
+            {
+                "path": ".forge-data/nested/config.json",
+                "old_text": "absent",
+                "new_text": "open",
+            },
+            "gemini",
+            {"model": "test-model"},
+            "",
+            "test-task",
+        )
+        self.assertIn("not found", main.parse_json(ambiguous, {})["error"])
+        self.assertEqual(
+            (self.root / ".forge-data/nested/config.json").read_text(encoding="utf-8"),
+            "{\"mode\":\"closed\"}\n",
+        )
         read_back = await main.execute_tool(
             "read_file",
             {"path": ".forge-data/nested/config.json"},
@@ -258,7 +295,7 @@ class WorkspaceSafetyTests(unittest.IsolatedAsyncioTestCase):
             "",
             "test-task",
         )
-        self.assertIn("open", main.parse_json(read_back, {})["content"])
+        self.assertIn("closed", main.parse_json(read_back, {})["content"])
         deleted = await main.execute_tool(
             "delete_file",
             {"path": ".forge-data/nested/config.json"},
@@ -351,6 +388,61 @@ class WorkspaceSafetyTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertTrue(main.parse_json(raw, {})["saved"])
         self.assertEqual(self.preview_file.read_text(encoding="utf-8"), "<h1>updated</h1>")
+
+    async def test_nested_html_preview_entries_and_assets_are_served_safely(self) -> None:
+        project = self.workspace / "dental-clinic"
+        assets = project / "assets"
+        assets.mkdir(parents=True)
+        entry = project / "index.html"
+        stylesheet = assets / "site.css"
+        script = assets / "site.js"
+        entry.write_text(
+            '<link rel="stylesheet" href="assets/site.css"><h1>Nested preview</h1>'
+            '<script type="module" src="assets/site.js"></script>',
+            encoding="utf-8",
+        )
+        stylesheet.write_text("body { color: cyan; }\n", encoding="utf-8")
+        script.write_text("document.documentElement.dataset.ready = 'yes';\n", encoding="utf-8")
+        hidden_page = self.workspace / "dental-clinic" / "node_modules" / "private" / "index.html"
+        hidden_page.parent.mkdir(parents=True)
+        hidden_page.write_text("not served", encoding="utf-8")
+
+        now_ns = __import__("time").time_ns()
+        os.utime(self.preview_file, ns=(now_ns - 20_000_000_000, now_ns - 20_000_000_000))
+        os.utime(entry, ns=(now_ns - 10_000_000_000, now_ns - 10_000_000_000))
+        os.utime(stylesheet, ns=(now_ns, now_ns))
+        manager = main.WorkspacePreviewManager(self.workspace)
+        entries = main.list_workspace_html_entries(self.workspace)
+        self.assertEqual([item["path"] for item in entries], ["dental-clinic/index.html", "sample.html"])
+        self.assertTrue(entries[0]["previewUrl"].startswith("/workspace-preview/dental-clinic/index.html"))
+        self.assertEqual(entries[0]["projectModifiedAt"], str(stylesheet.stat().st_mtime_ns))
+
+        with patch.object(main, "PREVIEW_MANAGER", manager):
+            async with httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=main.app),
+                base_url="http://127.0.0.1",
+            ) as client:
+                entry_response = await client.get("/workspace-preview/dental-clinic")
+                css_response = await client.get("/workspace-preview/dental-clinic/assets/site.css")
+                js_response = await client.get(
+                    "/workspace-preview/dental-clinic/assets/site.js",
+                    headers={"Origin": "null"},
+                )
+                entries_response = await client.get("/api/workspace/html-entries")
+                status_response = await client.get("/api/workspace/preview")
+                traversal_response = await client.get("/workspace-preview/%2E%2E%2Fsample.html")
+        self.assertEqual(entry_response.status_code, 200, entry_response.text)
+        self.assertIn("Nested preview", entry_response.text)
+        self.assertIn("sandbox", entry_response.headers["content-security-policy"])
+        self.assertEqual(entry_response.headers["x-frame-options"], "SAMEORIGIN")
+        self.assertEqual(css_response.headers["content-type"].split(";")[0], "text/css")
+        self.assertIn("color: cyan", css_response.text)
+        self.assertIn("dataset.ready", js_response.text)
+        self.assertEqual(js_response.headers.get("access-control-allow-origin"), "null")
+        self.assertEqual(entries_response.json()[0]["path"], "dental-clinic/index.html")
+        self.assertEqual(status_response.json()["staticEntryPath"], "dental-clinic/index.html")
+        self.assertEqual(status_response.json()["htmlEntries"][0]["path"], "dental-clinic/index.html")
+        self.assertIn(traversal_response.status_code, {403, 404})
 
     async def test_local_flask_preview_uses_workspace_cwd_scrubbed_env_and_stops(self) -> None:
         app_script = self.workspace / "preview_app.py"

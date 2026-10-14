@@ -2168,6 +2168,35 @@ html[data-theme] .preview-toolbar-actions .button {
   font-size:9px;
   white-space:nowrap;
 }
+html[data-theme] .preview-entry-label {
+  display:flex;
+  min-width:0;
+  align-items:center;
+  gap:6px;
+  color:var(--text-muted);
+  font:8px var(--font-mono);
+  letter-spacing:.08em;
+}
+html[data-theme] .preview-entry-select {
+  width:clamp(112px, 17vw, 210px);
+  min-width:0;
+  height:30px;
+  padding:0 26px 0 9px;
+  border:1px solid color-mix(in srgb,var(--accent) 38%,var(--border));
+  border-radius:2px;
+  color:var(--text-primary);
+  background-color:var(--bg-panel);
+  font:10px var(--font-mono);
+  text-overflow:ellipsis;
+}
+html[data-theme] .preview-entry-select:focus-visible {
+  outline:1px solid var(--accent);
+  box-shadow:0 0 10px var(--accent-glow);
+}
+html[data-theme] .preview-entry-select option {
+  color:var(--text-primary);
+  background:#030712;
+}
 html[data-theme] .preview-toolbar-actions .preview-maximize {
   color:var(--accent);
   border-color:color-mix(in srgb,var(--accent) 45%,var(--border));

@@ -67,6 +67,7 @@ export * from './vaultKeyStatusesOpenrouterApiKey';
 export * from './vaultKeyStatusesSerperApiKey';
 export * from './vaultKeyStatusesTavilyApiKey';
 export * from './vaultKeyStatusesVaultStatus';
+export * from './workspaceHtmlEntry';
 export * from './workspacePreviewApp';
 export * from './workspacePreviewAppFramework';
 export * from './workspacePreviewAppStatus';
