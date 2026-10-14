@@ -433,6 +433,15 @@ class WorkspaceSafetyTests(unittest.IsolatedAsyncioTestCase):
                     "/workspace-preview/dental-clinic/assets/site.js",
                     headers={"Origin": "null"},
                 )
+                clinic_root_alias = await client.get("/dental-clinic/")
+                clinic_css_alias = await client.get("/dental-clinic/assets/site.css")
+                workspace_clinic_js_alias = await client.get(
+                    "/workspace/dental-clinic/assets/site.js",
+                    headers={"Origin": "null"},
+                )
+                workspace_clinic_root_redirect = await client.get(
+                    "/workspace/dental-clinic",
+                )
                 root_redirect_response = await client.get("/workspace-preview")
                 entries_response = await client.get("/api/workspace/html-entries")
                 status_response = await client.get("/api/workspace/preview")
@@ -450,6 +459,20 @@ class WorkspaceSafetyTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(root_redirect_response.status_code, 307)
         self.assertEqual(root_redirect_response.headers["location"], "/workspace-preview/")
+        self.assertEqual(clinic_root_alias.status_code, 200)
+        self.assertIn("Nested preview", clinic_root_alias.text)
+        self.assertEqual(clinic_css_alias.status_code, 200)
+        self.assertIn("color: cyan", clinic_css_alias.text)
+        self.assertEqual(workspace_clinic_js_alias.status_code, 200)
+        self.assertEqual(
+            workspace_clinic_js_alias.headers.get("access-control-allow-origin"),
+            "null",
+        )
+        self.assertEqual(workspace_clinic_root_redirect.status_code, 307)
+        self.assertEqual(
+            workspace_clinic_root_redirect.headers["location"],
+            "/workspace/dental-clinic/",
+        )
         self.assertEqual(css_response.headers["content-type"].split(";")[0], "text/css")
         self.assertIn("color: cyan", css_response.text)
         self.assertIn("dataset.ready", js_response.text)

@@ -3072,8 +3072,15 @@ async def preview_null_origin_cors(request: Request, call_next):
             "/api/workspace/preview/static/",
             "/api/workspace/preview/server/",
             "/workspace-preview/",
+            "/dental-clinic/",
+            "/workspace/dental-clinic/",
         )
-    ) or request.url.path in {"/workspace-preview", "/workspace-preview/"}
+    ) or request.url.path in {
+        "/workspace-preview",
+        "/workspace-preview/",
+        "/dental-clinic",
+        "/workspace/dental-clinic",
+    }
     origin = request.headers.get("origin")
     if origin == "null" and request.url.path.startswith("/api/") and not preview_path:
         if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
@@ -3190,6 +3197,91 @@ async def get_workspace_preview_path(asset_path: str, request: Request) -> Respo
                 headers={"Cache-Control": "no-store"},
             )
     return _workspace_preview_file(asset_path)
+
+
+def _dental_clinic_preview_file(
+    asset_path: str,
+    request: Request,
+    *,
+    route_prefix: str,
+) -> Response:
+    relative = asset_path.strip("/")
+    if relative:
+        try:
+            candidate = resolve_workspace_path(
+                WORKSPACE,
+                Path("dental-clinic") / relative,
+            )
+        except PermissionError as error:
+            raise HTTPException(
+                status_code=403,
+                detail="Workspace paths cannot escape the workspace.",
+            ) from error
+        except OSError:
+            candidate = None
+        if candidate is not None and candidate.is_dir() and not asset_path.endswith("/"):
+            canonical_path = f"{route_prefix}/{quote(relative, safe='/')}/"
+            query = f"?{request.url.query}" if request.url.query else ""
+            return RedirectResponse(
+                f"{canonical_path}{query}",
+                status_code=307,
+                headers={"Cache-Control": "no-store"},
+            )
+
+    clinic_path = f"dental-clinic/{relative}" if relative else "dental-clinic/index.html"
+    return _workspace_preview_file(clinic_path)
+
+
+@app.get("/dental-clinic", include_in_schema=False)
+async def redirect_dental_clinic_root(request: Request) -> RedirectResponse:
+    query = f"?{request.url.query}" if request.url.query else ""
+    return RedirectResponse(
+        f"/dental-clinic/{query}",
+        status_code=307,
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@app.get("/dental-clinic/", include_in_schema=False)
+async def get_dental_clinic_root(request: Request) -> Response:
+    return _dental_clinic_preview_file("", request, route_prefix="/dental-clinic")
+
+
+@app.get("/dental-clinic/{asset_path:path}", include_in_schema=False)
+async def get_dental_clinic_asset(asset_path: str, request: Request) -> Response:
+    return _dental_clinic_preview_file(
+        asset_path,
+        request,
+        route_prefix="/dental-clinic",
+    )
+
+
+@app.get("/workspace/dental-clinic", include_in_schema=False)
+async def redirect_workspace_dental_clinic_root(request: Request) -> RedirectResponse:
+    query = f"?{request.url.query}" if request.url.query else ""
+    return RedirectResponse(
+        f"/workspace/dental-clinic/{query}",
+        status_code=307,
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@app.get("/workspace/dental-clinic/", include_in_schema=False)
+async def get_workspace_dental_clinic_root(request: Request) -> Response:
+    return _dental_clinic_preview_file(
+        "",
+        request,
+        route_prefix="/workspace/dental-clinic",
+    )
+
+
+@app.get("/workspace/dental-clinic/{asset_path:path}", include_in_schema=False)
+async def get_workspace_dental_clinic_asset(asset_path: str, request: Request) -> Response:
+    return _dental_clinic_preview_file(
+        asset_path,
+        request,
+        route_prefix="/workspace/dental-clinic",
+    )
 
 
 @app.get("/api/workspace/preview/static/{asset_path:path}", include_in_schema=False)
