@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useThreadHistory } from '@/hooks/use-thread-history';
 import type { CSSProperties, FormEvent, ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
@@ -438,11 +439,10 @@ function TaskActionDock({ task }: { task?: AssistantTask }) {
 function Dashboard() {
   const qc = useQueryClient();
   const summary = useGetAssistantDashboard({ query: { queryKey: getGetAssistantDashboardQueryKey(), refetchInterval: 4000 } });
-  const listTasks = useListAssistantTasks({ query: { queryKey: getListAssistantTasksQueryKey(), refetchInterval: 2000 } });
   const createTask = useCreateAssistantTask();
   const conv = useConversations();
   const { selectedId: threadId } = conv;
-  const threadDetail = useGetConversationThread(threadId ?? '', { query: { enabled: !!threadId, queryKey: getGetConversationThreadQueryKey(threadId ?? ''), refetchInterval: 2000 } });
+  const threadDetail = useThreadHistory(threadId);
   const threadStale = (threadDetail.error as { status?: number } | null)?.status === 404;
   const settingsQuery = useGetAssistantSettings();
   const [objective, setObjective] = useState('');
@@ -669,7 +669,7 @@ function Dashboard() {
       <div className="stream-heading-main">{isGenerating && <span className="status-indicator live live-label" data-testid="status-streaming" aria-live="polite"><span className="online-pip working" />STREAMING</span>}<h2 className="thread-title" title={streamTitle} data-testid="text-thread-title">{streamTitle}</h2></div>
       <div className="stream-heading-right"><div className="command-status" data-testid="status-agent-state"><span className="stream-model-badge">{settingsQuery.data ? modelDisplayName(settingsQuery.data.provider, settingsQuery.data.modelId) : 'Configured model'}</span><span className="stream-status-badge"><span className={`online-pip ${isGenerating ? 'working' : ''}`} />{summary.isLoading ? 'Connecting' : isGenerating ? 'Running' : 'Idle'}</span></div><Link href="/tasks" className="text-link" data-testid="link-all-tasks">Task activity <ArrowRight size={14} /></Link></div>
     </div>
-      {threadId && threadDetail.isError && !threadStale && !threadDetail.data ? <QueryProblem retry={() => threadDetail.refetch()} message="This chat could not be loaded." /> : <ActivityStream key={threadId ?? 'new'} tasks={tasks} messages={threadMessages} liveText={liveText} loading={!!threadId && threadDetail.isLoading} onOpen={(task) => setSelectedTaskId(task.id)} />}
+      {threadId && threadDetail.isError && !threadStale && !threadDetail.data ? <QueryProblem retry={() => threadDetail.refetch()} message="This chat could not be loaded." /> : <ActivityStream key={threadId ?? 'new'} tasks={tasks} messages={threadMessages} liveText={liveText} loading={!!threadId && threadDetail.isLoading} onOpen={(task) => setSelectedTaskId(task.id)} hasEarlier={threadDetail.hasNextPage} loadingEarlier={threadDetail.isFetchingNextPage} earlierError={threadDetail.isFetchNextPageError} onLoadEarlier={() => void threadDetail.fetchNextPage()} />}
     </section>
     <TaskActionDock task={actionTask.data} />
     <section className="composer-panel command-composer">
@@ -1034,7 +1034,7 @@ function SystemTelemetry() {
   const notes = useListAssistantNotes();
   const tasks = useListAssistantTasks({ query: { queryKey: getListAssistantTasksQueryKey(), refetchInterval: 4000 } });
   const { selectedId } = useConversations();
-  const thread = useGetConversationThread(selectedId ?? '', { query: { enabled: !!selectedId, queryKey: getGetConversationThreadQueryKey(selectedId ?? ''), refetchInterval: 2000 } });
+  const thread = useThreadHistory(selectedId);
   const messages = thread.data?.messages ?? [];
   const messageChars = messages.reduce((total, message) => total + message.content.length, 0);
   const estimatedTokens = Math.ceil(messageChars / 4);

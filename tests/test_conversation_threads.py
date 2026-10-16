@@ -284,6 +284,69 @@ class ConversationTests(unittest.IsolatedAsyncioTestCase):
                          ["user", "assistant", "tool", "assistant"])
 
 
+    async def test_display_history_is_paged_without_changing_model_context(self):
+        timestamp = main.utc_now()
+        with main.THREADS.transaction() as db:
+            thread_id = main.THREADS.create(db)
+            db.execute("INSERT INTO tasks(id,thread_id,objective,status,created_at,updated_at) VALUES(?,?,?,'completed',?,?)",
+                       ("paged-task", thread_id, "History", timestamp, timestamp))
+            main.THREADS.save(db, thread_id, "paged-task",
+                             [{"role": "user" if n % 2 == 0 else "assistant", "content": str(n)} for n in range(60)], [])
+        url = "/api/assistant/threads/" + thread_id
+        latest = (await self.client.get(url)).json()
+        self.assertEqual([m["content"] for m in latest["messages"]], [str(n) for n in range(35, 60)])
+        earlier = (await self.client.get(url, params={"before": latest["nextBefore"]})).json()
+        oldest = (await self.client.get(url, params={"before": earlier["nextBefore"]})).json()
+        self.assertEqual([m["content"] for m in oldest["messages"] + earlier["messages"] + latest["messages"]],
+                         [str(n) for n in range(60)])
+        self.assertIsNone(oldest["nextBefore"])
+        self.assertEqual(len(main.THREADS.history(thread_id, "next")), 60)
+        self.assertEqual((await self.client.get(url, params={"limit": 1000})).status_code, 422)
+
+    async def test_large_tool_payload_is_display_only_and_startup_is_metadata(self):
+        timestamp = main.utc_now()
+        calls = [{"id": "big-call", "type": "function", "function": {
+            "name": "write_file", "arguments": json.dumps({"path": "large.html", "content": "Z" * 1_000_000})},
+            "extra_content": {"google": {"thought_signature": "preserve-exactly"}}}]
+        turns = [{"role": "user", "content": "Build a page"},
+                 {"role": "assistant", "content": "", "tool_calls": calls},
+                 {"role": "tool", "tool_call_id": "big-call", "content": "R" * 1_000_000},
+                 {"role": "assistant", "content": "Page saved."}]
+        logs = [{"id": "big-log", "kind": "tool", "message": json.dumps({"path": "large.html", "content": "Z" * 1_000_000}), "createdAt": timestamp}]
+        with main.THREADS.transaction() as db:
+            thread_id = main.THREADS.create(db)
+            db.execute("INSERT INTO tasks(id,thread_id,objective,status,result,logs_json,created_at,updated_at) VALUES(?,?,?,'completed',?,?,?,?)",
+                       ("big-task", thread_id, "Build page", "Page saved.", json.dumps(logs), timestamp, timestamp))
+            main.THREADS.save(db, thread_id, "big-task", turns, logs)
+        listing = (await self.client.get("/api/assistant/threads")).json()
+        self.assertGreater(listing[0]["historyBytes"], 500 * 1024)
+        self.assertNotIn("messages", listing[0])
+        response = await self.client.get("/api/assistant/threads/" + thread_id)
+        self.assertLess(len(response.content), 25_000)
+        self.assertIn("payload", response.text)
+        self.assertNotIn("Z" * 10_000, response.text)
+        self.assertNotIn("preserve-exactly", response.text)
+        self.assertEqual(main.THREADS.history(thread_id, "next"), turns)
+        for endpoint in ["/api/assistant/dashboard", "/api/assistant/tasks"]:
+            self.assertLess(len((await self.client.get(endpoint)).content), 25_000)
+
+    async def test_archive_preserves_context_and_tasks_and_can_restore(self):
+        thread = (await self.client.post("/api/assistant/threads", json={})).json()
+        url = "/api/assistant/threads/" + thread["id"]
+        self.assertEqual((await self.client.patch(url, json={"archived": True})).status_code, 200)
+        self.assertEqual((await self.client.get("/api/assistant/threads")).json(), [])
+        archived = (await self.client.get("/api/assistant/threads?includeArchived=true")).json()
+        self.assertTrue(archived[0]["archived"])
+        self.assertEqual((await self.client.get(url)).status_code, 200)
+        await self.client.patch(url, json={"archived": False})
+        self.assertEqual(len((await self.client.get("/api/assistant/threads")).json()), 1)
+        timestamp = main.utc_now()
+        with main.THREADS.transaction() as db:
+            db.execute("INSERT INTO tasks(id,thread_id,objective,status,created_at,updated_at) VALUES(?,?,?,'awaiting_approval',?,?)",
+                       ("active-archive", thread["id"], "Pending approval", timestamp, timestamp))
+        self.assertEqual((await self.client.patch(url, json={"archived": True})).status_code, 409)
+
+
 class ProtocolBoundaryTests(unittest.TestCase):
     def test_interrupted_parallel_calls_are_closed_before_followup(self):
         calls = [{"id": "one", "type": "function", "function": {"name": "search", "arguments": "{}"}},

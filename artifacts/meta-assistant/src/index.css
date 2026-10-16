@@ -2341,6 +2341,39 @@ html[data-theme="scifi"][data-cyber-fx="on"] body::after {
 @keyframes forge-scanline-drift {
   to { background-position:0 12px; }
 }
+/* Skip off-screen chat paint/layout; raw accordions mount only when opened. */
+.exec-task {
+  content-visibility:auto;
+  contain-intrinsic-size: auto 120px;
+}
+html[data-theme="scifi"] .activity-panel,
+html[data-theme="scifi"] .exec-task,
+html[data-theme="scifi"] .exec-result {
+  /* Large scrolling reading surfaces must not re-blur every streamed token. */
+  -webkit-backdrop-filter:none!important;
+  backdrop-filter:none!important;
+}
+.exec-thinking .exec-steps,
+.exec-raw {
+  max-height:300px;
+  overflow-y:auto;
+  contain:content;
+  overscroll-behavior:contain;
+}
+.exec-earlier { display:flex; justify-content:center; padding:8px; }
+.exec-earlier button,
+.chat-archive-controls button {
+  color:var(--accent);
+  background:var(--bg-panel);
+  border:1px solid var(--border);
+  border-radius:4px;
+  padding:5px 8px;
+  font-size:11px;
+  cursor:pointer;
+}
+.chat-archive-controls { display:flex; flex-wrap:wrap; gap:4px; margin:4px 8px 8px; }
+.chat-archive-controls [role="alertdialog"] { padding:8px; font-size:12px; color:var(--text-primary); }
+.chat-archive-controls [role="alertdialog"] p { margin-bottom:8px; }
 @media(prefers-reduced-motion:reduce) {
   .ambient-background { opacity:.15; }
   html[data-theme="scifi"][data-cyber-fx="on"] body::after { animation:none!important; }

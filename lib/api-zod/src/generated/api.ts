@@ -59,12 +59,20 @@ export const GetAssistantDashboardResponse = zod.object({
 })
 
 
+export const listConversationThreadsQueryIncludeArchivedDefault = false;
+
+export const ListConversationThreadsQueryParams = zod.object({
+  "includeArchived": zod.coerce.boolean().default(listConversationThreadsQueryIncludeArchivedDefault)
+})
+
 export const ListConversationThreadsResponseItem = zod.object({
   "id": zod.string(),
   "title": zod.string(),
   "pinned": zod.boolean(),
   "activeTaskId": zod.string().nullable(),
   "messageCount": zod.number().int(),
+  "historyBytes": zod.number().int().optional(),
+  "archived": zod.boolean().optional(),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
 })
@@ -86,6 +94,8 @@ export const CreateConversationThreadResponse = zod.object({
   "pinned": zod.boolean(),
   "activeTaskId": zod.string().nullable(),
   "messageCount": zod.number().int(),
+  "historyBytes": zod.number().int().optional(),
+  "archived": zod.boolean().optional(),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
 })
@@ -95,15 +105,29 @@ export const GetConversationThreadParams = zod.object({
   "id": zod.coerce.string()
 })
 
+export const getConversationThreadQueryLimitDefault = 25;
+export const getConversationThreadQueryLimitMax = 25;
+
+
+
+
+export const GetConversationThreadQueryParams = zod.object({
+  "limit": zod.coerce.number().int().min(1).max(getConversationThreadQueryLimitMax).default(getConversationThreadQueryLimitDefault),
+  "before": zod.coerce.number().int().min(1).optional()
+})
+
 export const GetConversationThreadResponse = zod.object({
   "id": zod.string(),
   "title": zod.string(),
   "pinned": zod.boolean(),
   "activeTaskId": zod.string().nullable(),
   "messageCount": zod.number().int(),
+  "historyBytes": zod.number().int().optional(),
+  "archived": zod.boolean().optional(),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
 }).and(zod.object({
+  "nextBefore": zod.number().int().nullish(),
   "messages": zod.array(zod.object({
   "id": zod.string(),
   "threadId": zod.string(),
@@ -117,6 +141,7 @@ export const GetConversationThreadResponse = zod.object({
   "createdAt": zod.coerce.date()
 })),
   "isToolCall": zod.boolean(),
+  "ordering": zod.number().int().optional(),
   "createdAt": zod.coerce.date()
 })),
   "tasks": zod.array(zod.object({
@@ -162,7 +187,8 @@ export const updateConversationThreadBodyTitleMax = 100;
 
 export const UpdateConversationThreadBody = zod.object({
   "title": zod.string().min(1).max(updateConversationThreadBodyTitleMax).optional(),
-  "pinned": zod.boolean().optional()
+  "pinned": zod.boolean().optional(),
+  "archived": zod.boolean().optional()
 })
 
 export const UpdateConversationThreadResponse = zod.object({
@@ -171,6 +197,8 @@ export const UpdateConversationThreadResponse = zod.object({
   "pinned": zod.boolean(),
   "activeTaskId": zod.string().nullable(),
   "messageCount": zod.number().int(),
+  "historyBytes": zod.number().int().optional(),
+  "archived": zod.boolean().optional(),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
 })
@@ -192,6 +220,8 @@ export const ListThreadSessionsResponseItem = zod.object({
   "pinned": zod.boolean(),
   "activeTaskId": zod.string().nullable(),
   "messageCount": zod.number().int(),
+  "historyBytes": zod.number().int().optional(),
+  "archived": zod.boolean().optional(),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
 })
@@ -216,6 +246,8 @@ export const CreateThreadSessionResponse = zod.object({
   "pinned": zod.boolean(),
   "activeTaskId": zod.string().nullable(),
   "messageCount": zod.number().int(),
+  "historyBytes": zod.number().int().optional(),
+  "archived": zod.boolean().optional(),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
 })
@@ -241,6 +273,7 @@ export const GetThreadSessionMessagesResponseItem = zod.object({
   "createdAt": zod.coerce.date()
 })),
   "isToolCall": zod.boolean(),
+  "ordering": zod.number().int().optional(),
   "createdAt": zod.coerce.date()
 })
 export const GetThreadSessionMessagesResponse = zod.array(GetThreadSessionMessagesResponseItem)

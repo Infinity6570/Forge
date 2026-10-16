@@ -31,7 +31,9 @@ import type {
   ConversationThreadDetail,
   DashboardSummary,
   FileUploadInput,
+  GetConversationThreadParams,
   HealthStatus,
+  ListConversationThreadsParams,
   ModelSelectionInput,
   NoteInput,
   ProviderKeysInput,
@@ -233,17 +235,24 @@ export function useGetAssistantDashboard<TData = Awaited<ReturnType<typeof getAs
 
 
 
-export const getListConversationThreadsUrl = () => {
+export const getListConversationThreadsUrl = (params?: ListConversationThreadsParams,) => {
+  const normalizedParams = new URLSearchParams();
 
+  Object.entries(params || {}).forEach(([key, value]) => {
 
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
 
+  const stringifiedParams = normalizedParams.toString();
 
-  return `/api/assistant/threads`
+  return stringifiedParams.length > 0 ? `/api/assistant/threads?${stringifiedParams}` : `/api/assistant/threads`
 }
 
-export const listConversationThreads = async ( options?: Parameters<typeof customFetch>[1]): Promise<ConversationThread[]> => {
+export const listConversationThreads = async (params?: ListConversationThreadsParams, options?: Parameters<typeof customFetch>[1]): Promise<ConversationThread[]> => {
 
-  return customFetch<ConversationThread[]>(getListConversationThreadsUrl(),
+  return customFetch<ConversationThread[]>(getListConversationThreadsUrl(params),
   {
     ...options,
     method: 'GET'
@@ -256,23 +265,23 @@ export const listConversationThreads = async ( options?: Parameters<typeof custo
 
 
 
-export const getListConversationThreadsQueryKey = () => {
+export const getListConversationThreadsQueryKey = (params?: ListConversationThreadsParams,) => {
     return [
-    `/api/assistant/threads`
+    `/api/assistant/threads`, ...(params ? [params] : [])
     ] as const;
     }
 
 
-export const getListConversationThreadsQueryOptions = <TData = Awaited<ReturnType<typeof listConversationThreads>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listConversationThreads>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+export const getListConversationThreadsQueryOptions = <TData = Awaited<ReturnType<typeof listConversationThreads>>, TError = ErrorType<unknown>>(params?: ListConversationThreadsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listConversationThreads>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
 
-  const queryKey =  queryOptions?.queryKey ?? getListConversationThreadsQueryKey();
+  const queryKey =  queryOptions?.queryKey ?? getListConversationThreadsQueryKey(params);
 
 
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof listConversationThreads>>> = ({ signal }) => listConversationThreads({ signal, ...requestOptions });
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listConversationThreads>>> = ({ signal }) => listConversationThreads(params, { signal, ...requestOptions });
 
 
 
@@ -287,11 +296,11 @@ export type ListConversationThreadsQueryError = ErrorType<unknown>
 
 
 export function useListConversationThreads<TData = Awaited<ReturnType<typeof listConversationThreads>>, TError = ErrorType<unknown>>(
-  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listConversationThreads>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+ params?: ListConversationThreadsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listConversationThreads>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
-  const queryOptions = getListConversationThreadsQueryOptions(options)
+  const queryOptions = getListConversationThreadsQueryOptions(params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 
@@ -386,17 +395,26 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       return useMutation(getCreateConversationThreadMutationOptions(options));
     }
 
-export const getGetConversationThreadUrl = (id: string,) => {
+export const getGetConversationThreadUrl = (id: string,
+    params?: GetConversationThreadParams,) => {
+  const normalizedParams = new URLSearchParams();
 
+  Object.entries(params || {}).forEach(([key, value]) => {
 
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
 
+  const stringifiedParams = normalizedParams.toString();
 
-  return `/api/assistant/threads/${id}`
+  return stringifiedParams.length > 0 ? `/api/assistant/threads/${id}?${stringifiedParams}` : `/api/assistant/threads/${id}`
 }
 
-export const getConversationThread = async (id: string, options?: Parameters<typeof customFetch>[1]): Promise<ConversationThreadDetail> => {
+export const getConversationThread = async (id: string,
+    params?: GetConversationThreadParams, options?: Parameters<typeof customFetch>[1]): Promise<ConversationThreadDetail> => {
 
-  return customFetch<ConversationThreadDetail>(getGetConversationThreadUrl(id),
+  return customFetch<ConversationThreadDetail>(getGetConversationThreadUrl(id,params),
   {
     ...options,
     method: 'GET'
@@ -409,23 +427,25 @@ export const getConversationThread = async (id: string, options?: Parameters<typ
 
 
 
-export const getGetConversationThreadQueryKey = (id: string,) => {
+export const getGetConversationThreadQueryKey = (id: string,
+    params?: GetConversationThreadParams,) => {
     return [
-    `/api/assistant/threads/${id}`
+    `/api/assistant/threads/${id}`, ...(params ? [params] : [])
     ] as const;
     }
 
 
-export const getGetConversationThreadQueryOptions = <TData = Awaited<ReturnType<typeof getConversationThread>>, TError = ErrorType<unknown>>(id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getConversationThread>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+export const getGetConversationThreadQueryOptions = <TData = Awaited<ReturnType<typeof getConversationThread>>, TError = ErrorType<unknown>>(id: string,
+    params?: GetConversationThreadParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getConversationThread>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
 
-  const queryKey =  queryOptions?.queryKey ?? getGetConversationThreadQueryKey(id);
+  const queryKey =  queryOptions?.queryKey ?? getGetConversationThreadQueryKey(id,params);
 
 
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof getConversationThread>>> = ({ signal }) => getConversationThread(id, { signal, ...requestOptions });
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getConversationThread>>> = ({ signal }) => getConversationThread(id,params, { signal, ...requestOptions });
 
 
 
@@ -440,11 +460,12 @@ export type GetConversationThreadQueryError = ErrorType<unknown>
 
 
 export function useGetConversationThread<TData = Awaited<ReturnType<typeof getConversationThread>>, TError = ErrorType<unknown>>(
- id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getConversationThread>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+ id: string,
+    params?: GetConversationThreadParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getConversationThread>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
-  const queryOptions = getGetConversationThreadQueryOptions(id,options)
+  const queryOptions = getGetConversationThreadQueryOptions(id,params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

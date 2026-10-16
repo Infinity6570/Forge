@@ -40,6 +40,7 @@ from openai import APIStatusError, AsyncOpenAI
 from llm_protocol import TextCallback, assistant_turn, collect_completion, prepare_history
 from model_client import AnthropicChatClient
 from conversation_threads import ThreadStore, thread_routers
+from history_display import display_task
 from task_text_stream import TaskTextStreamHub
 from pydantic import BaseModel, Field
 from websockets.asyncio.client import connect as websocket_connect
@@ -3413,7 +3414,7 @@ async def health_check() -> dict[str, bool]:
 
 @app.get("/api/assistant/dashboard")
 async def dashboard() -> dict[str, Any]:
-    tasks = [task_dict(row) for row in db_all("SELECT * FROM tasks ORDER BY created_at DESC LIMIT 8")]
+    tasks = [display_task(row, task_dict, summary=True) for row in db_all("SELECT * FROM tasks ORDER BY created_at DESC LIMIT 8")]
     return {
         "activeTasks": len(db_all("SELECT id FROM tasks WHERE status IN ('queued','running','awaiting_confirmation','awaiting_approval')")),
         "completedTasks": len(db_all("SELECT id FROM tasks WHERE status='completed'")),
@@ -3426,7 +3427,7 @@ async def dashboard() -> dict[str, Any]:
 
 @app.get("/api/assistant/tasks")
 async def list_tasks() -> list[dict[str, Any]]:
-    return [task_dict(row) for row in db_all("SELECT * FROM tasks ORDER BY created_at DESC LIMIT 200")]
+    return [display_task(row, task_dict, summary=True) for row in db_all("SELECT * FROM tasks ORDER BY created_at DESC LIMIT 200")]
 
 
 @app.post("/api/assistant/tasks", status_code=201)
@@ -3998,7 +3999,7 @@ async def get_task(task_id: str) -> dict[str, Any]:
     row = db_one("SELECT * FROM tasks WHERE id=?", (task_id,))
     if not row:
         raise HTTPException(status_code=404, detail="Task not found.")
-    return task_dict(row)
+    return display_task(row, task_dict)
 
 
 @app.get("/api/assistant/tasks/{task_id}/stream")

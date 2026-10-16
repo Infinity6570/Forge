@@ -6,10 +6,11 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from llm_protocol import to_wire
+from history_display import display_task
 
 BUSY = ("queued", "running", "awaiting_confirmation", "awaiting_approval")
 LEGACY_EMPTY_RESPONSE = "The model returned no final text."
@@ -109,6 +110,8 @@ class ThreadStore:
           CREATE INDEX IF NOT EXISTS tasks_thread_idx ON tasks(thread_id,created_at);
           CREATE TABLE IF NOT EXISTS conversation_meta (name TEXT PRIMARY KEY);
         """)
+        if "archived" not in {row[1] for row in connection.execute("PRAGMA table_info(conversation_threads)")}:
+            connection.execute("ALTER TABLE conversation_threads ADD COLUMN archived INTEGER NOT NULL DEFAULT 0")
         if not connection.execute("SELECT 1 FROM conversation_meta WHERE name='legacy_backfill'").fetchone():
             for task in connection.execute("SELECT * FROM tasks WHERE thread_id IS NULL ORDER BY created_at,id").fetchall():
                 thread_id = self.create(connection, title_from_prompt(task["objective"]), task["created_at"])
@@ -148,7 +151,7 @@ class ThreadStore:
 
     def create(self, connection, title: str = "New Chat", timestamp: str | None = None) -> str:
         thread_id, timestamp = str(uuid.uuid4()), timestamp or now()
-        connection.execute("INSERT INTO conversation_threads VALUES(?,?,0,?,?)",
+        connection.execute("INSERT INTO conversation_threads(id,title,pinned,created_at,updated_at) VALUES(?,?,0,?,?)",
                            (thread_id, title, timestamp, timestamp))
         return thread_id
 
@@ -167,9 +170,14 @@ class ThreadStore:
     def describe(self, connection, row) -> dict[str, Any]:
         active = self.active(connection, row["id"])
         count = connection.execute("SELECT COUNT(*) FROM conversation_messages WHERE thread_id=?", (row["id"],)).fetchone()[0]
+        size = connection.execute(
+            "SELECT COALESCE(SUM(length(CAST(protocol_json AS BLOB))+length(CAST(thought_steps AS BLOB))),0) "
+            "FROM conversation_messages WHERE thread_id=?", (row["id"],)
+        ).fetchone()[0]
         return {"id": row["id"], "title": row["title"], "pinned": bool(row["pinned"]),
                 "createdAt": row["created_at"], "updatedAt": row["updated_at"],
-                "activeTaskId": active["id"] if active else None, "messageCount": count}
+                "activeTaskId": active["id"] if active else None, "messageCount": count,
+                "historyBytes": size, "archived": bool(row["archived"])}
 
     def append_user(self, connection, thread_id: str, task_id: str, objective: str, timestamp: str) -> None:
         row = self.require(connection, thread_id)
@@ -268,32 +276,48 @@ class ThreadInput(BaseModel):
 class ThreadUpdate(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=100)
     pinned: bool | None = None
+    archived: bool | None = None
 
 
 def thread_routers(store: ThreadStore, serialize_task, redact=lambda value: value) -> tuple[APIRouter, APIRouter]:
     router = APIRouter(prefix="/api/assistant/threads")
     sessions = APIRouter(prefix="/api/threads")
 
-    def read_messages(connection, thread_id: str) -> list[dict[str, Any]]:
+    def read_messages(connection, thread_id: str, limit: int = 25, before: int | None = None) -> list[dict[str, Any]]:
         messages = []
-        for row in connection.execute(
-            "SELECT * FROM conversation_messages WHERE thread_id=? ORDER BY ordering", (thread_id,)
-        ):
-            protocol = json.loads(row["protocol_json"])
-            if malformed_empty_assistant(protocol):
-                continue
+        rows = connection.execute(
+            "SELECT id,thread_id,task_id,role,created_at,ordering,"
+            "COALESCE(json_array_length(protocol_json,'$.tool_calls'),0)>0 AS is_tool_call,"
+            "CASE WHEN role='tool' OR COALESCE(json_array_length(protocol_json,'$.tool_calls'),0)>0 "
+            "THEN substr(content,1,10240) ELSE substr(content,1,65536) END AS content,"
+            "length(CAST(content AS BLOB)) AS content_bytes "
+            ",substr(json_extract(thought_steps,'$[0].message'),1,2000) AS thought_summary "
+            "FROM conversation_messages WHERE thread_id=? AND (? IS NULL OR ordering<?) "
+            "ORDER BY ordering DESC LIMIT ?", (thread_id, before, before, limit)
+        ).fetchall()
+        for row in reversed(rows):
+            content = row["content"]
+            if row["content_bytes"] > 10240 and (row["role"] == "tool" or row["is_tool_call"]):
+                content = f"[Tool/file payload: {row['content_bytes'] / 1024:.1f} KB — retained locally; inspect Workspace for saved files]"
+            elif row["content_bytes"] > 65536 and len(content) == 65536:
+                content += "\n[Display shortened; full message retained locally]"
             messages.append(
                 {"id": row["id"], "threadId": row["thread_id"], "taskId": row["task_id"], "role": row["role"],
-                 "content": redact(row["content"]), "thoughtSteps": json.loads(row["thought_steps"]),
-                 "isToolCall": bool(protocol.get("tool_calls")), "createdAt": row["created_at"]}
+                 "content": redact(content), "thoughtSteps": [
+                     {"id": row["id"] + "-summary", "kind": "info", "message": redact(row["thought_summary"]),
+                      "createdAt": row["created_at"]}
+                 ] if row["thought_summary"] else [],
+                 "isToolCall": bool(row["is_tool_call"]), "createdAt": row["created_at"],
+                 "ordering": row["ordering"]}
             )
         return messages
 
     @router.get("")
-    async def list_threads():
+    async def list_threads(includeArchived: bool = False):
         with store.transaction() as connection:
             return [store.describe(connection, row) for row in connection.execute(
-                "SELECT * FROM conversation_threads ORDER BY pinned DESC,updated_at DESC")]
+                "SELECT * FROM conversation_threads WHERE archived=0 OR ? ORDER BY pinned DESC,updated_at DESC",
+                (includeArchived,))]
 
     @router.post("", status_code=201)
     async def create_thread(body: ThreadInput):
@@ -304,34 +328,47 @@ def thread_routers(store: ThreadStore, serialize_task, redact=lambda value: valu
             return store.describe(connection, store.require(connection, thread_id))
 
     @router.get("/{thread_id}")
-    async def get_thread(thread_id: str):
+    async def get_thread(thread_id: str, limit: int = Query(25, ge=1, le=25), before: int | None = Query(None, ge=1)):
         with store.transaction() as connection:
             result = store.describe(connection, store.require(connection, thread_id))
-            result["messages"] = read_messages(connection, thread_id)
-            result["tasks"] = [serialize_task(row) for row in connection.execute(
-                "SELECT * FROM tasks WHERE thread_id=? ORDER BY created_at,id", (thread_id,))]
+            result["messages"] = read_messages(connection, thread_id, limit, before)
+            oldest = result["messages"][0]["ordering"] if result["messages"] else before
+            result["nextBefore"] = oldest if oldest and connection.execute(
+                "SELECT 1 FROM conversation_messages WHERE thread_id=? AND ordering<? LIMIT 1",
+                (thread_id, oldest)).fetchone() else None
+            task_ids = list(dict.fromkeys(message["taskId"] for message in result["messages"]))
+            active = result["activeTaskId"]
+            if active and before is None and active not in task_ids:
+                task_ids.append(active)
+            result["tasks"] = [display_task(row, serialize_task, log_limit=10) for row in connection.execute(
+                f"SELECT * FROM tasks WHERE thread_id=? AND id IN ({','.join('?' for _ in task_ids)}) ORDER BY created_at,id",
+                (thread_id, *task_ids))] if task_ids else []
             return result
 
     @sessions.get("")
     async def list_sessions():
         with store.transaction() as connection:
             return [store.describe(connection, row) for row in connection.execute(
-                "SELECT * FROM conversation_threads ORDER BY updated_at DESC,id")]
+                "SELECT * FROM conversation_threads WHERE archived=0 ORDER BY updated_at DESC,id")]
 
     @sessions.post("", status_code=201)
     async def create_session(body: ThreadInput | None = None):
         return await create_thread(body or ThreadInput())
 
     @sessions.get("/{thread_id}/messages")
-    async def get_session_messages(thread_id: str):
+    async def get_session_messages(thread_id: str, limit: int = Query(25, ge=1, le=25), before: int | None = Query(None, ge=1)):
         with store.transaction() as connection:
             store.require(connection, thread_id)
-            return read_messages(connection, thread_id)
+            return read_messages(connection, thread_id, limit, before)
 
     @router.patch("/{thread_id}")
     async def update_thread(thread_id: str, body: ThreadUpdate):
         with store.transaction() as connection:
             store.require(connection, thread_id)
+            if body.archived is not None:
+                if body.archived and store.active(connection, thread_id):
+                    raise HTTPException(409, "Stop or finish this chat before archiving it.")
+                connection.execute("UPDATE conversation_threads SET archived=? WHERE id=?", (int(body.archived), thread_id))
             if body.title is not None:
                 if not body.title.strip():
                     raise HTTPException(422, "Enter a chat title.")

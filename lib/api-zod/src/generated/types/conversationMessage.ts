@@ -16,5 +16,6 @@ export interface ConversationMessage {
   content: string;
   thoughtSteps: TaskLog[];
   isToolCall: boolean;
+  ordering?: number;
   createdAt: Date;
 }

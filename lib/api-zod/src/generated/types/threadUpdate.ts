@@ -13,4 +13,5 @@ export interface ThreadUpdate {
      */
   title?: string;
   pinned?: boolean;
+  archived?: boolean;
 }

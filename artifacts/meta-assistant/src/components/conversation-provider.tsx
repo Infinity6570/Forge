@@ -30,6 +30,10 @@ type Ctx = {
   actionError: string;
   clearActionError: () => void;
   resetSignal: number;
+  showArchived: boolean;
+  toggleArchived: () => void;
+  archiveOld: () => Promise<void>;
+  restore: (id: string) => Promise<void>;
 };
 
 const ConversationContext = createContext<Ctx | null>(null);
@@ -45,13 +49,12 @@ const statusOf = (error: unknown) => (error as { status?: number } | null)?.stat
 export function ConversationProvider({ children }: { children: ReactNode }) {
   const qc = useQueryClient();
   const [, navigate] = useLocation();
-  const [selectedId, setSelectedId] = useState<string | undefined>(() => {
-    try { return window.localStorage.getItem(STORAGE_KEY) || undefined; } catch { return undefined; }
-  });
+  const [selectedId, setSelectedId] = useState<string | undefined>();
+  const [showArchived, setShowArchived] = useState(false);
   const [actionError, setActionError] = useState('');
   const [resetSignal, setResetSignal] = useState(0);
   const selectionVersion = useRef(0);
-  const list = useListConversationThreads({ query: { queryKey: getListConversationThreadsQueryKey(), refetchInterval: 4000 } });
+  const list = useListConversationThreads({ includeArchived: showArchived }, { query: { queryKey: getListConversationThreadsQueryKey({ includeArchived: showArchived }), refetchInterval: 10_000 } });
   const create = useCreateConversationThread();
   const update = useUpdateConversationThread();
   const del = useDeleteConversationThread();
@@ -117,10 +120,29 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
     }
   }, [del, qc, selectedId, select]);
 
+  const restore = async (id: string) => {
+    try {
+      await update.mutateAsync({ id, data: { archived: false } });
+      await qc.invalidateQueries({ queryKey: getListConversationThreadsQueryKey() });
+    } catch { setActionError('The chat could not be restored.'); }
+  };
+  const archiveOld = async () => {
+    setActionError('');
+    try {
+      // Pinned chats and runs awaiting approval are never archived.
+      for (const thread of threads.filter((t) => !t.archived && !t.pinned && !t.activeTaskId)) {
+        await update.mutateAsync({ id: thread.id, data: { archived: true } });
+        if (thread.id === selectedId) select(undefined);
+      }
+      setResetSignal((n) => n + 1);
+    } catch { setActionError('Some chats could not be archived. No history was deleted.'); }
+    finally { await qc.invalidateQueries({ queryKey: getListConversationThreadsQueryKey() }); }
+  };
   const value: Ctx = {
     threads, loading: list.isLoading, error: list.isError, retry: () => { void list.refetch(); },
     selectedId, select, adopt, newChat, creating: create.isPending, rename, setPinned, remove,
     actionError, clearActionError: () => setActionError(''), resetSignal,
+    showArchived, toggleArchived: () => setShowArchived((v) => !v), archiveOld, restore,
   };
   return <ConversationContext.Provider value={value}>{children}</ConversationContext.Provider>;
 }

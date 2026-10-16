@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import * as React from 'react';
 import { Children, isValidElement } from 'react';
 import type { ReactNode } from 'react';
 import ReactMarkdown from 'react-markdown';
@@ -13,6 +14,10 @@ type Props = {
   onOpen: (task: AssistantTask) => void;
   messages?: ConversationMessage[];
   liveText?: { taskId: string; text: string };
+  hasEarlier?: boolean;
+  loadingEarlier?: boolean;
+  earlierError?: boolean;
+  onLoadEarlier?: () => void;
 };
 
 const time = (v: string) => new Date(v).getTime() || 0;
@@ -27,7 +32,7 @@ function Code({ source, language }: { source: string; language: string }) {
   return <div className="stream-code"><div><span>{language || 'code'}</span><button type="button" onClick={() => void copy()} data-testid="button-copy-stream-code"><Copy size={12} />{copied ? 'Copied' : 'Copy'}</button></div><pre><code>{source}</code></pre></div>;
 }
 
-function Rich({ text }: { text: string }) {
+const Rich = memo(function Rich({ text }: { text: string }) {
   return <div className="exec-rich">
     <ReactMarkdown
       remarkPlugins={[remarkGfm]}
@@ -47,7 +52,7 @@ function Rich({ text }: { text: string }) {
       }}
     >{text}</ReactMarkdown>
   </div>;
-}
+});
 
 type Summary = { icon: typeof Terminal; label: string; text: string; tone: string };
 const clip = (s: string, n = 140) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
@@ -92,38 +97,98 @@ function rowsFor(logs: TaskLog[]): Row[] {
 }
 
 function Step({ row }: { row: Row }) {
+  const [open, setOpen] = useState(false);
   const s = summarize(row.log);
   const Icon = s.icon;
   const multi = row.log.message.trim() !== s.text || row.log.message.includes('\n');
-  return <details className={`exec-step tone-${s.tone}`} data-testid={`step-log-${row.log.id}`}>
+  return <details className={`exec-step tone-${s.tone}`} onToggle={(e) => setOpen(e.currentTarget.open)} data-testid={`step-log-${row.log.id}`}>
     <summary><Icon size={14} className="exec-ico" /><span className="exec-label">{s.label}</span><span className="exec-text" title={s.text}>{s.text}</span>{row.count > 1 && <span className="exec-count">x{row.count}</span>}<time>{clock(row.log.createdAt)}</time><ChevronDown size={13} className="exec-chev" aria-label={multi ? 'Show details' : 'Show raw log'} /></summary>
-    <div className="exec-raw"><Rich text={row.log.message} /></div>
+    {open && <div className="exec-raw"><Rich text={row.log.message} /></div>}
   </details>;
 }
 
 function ErrorLine({ error }: { error: string }) {
+  const [open, setOpen] = useState(false);
   const line = clip(error.split('\n')[0], 160);
   const more = error.trim() !== line;
-  return <details className="exec-error"><summary><AlertCircle size={14} /><span>{line}</span>{more && <ChevronDown size={13} className="exec-chev" />}</summary>{more && <div className="exec-raw"><Rich text={error} /></div>}</details>;
+  return <details className="exec-error" onToggle={(e) => setOpen(e.currentTarget.open)}><summary><AlertCircle size={14} /><span>{line}</span>{more && <ChevronDown size={13} className="exec-chev" />}</summary>{open && more && <div className="exec-raw"><Rich text={error} /></div>}</details>;
 }
 
 function ToolOutput({ message }: { message: ConversationMessage }) {
+  const [open, setOpen] = useState(false);
   const tool = message.role === 'tool' || message.isToolCall;
   const search = parseSearchPayload(message.content);
   const first = search ? `Search via ${search.engine}: ${search.results.length} sources` : clip(message.content.split('\n').find((l) => l.trim())?.trim() ?? message.content);
-  return <details className="exec-step exec-tool-out tone-tool" data-testid={`step-message-${message.id}`}>
+  return <details className="exec-step exec-tool-out tone-tool" onToggle={(e) => setOpen(e.currentTarget.open)} data-testid={`step-message-${message.id}`}>
     <summary>{tool ? <Wrench size={14} className="exec-ico" /> : <Brain size={14} className="exec-ico" />}<span className="exec-label">{search ? 'Search' : tool ? 'Output' : 'Note'}</span><span className="exec-text" title={first}>{first}</span><time>{clock(message.createdAt)}</time><ChevronDown size={13} className="exec-chev" /></summary>
-    <div className="exec-raw">{search ? <SearchPayloadView payload={search} /> : <Rich text={message.content} />}</div>
+    {open && <div className="exec-raw">{search ? <SearchPayloadView payload={search} /> : <Rich text={message.content} />}</div>}
   </details>;
 }
 
-export function ActivityStream({ tasks, loading, onOpen, messages, liveText }: Props) {
+const TaskArticle = memo(function TaskArticle({ task, extras, text, onOpen }: {
+  task: AssistantTask; extras: ConversationMessage[]; text?: string; onOpen: (task: AssistantTask) => void;
+}) {
+        const [thinkingOpen, setThinkingOpen] = useState(false);
+        const live = isLive(task);
+        const rows = useMemo(() => thinkingOpen ? rowsFor(task.logs ?? []) : [], [thinkingOpen, task.logs]);
+        const stepCount = (task.logs?.length ?? 0) + extras.length;
+        const searchPayloads = useMemo(() => extras.map((m) => parseSearchPayload(m.content)).filter((payload) => payload !== null), [extras]);
+        const sources = useMemo(() => {
+          const seen = new Set<string>();
+          return searchPayloads.flatMap((payload) => payload.results).filter((r) => {
+            if (!r.url || seen.has(r.url)) return false;
+            seen.add(r.url); return true;
+          });
+        }, [searchPayloads]);
+        const sourceProviders = [...new Set(searchPayloads.map((payload) => payload.engine))];
+        const result = text ?? task.result;
+        return <article className="stream-task exec-task" data-task-status={task.status} data-active={live ? 'true' : 'false'} data-testid={`stream-task-${task.id}`}>
+          <div className="exec-user">
+            <p className="exec-user-text">{task.objective}</p>
+            <div className="exec-user-meta"><span>You</span><time>{clock(task.createdAt)}</time><span className="exec-status">{String(task.status)}</span><button type="button" className="exec-view" onClick={() => onOpen(task)} data-testid={`button-stream-task-${task.id}`}>View Details<ArrowRight size={12} /></button></div>
+          </div>
+          {task.status === 'cancelled' && <div className="exec-aborted" role="status" data-testid={`task-aborted-${task.id}`}><StopCircle size={13} aria-hidden="true" /><span>[TASK ABORTED BY USER]</span></div>}
+          {(stepCount > 0 || (live && !task.result) || task.error) && <details className="exec-thinking" onToggle={(e) => setThinkingOpen(e.currentTarget.open)} data-testid={`thinking-${task.id}`}>
+            <summary><Brain size={14} /><span>Thinking ({stepCount} {stepCount === 1 ? 'step' : 'steps'})</span>{live && <span className="exec-working"><span className="exec-dot live" />Working</span>}<ChevronDown size={13} className="exec-chev" /></summary>
+            {thinkingOpen && <>
+              <div className="exec-steps">{rows.map((r) => <Step key={r.log.id} row={r} />)}{extras.map((m) => <ToolOutput key={m.id} message={m} />)}</div>
+              {live && task.currentStep && <div className="exec-pending"><span className="exec-dot live" />{clip(task.currentStep, 160)}</div>}
+              {task.error && !rows.some((row) => row.log.kind === 'error' && row.log.message.includes(task.error!)) && <ErrorLine error={task.error} />}
+            </>}
+          </details>}
+          {task.error && <div className="exec-failure"><AlertCircle size={14} />Task failed. Open Thinking or View Details for the cause.</div>}
+          {result && <div className="exec-result"><div className="exec-result-label">{live ? <><span className="exec-dot live" />Responding</> : <><CheckCircle2 size={14} />Forge</>}</div><Rich text={result} />{sources.length > 0 && <div className="exec-sources" data-testid={`sources-${task.id}`}><SourcesAccordion results={sources} providers={sourceProviders} limit={6} /></div>}</div>}
+          {!stepCount && !task.result && !task.error && !task.currentStep && !live && <p className="stream-no-events">No execution updates yet.</p>}
+        </article>;
+});
+
+const EMPTY_MESSAGES: ConversationMessage[] = [];
+
+export function ActivityStream({ tasks, loading, onOpen, messages, liveText, hasEarlier, loadingEarlier, earlierError, onLoadEarlier }: Props) {
   const scroller = useRef<HTMLDivElement>(null);
   const following = useRef(true);
   const hydrated = useRef(false);
   const programmatic = useRef(false);
   const scrollTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const [paused, setPaused] = useState(false);
+  const openRef = useRef(onOpen);
+  openRef.current = onOpen;
+  const stableOpen = useCallback((task: AssistantTask) => openRef.current(task), []);
+  const previousGroups = useRef(new Map<string, ConversationMessage[]>());
+  const groupedMessages = useMemo(() => {
+    const groups = new Map<string, ConversationMessage[]>();
+    for (const message of messages ?? []) {
+      if (message.role !== 'tool' && !message.isToolCall) continue;
+      const group = groups.get(message.taskId) ?? [];
+      group.push(message); groups.set(message.taskId, group);
+    }
+    for (const [id, group] of groups) {
+      const previous = previousGroups.current.get(id);
+      if (previous?.length === group.length && previous.every((message, i) => message === group[i])) groups.set(id, previous);
+    }
+    previousGroups.current = groups;
+    return groups;
+  }, [messages]);
   const ordered = useMemo(() => tasks.map((t, i) => ({ t, i })).sort((a, b) => time(a.t.createdAt) - time(b.t.createdAt) || a.i - b.i).map((x) => x.t), [tasks]);
   const key = ordered.map((t) => `${t.id}:${t.status}:${t.logs?.length ?? 0}:${t.logs?.at(-1)?.message ?? ''}:${t.result?.length ?? 0}:${t.updatedAt}`).join('|') + `|m${messages?.length ?? 0}`;
 
@@ -172,32 +237,8 @@ export function ActivityStream({ tasks, loading, onOpen, messages, liveText }: P
       following.current = near;
       setPaused((p) => (p === !near ? p : !near));
     }}><div className="exec-inner">
-      {ordered.map((task) => {
-        const live = isLive(task);
-        const rows = rowsFor(task.logs ?? []);
-        const extras = (messages ?? []).filter((m) => m.taskId === task.id && (m.role === 'tool' || m.isToolCall)).sort((a, b) => time(a.createdAt) - time(b.createdAt));
-        const stepCount = rows.length + extras.length;
-        const searchPayloads = extras.map((m) => parseSearchPayload(m.content)).filter((payload) => payload !== null);
-        const sources = searchPayloads.flatMap((payload) => payload.results).filter((r, i, all) => r.url && all.findIndex((x) => x.url === r.url) === i);
-        const sourceProviders = [...new Set(searchPayloads.map((payload) => payload.engine))];
-        const result = liveText?.taskId === task.id ? liveText.text : task.result;
-        return <article className="stream-task exec-task" key={task.id} data-task-status={task.status} data-active={live ? 'true' : 'false'} data-testid={`stream-task-${task.id}`}>
-          <div className="exec-user">
-            <p className="exec-user-text">{task.objective}</p>
-            <div className="exec-user-meta"><span>You</span><time>{clock(task.createdAt)}</time><span className="exec-status">{String(task.status)}</span><button type="button" className="exec-view" onClick={() => onOpen(task)} data-testid={`button-stream-task-${task.id}`}>View Details<ArrowRight size={12} /></button></div>
-          </div>
-          {task.status === 'cancelled' && <div className="exec-aborted" role="status" data-testid={`task-aborted-${task.id}`}><StopCircle size={13} aria-hidden="true" /><span>[TASK ABORTED BY USER]</span></div>}
-          {(stepCount > 0 || (live && !task.result) || task.error) && <details className="exec-thinking" data-testid={`thinking-${task.id}`}>
-            <summary><Brain size={14} /><span>Thinking ({stepCount} {stepCount === 1 ? 'step' : 'steps'})</span>{live && <span className="exec-working"><span className="exec-dot live" />Working</span>}<ChevronDown size={13} className="exec-chev" /></summary>
-            <div className="exec-steps">{rows.map((r) => <Step key={r.log.id} row={r} />)}{extras.map((m) => <ToolOutput key={m.id} message={m} />)}</div>
-            {live && task.currentStep && <div className="exec-pending"><span className="exec-dot live" />{clip(task.currentStep, 160)}</div>}
-            {task.error && !rows.some((row) => row.log.kind === 'error' && row.log.message.includes(task.error!)) && <ErrorLine error={task.error} />}
-          </details>}
-          {task.error && <div className="exec-failure"><AlertCircle size={14} />Task failed. Open Thinking or View Details for the cause.</div>}
-          {result && <div className="exec-result"><div className="exec-result-label">{live ? <><span className="exec-dot live" />Responding</> : <><CheckCircle2 size={14} />Forge</>}</div><Rich text={result} />{sources.length > 0 && <div className="exec-sources" data-testid={`sources-${task.id}`}><SourcesAccordion results={sources} providers={sourceProviders} limit={6} /></div>}</div>}
-          {!rows.length && !task.result && !task.error && !task.currentStep && !live && <p className="stream-no-events">No execution updates yet.</p>}
-        </article>;
-      })}
+      {hasEarlier && <div className="exec-earlier"><button type="button" disabled={loadingEarlier} onClick={() => { pauseFollow(); onLoadEarlier?.(); }}>{loadingEarlier ? 'Loading…' : earlierError ? 'Retry earlier messages' : 'Load earlier messages'}</button></div>}
+      {ordered.map((task) => <TaskArticle key={task.id} task={task} extras={groupedMessages.get(task.id) ?? EMPTY_MESSAGES} text={liveText?.taskId === task.id ? liveText.text : undefined} onOpen={stableOpen} />)}
     </div></div>
     {paused && <button type="button" className="exec-jump" onClick={() => { following.current = true; setPaused(false); toBottom(true); }} data-testid="button-jump-latest"><ArrowDown size={13} />Jump to latest</button>}
   </div>;

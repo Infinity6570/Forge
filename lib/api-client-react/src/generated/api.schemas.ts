@@ -135,6 +135,8 @@ export interface ConversationThread {
   /** @nullable */
   activeTaskId: string | null;
   messageCount: number;
+  historyBytes?: number;
+  archived?: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -156,13 +158,16 @@ export interface ConversationMessage {
   content: string;
   thoughtSteps: TaskLog[];
   isToolCall: boolean;
+  ordering?: number;
   createdAt: string;
 }
 
-export type ConversationThreadDetail = ConversationThread & {
+export type ConversationThreadDetail = ConversationThread & ({
+  /** @nullable */
+  nextBefore?: number | null;
   messages: ConversationMessage[];
   tasks: AssistantTask[];
-};
+});
 
 export interface ThreadInput {
   /**
@@ -179,6 +184,7 @@ export interface ThreadUpdate {
      */
   title?: string;
   pinned?: boolean;
+  archived?: boolean;
 }
 
 export type TaskInputProvider = typeof TaskInputProvider[keyof typeof TaskInputProvider];
@@ -883,4 +889,20 @@ export interface AssistantSettingsInput {
   appPreviewsEnabled?: boolean;
   engineToolsEnabled?: boolean;
 }
+
+export type ListConversationThreadsParams = {
+includeArchived?: boolean;
+};
+
+export type GetConversationThreadParams = {
+/**
+ * @minimum 1
+ * @maximum 25
+ */
+limit?: number;
+/**
+ * @minimum 1
+ */
+before?: number;
+};
 

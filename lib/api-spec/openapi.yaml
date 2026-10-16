@@ -41,6 +41,8 @@ paths:
   /assistant/threads:
     get:
       operationId: listConversationThreads
+      parameters:
+        - { name: includeArchived, in: query, schema: { type: boolean, default: false } }
       responses:
         "200":
           description: Chats ordered by pinned status and recent activity
@@ -65,9 +67,12 @@ paths:
       - { name: id, in: path, required: true, schema: { type: string } }
     get:
       operationId: getConversationThread
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 25, default: 25 } }
+        - { name: before, in: query, schema: { type: integer, minimum: 1 } }
       responses:
         "200":
-          description: Complete chronological chat history and task activity
+          description: Most recent 25 display messages and associated task activity; before loads earlier messages
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ConversationThreadDetail" }
@@ -741,6 +746,8 @@ components:
         pinned: { type: boolean }
         activeTaskId: { type: ["string", "null"] }
         messageCount: { type: integer }
+        historyBytes: { type: integer }
+        archived: { type: boolean }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
     ConversationMessage:
@@ -754,6 +761,7 @@ components:
         content: { type: string }
         thoughtSteps: { type: array, items: { $ref: "#/components/schemas/TaskLog" } }
         isToolCall: { type: boolean }
+        ordering: { type: integer }
         createdAt: { type: string, format: date-time }
     ConversationThreadDetail:
       allOf:
@@ -761,6 +769,7 @@ components:
         - type: object
           required: [messages, tasks]
           properties:
+            nextBefore: { type: ["integer", "null"] }
             messages: { type: array, items: { $ref: "#/components/schemas/ConversationMessage" } }
             tasks: { type: array, items: { $ref: "#/components/schemas/AssistantTask" } }
     ThreadInput:
@@ -772,6 +781,7 @@ components:
       properties:
         title: { type: string, minLength: 1, maxLength: 100 }
         pinned: { type: boolean }
+        archived: { type: boolean }
     AssistantTask:
       type: object
       required: [id, objective, status, currentStep, result, error, logs, provider, modelId, recommendationKind, recommendationReason, recommendedProvider, recommendedModelId, retryAvailable, requiresModelConfirmation, pendingApprovalId, pendingApprovalKind, approvalSummary, approvalDetails, requiresApproval, createdAt, updatedAt]

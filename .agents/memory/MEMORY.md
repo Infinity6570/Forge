@@ -9,3 +9,4 @@
 - [Ambient visual effects](ambient-visual-effects.md) — Sci-Fi decoration follows Cyber FX and motion preferences; reading surfaces need restrained blur.
 - [Default supportive persona](supportive-persona.md) — empathetic, grounded collaboration is always on, alongside existing technical instructions.
 - [Regional literature coverage](regional-literature.md) — literature discovery must include Indian dental journals, without claiming guaranteed Scholar or Scopus indexing.
+- [History display boundary](history-display-boundary.md) — shorten and paginate browser history only; keep signed replay complete, start clean, and archive without deleting context.

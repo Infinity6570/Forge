@@ -4,7 +4,7 @@ import type { ConversationThread } from '@workspace/api-client-react';
 import { useConversations } from '@/components/conversation-provider';
 
 function Row({ thread, onPicked, collapsed = false }: { thread: ConversationThread; onPicked?: () => void; collapsed?: boolean }) {
-  const { selectedId, select, rename, setPinned, remove } = useConversations();
+  const { selectedId, select, rename, setPinned, remove, restore } = useConversations();
   const [editing, setEditing] = useState(false);
   const [title, setTitle] = useState(thread.title);
   const [confirming, setConfirming] = useState(false);
@@ -36,6 +36,7 @@ function Row({ thread, onPicked, collapsed = false }: { thread: ConversationThre
       <span>{thread.title}</span>
     </button>
     {!collapsed && <span className="chat-acts">
+      {thread.archived && <button type="button" className="chat-act" onClick={() => void restore(thread.id)} aria-label="Restore archived chat" title="Restore chat">↩</button>}
       <button type="button" className="chat-act" onClick={() => void setPinned(thread.id, !thread.pinned)} aria-label={thread.pinned ? 'Unpin chat' : 'Pin chat'} aria-pressed={thread.pinned} data-testid={`button-pin-chat-${thread.id}`}>{thread.pinned ? <PinOff size={12} /> : <Pin size={12} />}</button>
       <button type="button" className="chat-act" onClick={() => { setTitle(thread.title); setEditing(true); }} aria-label="Rename chat" data-testid={`button-rename-chat-${thread.id}`}><Pencil size={12} /></button>
       <button type="button" className="chat-act" onClick={() => setConfirming(true)} aria-label="Delete chat" data-testid={`button-delete-chat-${thread.id}`}><Trash2 size={12} /></button>
@@ -57,10 +58,17 @@ export function NewChatAction({ onPicked, collapsed = false }: { onPicked?: () =
 }
 
 export function RecentSessions({ onPicked, collapsed = false }: { onPicked?: () => void; collapsed?: boolean }) {
-  const { threads, loading, error, retry, actionError } = useConversations();
+  const { threads, loading, error, retry, actionError, archiveOld, showArchived, toggleArchived } = useConversations();
+  const [confirmArchive, setConfirmArchive] = useState(false);
+  const [archiving, setArchiving] = useState(false);
   const ordered = [...threads].sort((a, b) => Number(b.pinned) - Number(a.pinned) || (Date.parse(b.updatedAt) || 0) - (Date.parse(a.updatedAt) || 0));
   return <section className="chat-sidebar chat-sidebar-nested" aria-label="Recent sessions">
     <div className="sidebar-section-title chat-sidebar-title" role="heading" aria-level={2}>RECENT SESSIONS</div>
+    {!collapsed && <div className="chat-archive-controls">
+      <button type="button" onClick={() => setConfirmArchive(true)} disabled={archiving}>Archive old sessions</button>
+      <button type="button" onClick={toggleArchived} aria-pressed={showArchived}>{showArchived ? 'Hide archived' : 'Show archived'}</button>
+      {confirmArchive && <div role="alertdialog" aria-label="Archive old sessions"><p>Archive inactive, unpinned chats and open a clean view? History and Task Activity are preserved. Use Show archived to restore them.</p><button type="button" disabled={archiving} onClick={async () => { setArchiving(true); await archiveOld(); setArchiving(false); setConfirmArchive(false); }}>Archive</button><button type="button" onClick={() => setConfirmArchive(false)}>Cancel</button></div>}
+    </div>}
     {actionError && <p className="chat-error" role="alert" data-testid="text-chat-error">{actionError}</p>}
     {loading ? <div className="chat-skeleton" aria-busy="true"><i /><i /><i /></div>
       : error && !threads.length ? <p className="chat-error" role="alert">Chats could not load. <button type="button" onClick={retry} data-testid="button-retry-chats">Retry</button></p>

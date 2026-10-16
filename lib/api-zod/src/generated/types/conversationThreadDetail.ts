@@ -9,7 +9,9 @@ import type { AssistantTask } from './assistantTask';
 import type { ConversationMessage } from './conversationMessage';
 import type { ConversationThread } from './conversationThread';
 
-export type ConversationThreadDetail = ConversationThread & {
+export type ConversationThreadDetail = ConversationThread & ({
+  /** @nullable */
+  nextBefore?: number | null;
   messages: ConversationMessage[];
   tasks: AssistantTask[];
-};
+});

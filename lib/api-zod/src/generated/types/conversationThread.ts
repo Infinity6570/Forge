@@ -13,6 +13,8 @@ export interface ConversationThread {
   /** @nullable */
   activeTaskId: string | null;
   messageCount: number;
+  historyBytes?: number;
+  archived?: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
