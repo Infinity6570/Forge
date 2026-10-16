@@ -7,6 +7,7 @@ import remarkGfm from 'remark-gfm';
 import { Activity, AlertCircle, ArrowDown, ArrowRight, Brain, CheckCircle2, ChevronDown, Copy, FileEdit, Globe, ListChecks, StopCircle, Terminal, Wrench } from 'lucide-react';
 import { SearchPayloadView, SourcesAccordion, parseSearchPayload } from '@/components/search-sources';
 import type { AssistantTask, ConversationMessage, TaskLog } from '@workspace/api-client-react';
+import { distanceFromBottom, prependedScrollTop } from '@/lib/chat-scroll';
 
 type Props = {
   tasks: AssistantTask[];
@@ -17,7 +18,7 @@ type Props = {
   hasEarlier?: boolean;
   loadingEarlier?: boolean;
   earlierError?: boolean;
-  onLoadEarlier?: () => void;
+  onLoadEarlier?: () => void | Promise<unknown>;
 };
 
 const time = (v: string) => new Date(v).getTime() || 0;
@@ -167,7 +168,7 @@ const EMPTY_MESSAGES: ConversationMessage[] = [];
 export function ActivityStream({ tasks, loading, onOpen, messages, liveText, hasEarlier, loadingEarlier, earlierError, onLoadEarlier }: Props) {
   const scroller = useRef<HTMLDivElement>(null);
   const following = useRef(true);
-  const hydrated = useRef(false);
+  const prependSnapshot = useRef<{ height: number; top: number; anchor?: HTMLElement; offset: number } | null>(null);
   const programmatic = useRef(false);
   const scrollTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const [paused, setPaused] = useState(false);
@@ -190,7 +191,7 @@ export function ActivityStream({ tasks, loading, onOpen, messages, liveText, has
     return groups;
   }, [messages]);
   const ordered = useMemo(() => tasks.map((t, i) => ({ t, i })).sort((a, b) => time(a.t.createdAt) - time(b.t.createdAt) || a.i - b.i).map((x) => x.t), [tasks]);
-  const key = ordered.map((t) => `${t.id}:${t.status}:${t.logs?.length ?? 0}:${t.logs?.at(-1)?.message ?? ''}:${t.result?.length ?? 0}:${t.updatedAt}`).join('|') + `|m${messages?.length ?? 0}`;
+  const key = ordered.map((t) => `${t.id}:${t.status}:${t.logs?.length ?? 0}:${t.logs?.at(-1)?.message ?? ''}:${t.result?.length ?? 0}:${t.updatedAt}`).join('|') + `|m${messages?.length ?? 0}|${liveText?.text.length ?? 0}`;
 
   const toBottom = useCallback((smooth: boolean) => {
     const el = scroller.current;
@@ -198,33 +199,65 @@ export function ActivityStream({ tasks, loading, onOpen, messages, liveText, has
     const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches || document.documentElement.dataset.cyberFx === 'off';
     programmatic.current = true;
     if (scrollTimer.current) clearTimeout(scrollTimer.current);
-    el.scrollTo({ top: el.scrollHeight, behavior: smooth && !reduced ? 'smooth' : 'auto' });
+    el.scrollTo({ top: el.scrollHeight, behavior: smooth && !reduced ? 'smooth' : 'instant' });
     scrollTimer.current = setTimeout(() => { programmatic.current = false; }, smooth && !reduced ? 800 : 0);
   }, []);
   const pauseFollow = useCallback(() => {
+    prependSnapshot.current = null;
     programmatic.current = false;
     following.current = false;
-    setPaused(true);
+    setPaused(scroller.current ? distanceFromBottom(scroller.current) > 200 : false);
     if (scrollTimer.current) clearTimeout(scrollTimer.current);
     const el = scroller.current;
     if (el) el.scrollTo({ top: el.scrollTop, behavior: 'instant' });
   }, []);
+  const restorePrepend = useCallback(() => {
+    const el = scroller.current;
+    const snapshot = prependSnapshot.current;
+    if (!el || !snapshot) return;
+    programmatic.current = true;
+    // An existing visible card is a more stable anchor than estimated heights
+    // when content-visibility materializes older, off-screen Markdown.
+    el.scrollTop = snapshot.anchor?.isConnected
+      ? el.scrollTop + snapshot.anchor.getBoundingClientRect().top - el.getBoundingClientRect().top - snapshot.offset
+      : prependedScrollTop(snapshot, el.scrollHeight);
+    setPaused(distanceFromBottom(el) > 200);
+    if (scrollTimer.current) clearTimeout(scrollTimer.current);
+    scrollTimer.current = setTimeout(() => { programmatic.current = false; }, 0);
+  }, []);
   useEffect(() => () => { if (scrollTimer.current) clearTimeout(scrollTimer.current); }, []);
 
   useLayoutEffect(() => {
-    if (loading) return;
-    if (following.current) toBottom(hydrated.current);
-    hydrated.current = true;
-  }, [loading, key, toBottom]);
+    const el = scroller.current;
+    if (loading || !el) return;
+    const snapshot = prependSnapshot.current;
+    if (snapshot) {
+      if (loadingEarlier) return;
+      restorePrepend();
+      // Recheck after content-visibility has laid out the prepended cards.
+      const frame = requestAnimationFrame(restorePrepend);
+      return () => cancelAnimationFrame(frame);
+    }
+    if (!following.current) return;
+    toBottom(false);
+    const frame = requestAnimationFrame(() => { if (following.current) toBottom(false); });
+    return () => cancelAnimationFrame(frame);
+  }, [loading, loadingEarlier, key, toBottom, restorePrepend]);
 
   useEffect(() => {
     if (loading) return;
     const el = scroller.current;
     if (!el || typeof ResizeObserver === 'undefined' || !el.firstElementChild) return;
-    const ro = new ResizeObserver(() => { if (following.current && !programmatic.current) toBottom(false); });
+    const ro = new ResizeObserver(() => {
+      // Lazy/off-screen cards can expand during the initial programmatic snap.
+      // Do not discard that resize: it is the point at which scrollHeight is real.
+      if (following.current) toBottom(false);
+      else if (prependSnapshot.current && !loadingEarlier) restorePrepend();
+      else if (!following.current) setPaused(distanceFromBottom(el) > 200);
+    });
     ro.observe(el.firstElementChild);
     return () => ro.disconnect();
-  }, [loading, toBottom, ordered.length]);
+  }, [loading, loadingEarlier, toBottom, restorePrepend, ordered.length]);
 
   if (loading) return <div className="activity-stream exec-stream"><div className="exec-skeleton" aria-busy="true"><i /><i /><i /><i /></div></div>;
   if (!ordered.length) return <div className="activity-stream exec-stream"><div className="stream-empty"><Activity size={20} /><strong>Waiting for your first task</strong><span>Send a request below. Real execution steps will appear here.</span></div></div>;
@@ -232,14 +265,26 @@ export function ActivityStream({ tasks, loading, onOpen, messages, liveText, has
   return <div className="exec-wrap">
     <div className="activity-stream exec-stream" ref={scroller} data-testid="activity-stream" tabIndex={0} onPointerDown={(e) => { if (e.clientX >= e.currentTarget.getBoundingClientRect().right - 16) pauseFollow(); }} onWheel={(e) => { if (e.deltaY < 0) pauseFollow(); }} onTouchStart={pauseFollow} onKeyDown={(e) => { if (['ArrowUp', 'PageUp', 'Home'].includes(e.key)) pauseFollow(); }} onScroll={(e) => {
       if (programmatic.current) return;
+      prependSnapshot.current = null;
       const el = e.currentTarget;
-      const near = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
+      const distance = distanceFromBottom(el);
+      const near = distance < 48;
       following.current = near;
-      setPaused((p) => (p === !near ? p : !near));
+      setPaused(distance > 200);
     }}><div className="exec-inner">
-      {hasEarlier && <div className="exec-earlier"><button type="button" disabled={loadingEarlier} onClick={() => { pauseFollow(); onLoadEarlier?.(); }}>{loadingEarlier ? 'Loading…' : earlierError ? 'Retry earlier messages' : 'Load earlier messages'}</button></div>}
+      {hasEarlier && <div className="exec-earlier"><button type="button" disabled={loadingEarlier} onClick={() => {
+        const el = scroller.current;
+        if (!el || !onLoadEarlier) return;
+        pauseFollow();
+        const anchor = [...el.querySelectorAll<HTMLElement>('.exec-task')].find((card) => card.getBoundingClientRect().bottom > el.getBoundingClientRect().top);
+        prependSnapshot.current = {
+          height: el.scrollHeight, top: el.scrollTop, anchor,
+          offset: anchor ? anchor.getBoundingClientRect().top - el.getBoundingClientRect().top : 0,
+        };
+        void Promise.resolve(onLoadEarlier()).catch(() => { /* inline retry is supplied by the history query */ });
+      }}>{loadingEarlier ? 'Loading…' : earlierError ? 'Retry earlier messages' : 'Load earlier messages'}</button></div>}
       {ordered.map((task) => <TaskArticle key={task.id} task={task} extras={groupedMessages.get(task.id) ?? EMPTY_MESSAGES} text={liveText?.taskId === task.id ? liveText.text : undefined} onOpen={stableOpen} />)}
     </div></div>
-    {paused && <button type="button" className="exec-jump" onClick={() => { following.current = true; setPaused(false); toBottom(true); }} data-testid="button-jump-latest"><ArrowDown size={13} />Jump to latest</button>}
+    {paused && <button type="button" className="exec-jump" onClick={() => { prependSnapshot.current = null; following.current = true; setPaused(false); toBottom(true); }} data-testid="button-jump-latest"><ArrowDown size={13} />Jump to Latest</button>}
   </div>;
 }

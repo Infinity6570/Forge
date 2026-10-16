@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import { Check, MessageSquare, Pencil, Pin, PinOff, Plus, Trash2, X } from 'lucide-react';
 import type { ConversationThread } from '@workspace/api-client-react';
 import { useConversations } from '@/components/conversation-provider';
+import { newestThreadFirst } from '@/lib/thread-order';
 
 function Row({ thread, onPicked, collapsed = false }: { thread: ConversationThread; onPicked?: () => void; collapsed?: boolean }) {
   const { selectedId, select, rename, setPinned, remove, restore } = useConversations();
@@ -58,10 +59,22 @@ export function NewChatAction({ onPicked, collapsed = false }: { onPicked?: () =
 }
 
 export function RecentSessions({ onPicked, collapsed = false }: { onPicked?: () => void; collapsed?: boolean }) {
-  const { threads, loading, error, retry, actionError, archiveOld, showArchived, toggleArchived } = useConversations();
+  const { threads, loading, error, retry, actionError, archiveOld, showArchived, toggleArchived, selectedId } = useConversations();
+  const listRef = useRef<HTMLUListElement>(null);
   const [confirmArchive, setConfirmArchive] = useState(false);
   const [archiving, setArchiving] = useState(false);
-  const ordered = [...threads].sort((a, b) => Number(b.pinned) - Number(a.pinned) || (Date.parse(b.updatedAt) || 0) - (Date.parse(a.updatedAt) || 0));
+  const ordered = [...threads].sort(newestThreadFirst);
+  useLayoutEffect(() => {
+    const list = listRef.current;
+    if (!list || !selectedId) return;
+    if (ordered[0]?.id === selectedId) { list.scrollTop = 0; return; }
+    const active = list.querySelector('[aria-current="true"]');
+    if (!active) return;
+    const row = active.getBoundingClientRect();
+    const box = list.getBoundingClientRect();
+    if (row.top < box.top) list.scrollTop += row.top - box.top;
+    else if (row.bottom > box.bottom) list.scrollTop += row.bottom - box.bottom;
+  }, [selectedId, ordered[0]?.id]);
   return <section className="chat-sidebar chat-sidebar-nested" aria-label="Recent sessions">
     <div className="sidebar-section-title chat-sidebar-title" role="heading" aria-level={2}>RECENT SESSIONS</div>
     {!collapsed && <div className="chat-archive-controls">
@@ -73,6 +86,6 @@ export function RecentSessions({ onPicked, collapsed = false }: { onPicked?: () 
     {loading ? <div className="chat-skeleton" aria-busy="true"><i /><i /><i /></div>
       : error && !threads.length ? <p className="chat-error" role="alert">Chats could not load. <button type="button" onClick={retry} data-testid="button-retry-chats">Retry</button></p>
       : !ordered.length ? <p className="chat-empty">No chats yet. Send a request to start one.</p>
-      : <ul className="chat-list">{ordered.map((t) => <Row key={t.id} thread={t} onPicked={onPicked} collapsed={collapsed} />)}</ul>}
+      : <ul className="chat-list" ref={listRef}>{ordered.map((t) => <Row key={t.id} thread={t} onPicked={onPicked} collapsed={collapsed} />)}</ul>}
   </section>;
 }

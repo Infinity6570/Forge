@@ -2361,6 +2361,7 @@ html[data-theme="scifi"] .exec-result {
   overscroll-behavior:contain;
 }
 .exec-earlier { display:flex; justify-content:center; padding:8px; }
+.exec-stream { overflow-anchor:none; }
 .exec-earlier button,
 .chat-archive-controls button {
   color:var(--accent);

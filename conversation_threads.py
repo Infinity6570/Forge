@@ -316,7 +316,7 @@ def thread_routers(store: ThreadStore, serialize_task, redact=lambda value: valu
     async def list_threads(includeArchived: bool = False):
         with store.transaction() as connection:
             return [store.describe(connection, row) for row in connection.execute(
-                "SELECT * FROM conversation_threads WHERE archived=0 OR ? ORDER BY pinned DESC,updated_at DESC",
+                "SELECT * FROM conversation_threads WHERE archived=0 OR ? ORDER BY updated_at DESC,created_at DESC,id DESC",
                 (includeArchived,))]
 
     @router.post("", status_code=201)
@@ -349,7 +349,7 @@ def thread_routers(store: ThreadStore, serialize_task, redact=lambda value: valu
     async def list_sessions():
         with store.transaction() as connection:
             return [store.describe(connection, row) for row in connection.execute(
-                "SELECT * FROM conversation_threads WHERE archived=0 ORDER BY updated_at DESC,id")]
+                "SELECT * FROM conversation_threads WHERE archived=0 ORDER BY updated_at DESC,created_at DESC,id DESC")]
 
     @sessions.post("", status_code=201)
     async def create_session(body: ThreadInput | None = None):

@@ -303,6 +303,21 @@ class ConversationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(main.THREADS.history(thread_id, "next")), 60)
         self.assertEqual((await self.client.get(url, params={"limit": 1000})).status_code, 422)
 
+    async def test_thread_lists_order_by_activity_then_creation_not_pins(self):
+        with main.THREADS.transaction() as db:
+            for thread_id, created, updated, pinned in [
+                ("pinned-old", "2026-01-01", "2026-01-01", 1),
+                ("older-created", "2026-02-01", "2026-03-01", 0),
+                ("newer-created", "2026-02-02", "2026-03-01", 0),
+                ("newest-active", "2025-01-01", "2026-04-01", 0),
+            ]:
+                db.execute("INSERT INTO conversation_threads(id,title,created_at,updated_at,pinned) VALUES(?,?,?,?,?)",
+                           (thread_id, thread_id, created, updated, pinned))
+        for endpoint in ["/api/assistant/threads", "/api/threads"]:
+            threads = (await self.client.get(endpoint)).json()
+            self.assertEqual([t["id"] for t in threads],
+                             ["newest-active", "newer-created", "older-created", "pinned-old"])
+
     async def test_large_tool_payload_is_display_only_and_startup_is_metadata(self):
         timestamp = main.utc_now()
         calls = [{"id": "big-call", "type": "function", "function": {

@@ -240,10 +240,11 @@ html[data-theme] .activity-panel .exec-stream {
   overflow-x:hidden; overflow-y:auto; padding:0 16px 12px 12px; scrollbar-gutter:stable;
 }
 html[data-theme] .activity-panel .exec-inner {
-  display:flex; min-height:100%; width:100%; max-width:none; flex:1; flex-direction:column;
+  display:flex; min-height:100%; width:100%; max-width:none; flex:0 0 auto; flex-direction:column;
   gap:0; padding:0 0 14px;
 }
 html[data-theme] .execution-panel .exec-task {
+  flex:0 0 auto;
   overflow:visible!important; padding:12px 0 16px; border:0!important; border-radius:0;
   background:transparent!important; box-shadow:none!important;
 }

@@ -2,9 +2,11 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import type { AssistantTask, ConversationMessage, ConversationThreadDetail } from '@workspace/api-client-react';
+import type { AssistantTask, ConversationMessage, ConversationThreadDetail, ConversationThread } from '@workspace/api-client-react';
 import { ActivityStream } from './activity-stream';
 import { mergeLatestPage } from '../hooks/use-thread-history';
+import { newestThreadFirst } from '../lib/thread-order';
+import { distanceFromBottom, prependedScrollTop } from '../lib/chat-scroll';
 
 const task = {
   id: 'history-task', objective: 'Read saved history', status: 'completed',
@@ -32,6 +34,34 @@ test('earlier history has an explicit load control', () => {
     tasks: [task], loading: false, onOpen: () => {}, hasEarlier: true, onLoadEarlier: () => {},
   }));
   assert.match(html, /Load earlier messages/);
+  assert.ok(html.indexOf('Load earlier messages') < html.indexOf('Read saved history'));
+});
+
+test('sidebar orders by activity then creation, regardless of pinned status', () => {
+  const thread = (id: string, updatedAt: string, createdAt: string, pinned = false) =>
+    ({ id, updatedAt, createdAt, pinned }) as ConversationThread;
+  const sorted = [
+    thread('pinned-old', '2026-01-01', '2026-01-01', true),
+    thread('newer-creation', '2026-02-02', '2026-02-01'),
+    thread('older-creation', '2026-02-02', '2026-01-31'),
+    thread('most-active', '2026-03-01', '2025-01-01'),
+  ].sort(newestThreadFirst);
+  assert.deepEqual(sorted.map((t) => t.id), ['most-active', 'newer-creation', 'older-creation', 'pinned-old']);
+});
+
+test('prepending keeps the reading offset including nonzero previous scroll position', () => {
+  assert.equal(prependedScrollTop({ height: 2000, top: 0 }, 3200), 1200);
+  assert.equal(prependedScrollTop({ height: 2000, top: 85 }, 3200), 1285);
+  assert.equal(prependedScrollTop({ height: 2000, top: 85 }, 2000), 85);
+  assert.equal(prependedScrollTop({ height: 2000, top: 0 }, 1800), 0);
+});
+
+test('jump-to-latest threshold is strictly more than 200 pixels from bottom', () => {
+  const el = { scrollHeight: 2000, clientHeight: 600, scrollTop: 1199 };
+  assert.ok(distanceFromBottom(el) > 200);
+  assert.equal(distanceFromBottom({ ...el, scrollTop: 1200 }), 200);
+  assert.equal(distanceFromBottom({ ...el, scrollTop: 1400 }), 0);
+  assert.equal(distanceFromBottom({ ...el, scrollTop: 1500 }), 0);
 });
 
 test('streaming newest history preserves loaded-page boundary and updated tasks', () => {

@@ -11,6 +11,7 @@ import {
   useUpdateConversationThread,
 } from '@workspace/api-client-react';
 import type { ConversationThread } from '@workspace/api-client-react';
+import { newestThreadFirst } from '@/lib/thread-order';
 
 const STORAGE_KEY = 'forge:selected-thread';
 
@@ -54,6 +55,7 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
   const [actionError, setActionError] = useState('');
   const [resetSignal, setResetSignal] = useState(0);
   const selectionVersion = useRef(0);
+  const initialSelectionDone = useRef(false);
   const list = useListConversationThreads({ includeArchived: showArchived }, { query: { queryKey: getListConversationThreadsQueryKey({ includeArchived: showArchived }), refetchInterval: 10_000 } });
   const create = useCreateConversationThread();
   const update = useUpdateConversationThread();
@@ -61,10 +63,18 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
   const threads = useMemo(() => list.data ?? [], [list.data]);
 
   const select = useCallback((id: string | undefined) => {
+    initialSelectionDone.current = true;
     selectionVersion.current += 1;
     setSelectedId(id);
     try { if (id) window.localStorage.setItem(STORAGE_KEY, id); else window.localStorage.removeItem(STORAGE_KEY); } catch { /* storage unavailable */ }
   }, []);
+
+  useEffect(() => {
+    if (initialSelectionDone.current || !list.isSuccess) return;
+    initialSelectionDone.current = true;
+    const newest = [...(list.data ?? [])].filter((thread) => !thread.archived).sort(newestThreadFirst)[0];
+    if (newest) select(newest.id);
+  }, [list.isSuccess, list.data, select]);
 
   // Drop a stale selection once the list has loaded without it.
   useEffect(() => {
@@ -80,6 +90,8 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
   }, [qc, select]);
 
   const newChat = useCallback(() => {
+    // An explicit fresh-chat request wins even if the sidebar is still loading.
+    initialSelectionDone.current = true;
     setActionError('');
     const version = selectionVersion.current;
     create.mutate({ data: {} }, {
