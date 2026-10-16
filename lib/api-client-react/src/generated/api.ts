@@ -38,6 +38,8 @@ import type {
   NoteInput,
   ProviderKeysInput,
   SearchSettingsInput,
+  SystemPromptConfig,
+  SystemPromptUpdate,
   TaskApprovalInput,
   TaskFallbackChoiceInput,
   TaskInput,
@@ -2308,6 +2310,171 @@ export const useDeleteAssistantFile = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getDeleteAssistantFileMutationOptions(options));
+    }
+
+export const getGetAssistantSystemPromptUrl = () => {
+
+
+
+
+  return `/api/assistant/system-prompt`
+}
+
+/**
+ * @summary Read Forge's editable core persona prompt
+ */
+export const getAssistantSystemPrompt = async ( options?: Parameters<typeof customFetch>[1]): Promise<SystemPromptConfig> => {
+
+  return customFetch<SystemPromptConfig>(getGetAssistantSystemPromptUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetAssistantSystemPromptQueryKey = () => {
+    return [
+    `/api/assistant/system-prompt`
+    ] as const;
+    }
+
+
+export const getGetAssistantSystemPromptQueryOptions = <TData = Awaited<ReturnType<typeof getAssistantSystemPrompt>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAssistantSystemPrompt>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetAssistantSystemPromptQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getAssistantSystemPrompt>>> = ({ signal }) => getAssistantSystemPrompt({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getAssistantSystemPrompt>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetAssistantSystemPromptQueryResult = NonNullable<Awaited<ReturnType<typeof getAssistantSystemPrompt>>>
+export type GetAssistantSystemPromptQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Read Forge's editable core persona prompt
+ */
+
+export function useGetAssistantSystemPrompt<TData = Awaited<ReturnType<typeof getAssistantSystemPrompt>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAssistantSystemPrompt>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetAssistantSystemPromptQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getUpdateAssistantSystemPromptUrl = () => {
+
+
+
+
+  return `/api/assistant/system-prompt`
+}
+
+/**
+ * @summary Save Forge's editable core persona prompt
+ */
+export const updateAssistantSystemPrompt = async (systemPromptUpdate: SystemPromptUpdate, options?: Parameters<typeof customFetch>[1]): Promise<SystemPromptConfig> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<SystemPromptConfig>(getUpdateAssistantSystemPromptUrl(),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(systemPromptUpdate)
+  }
+);}
+
+
+
+
+
+export const getUpdateAssistantSystemPromptMutationKey = () => ['updateAssistantSystemPrompt'] as const;
+
+export const getUpdateAssistantSystemPromptMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateAssistantSystemPrompt>>, TError,UpdateAssistantSystemPromptMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateAssistantSystemPrompt>>, TError,UpdateAssistantSystemPromptMutationVariables, TContext> => {
+
+const mutationKey = getUpdateAssistantSystemPromptMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateAssistantSystemPrompt>>, UpdateAssistantSystemPromptMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  updateAssistantSystemPrompt(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateAssistantSystemPromptMutationResult = NonNullable<Awaited<ReturnType<typeof updateAssistantSystemPrompt>>>
+    export type UpdateAssistantSystemPromptMutationBody = BodyType<SystemPromptUpdate>
+    export type UpdateAssistantSystemPromptMutationError = ErrorType<unknown>
+    export type UpdateAssistantSystemPromptMutationVariables = {data: BodyType<SystemPromptUpdate>}
+
+    /**
+ * @summary Save Forge's editable core persona prompt
+ */
+export const useUpdateAssistantSystemPrompt = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateAssistantSystemPrompt>>, TError,UpdateAssistantSystemPromptMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateAssistantSystemPrompt>>,
+        TError,
+        UpdateAssistantSystemPromptMutationVariables,
+        TContext
+      > => {
+      return useMutation(getUpdateAssistantSystemPromptMutationOptions(options));
     }
 
 export const getGetAssistantSettingsUrl = () => {

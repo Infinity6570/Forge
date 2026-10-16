@@ -2397,3 +2397,35 @@ html[data-theme="scifi"] :is(.button,.icon-button,.nav-link,.theme-option,.cyber
   .ambient-background { opacity:.7; }
   html[data-theme="scifi"][data-cyber-fx="on"] body::after { animation:none!important; }
 }
+.system-prompt-section { display:grid; gap:10px; }
+.system-prompt-note { max-width:100ch; margin:0; }
+.system-prompt-label { margin:4px 0 0; }
+.system-prompt-editor {
+  display:block;
+  width:100%;
+  min-height:320px;
+  resize:vertical;
+  padding:14px 16px;
+  border:1px solid var(--border);
+  border-radius:4px;
+  outline:0;
+  color:var(--text-primary);
+  background:var(--bg-panel);
+  font:13px/1.65 var(--font-mono);
+  tab-size:2;
+}
+.system-prompt-editor:focus-visible {
+  border-color:var(--accent);
+  box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 18%,transparent);
+}
+.system-prompt-footer { display:flex; align-items:center; flex-wrap:wrap; gap:10px; }
+.system-prompt-footer > .settings-footnote { margin-right:auto; }
+.system-prompt-footer .field-error { margin:0; }
+html[data-theme="scifi"] .system-prompt-editor {
+  border-color:rgba(0,240,255,.34);
+  background:rgba(3,7,18,.82);
+  box-shadow:inset 0 0 24px rgba(0,240,255,.035);
+}
+html[data-theme="scifi"] .system-prompt-editor:focus-visible {
+  box-shadow:0 0 0 2px rgba(0,240,255,.16),0 0 18px rgba(0,240,255,.12),inset 0 0 24px rgba(0,240,255,.045);
+}

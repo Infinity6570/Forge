@@ -778,6 +778,40 @@ export const DeleteAssistantFileResponse = zod.void()
 
 
 /**
+ * @summary Read Forge's editable core persona prompt
+ */
+export const getAssistantSystemPromptResponseSystemPromptMax = 20000;
+
+
+
+export const GetAssistantSystemPromptResponse = zod.object({
+  "systemPrompt": zod.string().max(getAssistantSystemPromptResponseSystemPromptMax),
+  "isCustomized": zod.boolean()
+})
+
+
+/**
+ * @summary Save Forge's editable core persona prompt
+ */
+export const updateAssistantSystemPromptBodySystemPromptMax = 20000;
+
+
+
+export const UpdateAssistantSystemPromptBody = zod.object({
+  "systemPrompt": zod.string().max(updateAssistantSystemPromptBodySystemPromptMax)
+})
+
+export const updateAssistantSystemPromptResponseSystemPromptMax = 20000;
+
+
+
+export const UpdateAssistantSystemPromptResponse = zod.object({
+  "systemPrompt": zod.string().max(updateAssistantSystemPromptResponseSystemPromptMax),
+  "isCustomized": zod.boolean()
+})
+
+
+/**
  * @summary Read model selection and credential presence
  */
 export const GetAssistantSettingsResponse = zod.object({

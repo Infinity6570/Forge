@@ -25,6 +25,7 @@ import {
   useGetAssistantDashboard,
   useGetAssistantTask,
   useGetAssistantSettings,
+  useGetAssistantSystemPrompt,
   useGetWorkspacePreview,
   useListAssistantFiles,
   useGetConversationThread,
@@ -34,6 +35,7 @@ import {
   useListAssistantTasks,
   useListAssistantTimers,
   useUpdateAssistantSettings,
+  useUpdateAssistantSystemPrompt,
   useApplyAssistantModel,
   useGetVaultKeys,
   getGetVaultKeysQueryKey,
@@ -43,6 +45,7 @@ import {
   getGetAssistantDashboardQueryKey,
   getGetAssistantTaskQueryKey,
   getGetAssistantSettingsQueryKey,
+  getGetAssistantSystemPromptQueryKey,
   getGetWorkspacePreviewQueryKey,
   getDownloadAssistantWorkspaceQueryKey,
   getListAssistantFilesQueryKey,
@@ -50,7 +53,7 @@ import {
   getListAssistantTasksQueryKey,
   getListAssistantTimersQueryKey,
 } from '@workspace/api-client-react';
-import type { AssistantFile, AssistantNote, AssistantSettings, AssistantSettingsInput, AssistantTask, AssistantTimer, VaultKeysInput, VaultKeyStatuses, WorkspacePreviewApp } from '@workspace/api-client-react';
+import type { AssistantFile, AssistantNote, AssistantSettings, AssistantSettingsInput, AssistantTask, AssistantTimer, SystemPromptUpdate, VaultKeysInput, VaultKeyStatuses, WorkspacePreviewApp } from '@workspace/api-client-react';
 import {
   Activity, AlertCircle, ArrowDownToLine, ArrowRight, Bell, BookOpen, Check, CheckCircle2,
   ChevronDown, ChevronRight, CircleHelp, Clock3, Copy, Cpu, ExternalLink, FileText, FolderOpen, Gauge, HardDrive, Layers3, Moon, Sun,
@@ -1385,7 +1388,9 @@ function VaultSecretField({ name, label, placeholder, statusName, value, disable
 function SettingsPage() {
   const qc = useQueryClient();
   const settingsQuery = useGetAssistantSettings();
+  const systemPromptQuery = useGetAssistantSystemPrompt();
   const updateSettings = useUpdateAssistantSettings();
+  const updateSystemPrompt = useUpdateAssistantSystemPrompt();
   const applyModel = useApplyAssistantModel();
   const vaultStatusQuery = useGetVaultKeys({ query: { queryKey: getGetVaultKeysQueryKey() } });
   const saveVault = useSaveVaultKeys();
@@ -1422,6 +1427,10 @@ function SettingsPage() {
   const [allowExternalResearch, setAllowExternalResearch] = useState(true);
   const [includeFiles, setIncludeFiles] = useState(true);
   const [saved, setSaved] = useState(false);
+  const [systemPromptDraft, setSystemPromptDraft] = useState('');
+  const [systemPromptDirty, setSystemPromptDirty] = useState(false);
+  const [systemPromptError, setSystemPromptError] = useState('');
+  const [systemPromptSaved, setSystemPromptSaved] = useState(false);
   const onSetting = (setter: (value: boolean) => void, value: boolean) => { setter(value); setSaved(false); };
   useEffect(() => {
     const data = settingsQuery.data;
@@ -1440,6 +1449,11 @@ function SettingsPage() {
     setAppPreviewsEnabled(data.appPreviewsEnabled);
     setEngineToolsEnabled(data.engineToolsEnabled);
   }, [settingsQuery.data]);
+  useEffect(() => {
+    if (systemPromptQuery.data && !systemPromptDirty) {
+      setSystemPromptDraft(systemPromptQuery.data.systemPrompt);
+    }
+  }, [systemPromptQuery.data, systemPromptDirty]);
   useEffect(() => {
     if (vaultLocked) setVaultExpanded({ core: true, search: true, market: true });
     else setConfirmVaultReset(false);
@@ -1582,6 +1596,21 @@ function SettingsPage() {
       onError: (error) => setProviderError(settingsError(error)),
     });
   };
+  const saveSystemPrompt = () => {
+    setSystemPromptError('');
+    setSystemPromptSaved(false);
+    const data: SystemPromptUpdate = { systemPrompt: systemPromptDraft };
+    updateSystemPrompt.mutate({ data }, {
+      onSuccess: (result) => {
+        setSystemPromptDraft(result.systemPrompt);
+        setSystemPromptDirty(false);
+        setSystemPromptSaved(true);
+        qc.setQueryData(getGetAssistantSystemPromptQueryKey(), result);
+        toast({ title: 'System prompt saved and applied.' });
+      },
+      onError: (error) => setSystemPromptError(settingsError(error)),
+    });
+  };
   const vaultField = (name: VaultSecretName, statusName: keyof VaultKeyStatuses, label: string, placeholder: string) =>
     <VaultSecretField key={name} name={name} statusName={statusName} label={label} placeholder={placeholder}
       value={String(apiKeys[name] ?? '')} disabled={!credentialStatus?.providerSettingsAllowed}
@@ -1614,6 +1643,46 @@ function SettingsPage() {
   return <AppShell page="settings"><div className="content-page settings-page enter">
     <section className="settings-section theme-settings"><div className="settings-section-heading"><div><h2>Appearance</h2><p>Choose the command center color system.</p></div><ThemeChooser /></div></section>
     <PageHeading eyebrow="AGENT CONFIGURATION" title="Preferences" description="Choose how your agent works and where it should pause for your approval." />
+    <section className="settings-section system-prompt-section" data-testid="settings-system-prompt">
+      <div className="settings-section-heading">
+        <div className="section-symbol"><Sparkles size={17} /></div>
+        <div><h2>SYSTEM PROMPT &amp; CORE PERSONA</h2><p>Set the voice and collaborative guidance Forge uses in every task.</p></div>
+        {systemPromptQuery.data && <span className="connection-state connected" data-testid="status-system-prompt-mode">{systemPromptQuery.data.isCustomized ? 'CUSTOMIZED' : 'BUILT-IN'}</span>}
+      </div>
+      <p className="settings-footnote system-prompt-note">
+        This editable prompt is saved locally and applied to active task sessions and future messages without a restart.
+        Forge’s fixed safety, tool-use, and permission instructions remain enforced separately.
+      </p>
+      {systemPromptQuery.isLoading && <p className="settings-footnote" role="status">Loading active prompt…</p>}
+      {systemPromptQuery.isError && <QueryProblem retry={() => { void systemPromptQuery.refetch(); }} message="The active system prompt could not be loaded." />}
+      <label className="form-label system-prompt-label" htmlFor="forge-system-prompt">Editable persona and instructions</label>
+      <textarea
+        id="forge-system-prompt"
+        className="system-prompt-editor"
+        value={systemPromptDraft}
+        onChange={(event) => { setSystemPromptDraft(event.target.value); setSystemPromptDirty(true); setSystemPromptSaved(false); }}
+        rows={16}
+        maxLength={20_000}
+        spellCheck
+        aria-describedby="forge-system-prompt-help"
+        data-testid="input-system-prompt"
+      />
+      <div className="system-prompt-footer">
+        <span id="forge-system-prompt-help" className="settings-footnote">{systemPromptDraft.length.toLocaleString()} / 20,000 characters · Empty text restores the built-in persona.</span>
+        {systemPromptError && <span className="field-error" role="alert" data-testid="status-system-prompt-error">{systemPromptError}</span>}
+        {systemPromptSaved && <span className="save-state" role="status" data-testid="status-system-prompt-saved"><CheckCircle2 size={15} /> Saved and applied to active tasks.</span>}
+        <button
+          type="button"
+          className="button button-primary"
+          disabled={systemPromptQuery.isLoading || systemPromptQuery.isError || updateSystemPrompt.isPending || (!systemPromptDirty && !systemPromptQuery.data?.isCustomized)}
+          onClick={saveSystemPrompt}
+          data-testid="button-save-system-prompt"
+        >
+          {updateSystemPrompt.isPending ? <LoaderCircle className="spin" size={15} /> : <Check size={15} />}
+          {updateSystemPrompt.isPending ? 'SAVING…' : 'SAVE SYSTEM PROMPT'}
+        </button>
+      </div>
+    </section>
     {settingsQuery.isLoading && <div className="settings-section" aria-label="Loading provider preferences" data-testid="status-settings-loading"><Skeleton rows={3} /></div>}
     {settingsQuery.isError && <div data-testid="status-settings-connection-error"><QueryProblem retry={() => { void settingsQuery.refetch(); }} message="Provider preferences are disconnected. Your saved configuration remains untouched." /></div>}
     <section className="settings-section model-section"><div className="settings-section-heading"><div className="section-symbol"><Zap size={17} /></div><div><h2>ACTIVE WORKING MODEL</h2><p>Choose which provider and model will run new tasks.</p></div></div>

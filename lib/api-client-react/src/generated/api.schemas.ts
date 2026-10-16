@@ -505,6 +505,17 @@ export interface AssistantSettings {
   chromiumAvailable?: boolean;
 }
 
+export interface SystemPromptConfig {
+  /** @maxLength 20000 */
+  systemPrompt: string;
+  isCustomized: boolean;
+}
+
+export interface SystemPromptUpdate {
+  /** @maxLength 20000 */
+  systemPrompt: string;
+}
+
 export type ModelSelectionInputProvider = typeof ModelSelectionInputProvider[keyof typeof ModelSelectionInputProvider];
 
 

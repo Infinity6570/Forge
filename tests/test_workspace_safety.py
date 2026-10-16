@@ -310,6 +310,74 @@ class WorkspaceSafetyTests(unittest.IsolatedAsyncioTestCase):
             main.project_path("../outside.py")
         self.assertEqual(main.list_workspace_directory(".")["path"], ".")
 
+    async def test_project_root_self_management_tools_read_list_and_write_code_files(self) -> None:
+        (self.root / "main.py").write_text("APP_VERSION = 'before'\n", encoding="utf-8")
+        (self.root / "templates").mkdir()
+        (self.root / "templates" / "index.html").write_text("<main>old</main>\n", encoding="utf-8")
+
+        root_listing = main.parse_json(
+            await main.execute_tool(
+                "list_directory",
+                {"path": "."},
+                "gemini",
+                {"model": "test-model"},
+                "",
+                "test-task",
+            ),
+            {},
+        )
+        self.assertIn("main.py", {entry["name"] for entry in root_listing["entries"]})
+        self.assertIn("templates", {entry["name"] for entry in root_listing["entries"]})
+
+        read_result = main.parse_json(
+            await main.execute_tool(
+                "read_file",
+                {"path": "main.py"},
+                "gemini",
+                {"model": "test-model"},
+                "",
+                "test-task",
+            ),
+            {},
+        )
+        self.assertEqual(read_result["content"], "APP_VERSION = 'before'\n")
+        write_result = main.parse_json(
+            await main.execute_tool(
+                "write_file",
+                {"path": "tools/agent_tools.py", "content": "# updated tool module\n"},
+                "gemini",
+                {"model": "test-model"},
+                "",
+                "test-task",
+            ),
+            {},
+        )
+        self.assertTrue(write_result["saved"])
+        self.assertEqual(
+            (self.root / "tools" / "agent_tools.py").read_text(encoding="utf-8"),
+            "# updated tool module\n",
+        )
+        (self.root / ".env").write_text(
+            "GEMINI_API_KEY=test-only-secret\nAPP_MODE=local\n",
+            encoding="utf-8",
+        )
+        env_read = main.parse_json(
+            await main.execute_tool(
+                "read_file",
+                {"path": ".env"},
+                "gemini",
+                {"model": "test-model"},
+                "",
+                "test-task",
+            ),
+            {},
+        )
+        self.assertNotIn("test-only-secret", env_read["content"])
+        self.assertIn("GEMINI_API_KEY=[redacted]", env_read["content"])
+        self.assertIn("APP_MODE=local", env_read["content"])
+        with self.assertRaises(PermissionError):
+            main.project_path("../outside.py")
+
     async def test_static_preview_is_available_and_python_previews_are_disabled_by_default(self) -> None:
         manager = main.WorkspacePreviewManager(self.workspace)
         preview = await manager.launch("static", "sample.html")

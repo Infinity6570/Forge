@@ -10,3 +10,4 @@
 - [Default supportive persona](supportive-persona.md) — empathetic, grounded collaboration is always on, alongside existing technical instructions.
 - [Regional literature coverage](regional-literature.md) — literature discovery must include Indian dental journals, without claiming guaranteed Scholar or Scopus indexing.
 - [History display boundary](history-display-boundary.md) — paginate display only; keep signed replay complete, open newest chat, and preserve reading position during prepends.
+- [Editable system prompt boundary](editable-system-prompt.md) — the Preferences editor changes persona guidance, while fixed safety and tool rules remain outside the editable prompt.

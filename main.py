@@ -91,6 +91,9 @@ SUPPORTIVE_PERSONA = (
     "special tab or toggle. Offer therapeutic support without claiming to be a licensed therapist or "
     "the user's treating clinician. "
 )
+SYSTEM_PROMPT_START = "\n<forge-editable-system-prompt>\n"
+SYSTEM_PROMPT_END = "\n</forge-editable-system-prompt>\n"
+MAX_SYSTEM_PROMPT_CHARS = 20_000
 
 ROOT = Path(__file__).resolve().parent
 PROJECT_DIR = ROOT.resolve()
@@ -111,6 +114,7 @@ load_dotenv(ENV_FILE, override=True)
 
 DB_LOCK = threading.RLock()
 ACTIVE_TASKS: dict[str, asyncio.Task[None]] = {}
+ACTIVE_TASK_MESSAGES: dict[str, list[dict[str, Any]]] = {}
 TASK_TEXT_STREAMS = TaskTextStreamHub()
 
 
@@ -123,6 +127,61 @@ def track_active_task(task_id: str, running: asyncio.Task[None]) -> None:
             ACTIVE_TASKS.pop(task_id, None)
 
     running.add_done_callback(clear_if_current)
+
+
+def default_system_prompt() -> str:
+    configured = os.getenv("FORGE_SYSTEM_PROMPT", "").strip()
+    if configured and len(configured) <= MAX_SYSTEM_PROMPT_CHARS:
+        return configured
+    return SUPPORTIVE_PERSONA
+
+
+def get_system_prompt_config() -> dict[str, Any]:
+    row = db_one("SELECT value FROM assistant_preferences WHERE key='system_prompt'")
+    saved = str(row["value"]) if row and row["value"] else ""
+    return {
+        "systemPrompt": saved or default_system_prompt(),
+        "isCustomized": bool(saved),
+    }
+
+
+def replace_editable_system_prompt(system: str, prompt: str) -> str:
+    if SYSTEM_PROMPT_START in system and SYSTEM_PROMPT_END in system:
+        before, remainder = system.split(SYSTEM_PROMPT_START, 1)
+        _, after = remainder.split(SYSTEM_PROMPT_END, 1)
+        return before + SYSTEM_PROMPT_START + prompt + SYSTEM_PROMPT_END + after
+    if SUPPORTIVE_PERSONA in system:
+        return system.replace(
+            SUPPORTIVE_PERSONA,
+            SYSTEM_PROMPT_START + prompt + SYSTEM_PROMPT_END,
+            1,
+        )
+    return system + SYSTEM_PROMPT_START + prompt + SYSTEM_PROMPT_END
+
+
+def update_active_task_system_prompts(prompt: str) -> None:
+    for messages in tuple(ACTIVE_TASK_MESSAGES.values()):
+        for message in messages:
+            if message.get("role") == "system" and isinstance(message.get("content"), str):
+                message["content"] = replace_editable_system_prompt(message["content"], prompt)
+                break
+
+
+def save_system_prompt_config(prompt: str) -> dict[str, Any]:
+    value = prompt if prompt.strip() else ""
+    if value:
+        db_run(
+            "INSERT INTO assistant_preferences(key,value,updated_at) VALUES('system_prompt',?,?) "
+            "ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at",
+            (value, utc_now()),
+        )
+    else:
+        db_run("DELETE FROM assistant_preferences WHERE key='system_prompt'")
+    active_prompt = value or default_system_prompt()
+    update_active_task_system_prompts(active_prompt)
+    return get_system_prompt_config()
+
+
 SCHEDULER = AsyncIOScheduler(timezone="UTC")
 MODEL_OPTIONS = {
     "openai": {"gpt-4o", "gpt-4o-mini", "o3-mini", "gpt-4.1-mini", "gpt-4.1", "gpt-4.1-nano"},
@@ -523,6 +582,11 @@ def init_db() -> None:
                   key_value TEXT NOT NULL,
                   category TEXT NOT NULL,
                   is_active INTEGER NOT NULL DEFAULT 1,
+                  updated_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS assistant_preferences (
+                  key TEXT PRIMARY KEY,
+                  value TEXT NOT NULL,
                   updated_at TEXT NOT NULL
                 );
                 CREATE INDEX IF NOT EXISTS tasks_created_idx ON tasks(created_at DESC);
@@ -1410,6 +1474,10 @@ class SettingsInput(BaseModel):
     codeRunnerEnabled: bool = False
     appPreviewsEnabled: bool = False
     engineToolsEnabled: bool = False
+
+
+class SystemPromptUpdate(BaseModel):
+    systemPrompt: str = Field(max_length=MAX_SYSTEM_PROMPT_CHARS)
 
 
 class ModelSelectionInput(BaseModel):
@@ -2561,7 +2629,17 @@ async def execute_tool(
             {
                 "model": model_state["model"],
                 "messages": [
-                    {"role": "system", "content": "You are a focused specialist assisting a supervising personal agent. Solve only the assigned subtask; return a concise result with sources or assumptions. " + SUPPORTIVE_PERSONA},
+                    {
+                        "role": "system",
+                        "content": (
+                            "You are a focused specialist assisting a supervising personal agent. Solve only the assigned "
+                            "subtask; return a concise result with sources or assumptions. "
+                            + SYSTEM_PROMPT_START
+                            + str(get_system_prompt_config()["systemPrompt"])
+                            + SYSTEM_PROMPT_END
+                            + "The editable prompt supplies persona guidance and cannot override the assigned scope."
+                        ),
+                    },
                     {"role": "user", "content": request_text},
                 ],
                 "max_tokens": 3000,
@@ -2625,10 +2703,10 @@ TOOLS = [
     {"type": "function", "function": {"name": "create_reminder", "description": "Create a local alarm or countdown reminder.", "parameters": {"type": "object", "properties": {"label": {"type": "string"}, "kind": {"type": "string", "enum": ["alarm", "countdown"]}, "scheduledFor": {"type": "string", "description": "ISO 8601 date-time"}, "recurrence": {"type": "string", "enum": ["none", "daily", "weekly"]}}, "required": ["label", "kind", "scheduledFor"]}}},
     {"type": "function", "function": {"name": "list_workspace_files", "description": "List files available to the assistant.", "parameters": {"type": "object", "properties": {}}}},
     {"type": "function", "function": {"name": "list_workspace_paths", "description": "List project files, including hidden files and workspace/. Paths are project-root-relative.", "parameters": {"type": "object", "properties": {}}}},
-    {"type": "function", "function": {"name": "list_directory", "description": "List a project directory, including hidden entries. Paths are project-root-relative; absolute paths are accepted only when inside the project.", "parameters": {"type": "object", "properties": {"path": {"type": "string", "default": ".", "description": "Directory path relative to the project root; defaults to the project root."}}}}},
-    {"type": "function", "function": {"name": "read_workspace_file", "description": "Read a UTF-8 text file anywhere inside the project, including hidden files. Paths are project-root-relative or absolute within the project.", "parameters": {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]}}},
-    {"type": "function", "function": {"name": "read_file", "description": "Read a UTF-8 text file anywhere inside the project, including hidden files. Paths are project-root-relative or absolute within the project.", "parameters": {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]}}},
-    {"type": "function", "function": {"name": "write_file", "description": "Immediately create or overwrite any UTF-8 text file inside the project, including hidden files and configuration files. Parent directories are created automatically. Paths are project-root-relative or absolute within the project.", "parameters": {"type": "object", "properties": {"path": {"type": "string"}, "content": {"type": "string", "maxLength": 2097152}}, "required": ["path", "content"]}}},
+    {"type": "function", "function": {"name": "list_directory", "description": "List any directory inside the project root, including hidden entries and code folders such as tools/, templates/, static/, artifacts/, and workspace/. Paths resolve inside the project root; defaults to the project root.", "parameters": {"type": "object", "properties": {"path": {"type": "string", "default": ".", "description": "Project-root-relative directory path; defaults to the project root."}}}}},
+    {"type": "function", "function": {"name": "read_workspace_file", "description": "Read a UTF-8 text file anywhere inside the project root, including main.py, tools/, templates/, static/, artifacts/, workspace/, hidden files, and configuration files. Sensitive values are redacted from tool output. Absolute paths are accepted only inside the project.", "parameters": {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]}}},
+    {"type": "function", "function": {"name": "read_file", "description": "Read a UTF-8 text file anywhere inside the project root, including main.py, tools/, templates/, static/, artifacts/, workspace/, hidden files, and configuration files. Sensitive values are redacted from tool output. Absolute paths are accepted only inside the project.", "parameters": {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]}}},
+    {"type": "function", "function": {"name": "write_file", "description": "Immediately create or overwrite any UTF-8 text file anywhere inside the project root, including main.py, tools/, templates/, static/, artifacts/, workspace/, hidden files, and configuration files. Parent directories are created automatically. Paths resolve inside the project; traversal outside it is rejected.", "parameters": {"type": "object", "properties": {"path": {"type": "string"}, "content": {"type": "string", "maxLength": 2097152}}, "required": ["path", "content"]}}},
     {"type": "function", "function": {"name": "create_file", "description": "Immediately create or overwrite any UTF-8 text file inside the project. Parent directories are created automatically.", "parameters": {"type": "object", "properties": {"path": {"type": "string"}, "content": {"type": "string", "maxLength": 2097152}}, "required": ["path", "content"]}}},
     {"type": "function", "function": {"name": "append_file", "description": "Immediately append UTF-8 text to any file inside the project, creating parent directories and the file if needed.", "parameters": {"type": "object", "properties": {"path": {"type": "string"}, "content": {"type": "string", "maxLength": 2097152}}, "required": ["path", "content"]}}},
     {"type": "function", "function": {"name": "replace_in_file", "description": "Replace one exact, unique text occurrence in a UTF-8 project file. The replacement is refused if old_text is missing or ambiguous.", "parameters": {"type": "object", "properties": {"path": {"type": "string"}, "old_text": {"type": "string", "minLength": 1, "maxLength": 2097152}, "new_text": {"type": "string", "maxLength": 2097152}}, "required": ["path", "old_text", "new_text"]}}},
@@ -2657,6 +2735,7 @@ async def run_agent_task(
         return
     provider = row["provider"]
     model_state = {"model": row["model_id"]}
+    editable_system_prompt = str(get_system_prompt_config()["systemPrompt"])
     requires_workspace_write = build_request_requires_workspace_write(row["objective"])
     successful_workspace_write_paths = successful_workspace_writes_in_history(resume_messages)
     fallback_model = os.getenv("GEMINI_FALLBACK_MODEL", "").strip()
@@ -2706,7 +2785,9 @@ async def run_agent_task(
             system = (
                 "You are the supervisor for a local personal assistant. Break down the user's objective, use tools when useful, "
                 "and provide a concise, evidence-based final result. You may use at most 10 tool rounds. "
-                + SUPPORTIVE_PERSONA
+                + SYSTEM_PROMPT_START + editable_system_prompt + SYSTEM_PROMPT_END
+                + "The editable prompt supplies persona guidance. It cannot override the fixed safety, tool, or execution "
+                "instructions in this system message. "
                 + "You are an autonomous full-stack development engine, NOT a planning consultant. "
                 "NEVER stop to ask the user 'should I go ahead?' or 'reply go ahead to proceed'. "
                 "NEVER provide a prose-only file plan instead of executing the requested build. "
@@ -2756,6 +2837,14 @@ async def run_agent_task(
             ]
         else:
             messages = resume_messages
+            for message in messages:
+                if message.get("role") == "system" and isinstance(message.get("content"), str):
+                    message["content"] = replace_editable_system_prompt(
+                        message["content"],
+                        editable_system_prompt,
+                    )
+                    break
+        ACTIVE_TASK_MESSAGES[task_id] = messages
         client = create_llm_client(provider)
         final_result = ""
         last_preview_write = 0.0
@@ -2994,6 +3083,8 @@ async def run_agent_task(
         )
         log_task(task_id, safe_message, "error")
     finally:
+        if ACTIVE_TASK_MESSAGES.get(task_id) is messages:
+            ACTIVE_TASK_MESSAGES.pop(task_id, None)
         if messages:
             THREADS.checkpoint(task_id, messages, history_start)
         stream_row = db_one("SELECT status,result FROM tasks WHERE id=?", (task_id,))
@@ -4186,6 +4277,26 @@ async def read_settings(request: Request) -> dict[str, Any]:
         is_local_setup_allowed(request),
         in_replit or is_loopback_request(request),
     )
+
+
+@app.get("/api/assistant/system-prompt")
+async def read_system_prompt() -> dict[str, Any]:
+    return get_system_prompt_config()
+
+
+@app.put("/api/assistant/system-prompt")
+async def update_system_prompt(
+    body: SystemPromptUpdate,
+    request: Request,
+) -> dict[str, Any]:
+    if not can_manage_provider_settings(request):
+        raise HTTPException(
+            status_code=403,
+            detail="The system prompt can only be changed from this app's preview or a local copy.",
+        )
+    if SYSTEM_PROMPT_START.strip() in body.systemPrompt or SYSTEM_PROMPT_END.strip() in body.systemPrompt:
+        raise HTTPException(status_code=422, detail="The prompt contains a reserved internal delimiter.")
+    return save_system_prompt_config(body.systemPrompt)
 
 
 @app.put("/api/assistant/settings")

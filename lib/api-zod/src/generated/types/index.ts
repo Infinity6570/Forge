@@ -39,6 +39,8 @@ export * from './providerKeysInput';
 export * from './searchSettingsInput';
 export * from './searchSettingsInputSearchApiProvider';
 export * from './searchSettingsInputSearchMode';
+export * from './systemPromptConfig';
+export * from './systemPromptUpdate';
 export * from './taskApprovalInput';
 export * from './taskFallbackChoiceInput';
 export * from './taskInput';

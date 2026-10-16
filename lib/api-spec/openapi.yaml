@@ -446,6 +446,35 @@ paths:
       responses:
         "204":
           description: File deleted
+  /assistant/system-prompt:
+    get:
+      operationId: getAssistantSystemPrompt
+      tags: [assistant]
+      summary: Read Forge's editable core persona prompt
+      responses:
+        "200":
+          description: Active editable system prompt configuration
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SystemPromptConfig"
+    put:
+      operationId: updateAssistantSystemPrompt
+      tags: [assistant]
+      summary: Save Forge's editable core persona prompt
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SystemPromptUpdate"
+      responses:
+        "200":
+          description: Prompt saved and applied to active task sessions
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SystemPromptConfig"
   /assistant/settings:
     get:
       operationId: getAssistantSettings
@@ -1013,6 +1042,17 @@ components:
         hasSerperKey: { type: boolean }
         hasBraveKey: { type: boolean }
         chromiumAvailable: { type: boolean }
+    SystemPromptConfig:
+      type: object
+      required: [systemPrompt, isCustomized]
+      properties:
+        systemPrompt: { type: string, maxLength: 20000 }
+        isCustomized: { type: boolean }
+    SystemPromptUpdate:
+      type: object
+      required: [systemPrompt]
+      properties:
+        systemPrompt: { type: string, maxLength: 20000 }
     ModelSelectionInput:
       type: object
       required: [provider, modelId]
