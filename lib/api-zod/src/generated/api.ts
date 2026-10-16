@@ -201,12 +201,16 @@ export const UpdateConversationThreadParams = zod.object({
 
 export const updateConversationThreadBodyTitleMax = 100;
 
+export const updateConversationThreadBodyModelIdMax = 120;
+
 
 
 export const UpdateConversationThreadBody = zod.object({
   "title": zod.string().min(1).max(updateConversationThreadBodyTitleMax).optional(),
   "pinned": zod.boolean().optional(),
-  "archived": zod.boolean().optional()
+  "archived": zod.boolean().optional(),
+  "provider": zod.enum(['openai', 'deepseek', 'gemini', 'anthropic', 'openrouter', 'ollama']).optional(),
+  "modelId": zod.string().min(1).max(updateConversationThreadBodyModelIdMax).optional()
 })
 
 export const updateConversationThreadResponseModelIdMax = 120;

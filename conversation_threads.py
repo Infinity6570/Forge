@@ -307,6 +307,8 @@ class ThreadUpdate(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=100)
     pinned: bool | None = None
     archived: bool | None = None
+    provider: str | None = Field(default=None, min_length=1, max_length=32)
+    modelId: str | None = Field(default=None, min_length=1, max_length=120)
 
 
 def thread_routers(store: ThreadStore, serialize_task, redact=lambda value: value) -> tuple[APIRouter, APIRouter]:
@@ -395,6 +397,12 @@ def thread_routers(store: ThreadStore, serialize_task, redact=lambda value: valu
     async def update_thread(thread_id: str, body: ThreadUpdate):
         with store.transaction() as connection:
             store.require(connection, thread_id)
+            if (body.provider is None) != (body.modelId is None):
+                raise HTTPException(422, "Choose both a provider and model.")
+            if body.provider is not None:
+                if body.provider not in {"openai", "deepseek", "gemini", "anthropic", "openrouter", "ollama"}:
+                    raise HTTPException(422, "Unsupported AI provider.")
+                store.set_model(connection, thread_id, body.provider, body.modelId)
             if body.archived is not None:
                 if body.archived and store.active(connection, thread_id):
                     raise HTTPException(409, "Stop or finish this chat before archiving it.")

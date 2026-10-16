@@ -5,6 +5,7 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { ThreadUpdateProvider } from './threadUpdateProvider';
 
 export interface ThreadUpdate {
   /**
@@ -14,4 +15,10 @@ export interface ThreadUpdate {
   title?: string;
   pinned?: boolean;
   archived?: boolean;
+  provider?: ThreadUpdateProvider;
+  /**
+     * @minLength 1
+     * @maxLength 120
+     */
+  modelId?: string;
 }

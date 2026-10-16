@@ -48,6 +48,7 @@ export * from './taskLogKind';
 export * from './taskModelChoiceInput';
 export * from './threadInput';
 export * from './threadUpdate';
+export * from './threadUpdateProvider';
 export * from './timerInput';
 export * from './timerInputKind';
 export * from './timerInputRecurrence';

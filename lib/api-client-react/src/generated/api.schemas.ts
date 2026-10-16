@@ -199,6 +199,18 @@ export interface ThreadInput {
   title?: string;
 }
 
+export type ThreadUpdateProvider = typeof ThreadUpdateProvider[keyof typeof ThreadUpdateProvider];
+
+
+export const ThreadUpdateProvider = {
+  openai: 'openai',
+  deepseek: 'deepseek',
+  gemini: 'gemini',
+  anthropic: 'anthropic',
+  openrouter: 'openrouter',
+  ollama: 'ollama',
+} as const;
+
 export interface ThreadUpdate {
   /**
      * @minLength 1
@@ -207,6 +219,12 @@ export interface ThreadUpdate {
   title?: string;
   pinned?: boolean;
   archived?: boolean;
+  provider?: ThreadUpdateProvider;
+  /**
+     * @minLength 1
+     * @maxLength 120
+     */
+  modelId?: string;
 }
 
 export type TaskInputProvider = typeof TaskInputProvider[keyof typeof TaskInputProvider];

@@ -496,6 +496,7 @@ function Dashboard() {
   const { select: selectThread, resetSignal } = conv;
   const selectedThreadRef = useRef(threadId);
   selectedThreadRef.current = threadId;
+  const modelSelectionVersion = useRef(0);
   const adoptingSentThread = useRef<string | undefined>(undefined);
   useEffect(() => { if (threadStale) selectThread(undefined); }, [threadStale, selectThread]);
   useEffect(() => {
@@ -540,11 +541,38 @@ function Dashboard() {
     saveChatModelPreference(threadId, model
       ? { mode: kind as 'configured' | 'last-used' | 'direct', provider: model.provider, model: model.model }
       : { mode: 'configured' });
-  }, [resolveModelMode, threadId]);
+    if (!threadId || !model?.provider) return;
+    const version = ++modelSelectionVersion.current;
+    setSubmitError('');
+    void conv.setModel(threadId, model.provider, model.model).catch(() => {
+      if (modelSelectionVersion.current !== version) return;
+      const persisted = referenceModel;
+      const restoredMode = persisted?.provider && persisted.modelId
+        ? `direct|${persisted.provider}|${persisted.modelId}`
+        : 'configured';
+      setModelMode(restoredMode);
+      saveChatModelPreference(threadId, persisted?.provider && persisted.modelId
+        ? { mode: 'direct', provider: persisted.provider, model: persisted.modelId }
+        : { mode: 'configured' });
+      setSubmitError('The selected model could not be saved. The previous session model was restored.');
+    });
+  }, [conv.setModel, referenceModel, resolveModelMode, threadId]);
   useEffect(() => {
     if (threadId && !threadDetail.data) return;
     const saved = loadChatModelPreference(threadId);
-    if (saved && (saved.mode !== 'last-used' || savedModelPreference?.provider && savedModelPreference.model)) {
+    const sessionProvider = threadDetail.data?.provider;
+    const sessionModel = threadDetail.data?.modelId;
+    if (sessionProvider && sessionModel) {
+      if (saved?.provider === sessionProvider && saved.model === sessionModel) {
+        setModelMode(modeForSavedPreference(saved));
+        return;
+      }
+      const mode = `direct|${sessionProvider}|${sessionModel}`;
+      setModelMode(mode);
+      saveChatModelPreference(threadId, { mode: 'direct', provider: sessionProvider, model: sessionModel });
+      return;
+    }
+    if (saved && (saved.mode !== 'last-used' || saved.provider && saved.model)) {
       setModelMode(modeForSavedPreference(saved));
       return;
     }
@@ -556,7 +584,7 @@ function Dashboard() {
     if (previousModel?.provider && previousModel.modelId) {
       saveChatModelPreference(threadId, { mode: 'direct', provider: previousModel.provider, model: previousModel.modelId });
     }
-  }, [threadId, threadDetail.data, savedModelPreference?.model, savedModelPreference?.provider, tasks, referenceModel]);
+  }, [threadId, threadDetail.data]);
   useEffect(() => {
     const syncModel = () => changeModelMode('configured');
     window.addEventListener('forge:model-applied', syncModel);
@@ -724,11 +752,12 @@ function Dashboard() {
       if (attachmentInput.current) attachmentInput.current.value = '';
     }
   };
+  const selectedModelForDisplay = resolveModelMode(modelMode);
   return <AppShell page="home"><div className="dashboard-page command-center enter" data-task-active={activeExecution ? 'true' : 'false'} data-testid="dashboard-command-center">
     {summary.isError && <QueryProblem retry={() => summary.refetch()} message="Your overview is temporarily unavailable." />}
     <section className={`activity-panel execution-panel${thinkingAura ? ' cyber-thinking-aura' : ''}`} data-task-active={isGenerating ? 'true' : 'false'}><div className="activity-panel-heading">
       <div className="stream-heading-main">{isGenerating && <span className="status-indicator live live-label" data-testid="status-streaming" aria-live="polite"><span className="online-pip working" />STREAMING</span>}<h2 className="thread-title" title={streamTitle} data-testid="text-thread-title">{streamTitle}</h2></div>
-      <div className="stream-heading-right"><div className="command-status" data-testid="status-agent-state"><span className="stream-model-badge">{settingsQuery.data ? modelDisplayName(settingsQuery.data.provider, settingsQuery.data.modelId) : 'Configured model'}</span><span className="stream-status-badge"><span className={`online-pip ${isGenerating ? 'working' : ''}`} />{summary.isLoading ? 'Connecting' : isGenerating ? 'Running' : 'Idle'}</span></div><Link href="/tasks" className="text-link" data-testid="link-all-tasks">Task activity <ArrowRight size={14} /></Link></div>
+      <div className="stream-heading-right"><div className="command-status" data-testid="status-agent-state"><span className="stream-model-badge" data-testid="text-active-session-model">{selectedModelForDisplay ? modelDisplayName(selectedModelForDisplay.provider, selectedModelForDisplay.model) : 'Configured model'}</span><span className="stream-status-badge"><span className={`online-pip ${isGenerating ? 'working' : ''}`} />{summary.isLoading ? 'Connecting' : isGenerating ? 'Running' : 'Idle'}</span></div><Link href="/tasks" className="text-link" data-testid="link-all-tasks">Task activity <ArrowRight size={14} /></Link></div>
     </div>
       {threadId && threadDetail.isError && !threadStale && !threadDetail.data ? <QueryProblem retry={() => threadDetail.refetch()} message="This chat could not be loaded." /> : <ActivityStream key={threadId ?? 'new'} tasks={tasks} messages={threadMessages} liveText={liveText} onUserScrollUp={flushLiveText} loading={!!threadId && threadDetail.isLoading} onOpen={(task) => setSelectedTaskId(task.id)} hasEarlier={threadDetail.hasNextPage} loadingEarlier={threadDetail.isFetchingNextPage} earlierError={threadDetail.isFetchNextPageError} onLoadEarlier={() => threadDetail.fetchNextPage()} />}
     </section>
@@ -1094,7 +1123,7 @@ function SystemTelemetry() {
   const files = useListAssistantFiles();
   const notes = useListAssistantNotes();
   const tasks = useListAssistantTasks({ query: { queryKey: getListAssistantTasksQueryKey(), refetchInterval: 4000 } });
-  const { selectedId } = useConversations();
+  const { selectedId, currentModel } = useConversations();
   const thread = useThreadHistory(selectedId);
   const messages = thread.data?.messages ?? [];
   const messageChars = messages.reduce((total, message) => total + message.content.length, 0);
@@ -1103,6 +1132,8 @@ function SystemTelemetry() {
   const recentFiles = getRecentFiles(files.data);
   const recentNotes = getRecentNotes(notes.data);
   const recentLogs = getRecentTaskLogs(tasks.data);
+  const activeProvider = currentModel?.provider ?? settings.data?.provider;
+  const activeModelId = currentModel?.modelId ?? settings.data?.modelId;
   const searchEngines = settings.data ? [
     { id: 'tavily', label: 'TAVILY', configured: settings.data.hasTavilyKey, selected: settings.data.searchMode === 'api' && settings.data.searchApiProvider === 'tavily' },
     { id: 'serper', label: 'SERPER', configured: settings.data.hasSerperKey, selected: settings.data.searchMode === 'api' && settings.data.searchApiProvider === 'serper' },
@@ -1118,9 +1149,9 @@ function SystemTelemetry() {
         <div><span>Active timers</span><strong>{dashboard.data?.activeTimers ?? '—'}</strong></div>
       </div>}
       <div className="telemetry-model">
-        <span className="telemetry-kicker">ACTIVE MODEL · SETTINGS</span>
-        {settings.isLoading ? <div className="telemetry-skeleton model-skeleton"><i /></div> : settings.isError ? <div className="telemetry-error"><span>Model configuration unavailable.</span><button type="button" onClick={() => settings.refetch()}>Retry</button></div> : <strong data-testid="text-telemetry-model">{modelDisplayName(settings.data?.provider, settings.data?.modelId)}</strong>}
-        {settings.data && <span className="telemetry-model-id">{settings.data.provider} / {settings.data.modelId}</span>}
+        <span className="telemetry-kicker">ACTIVE MODEL · {currentModel ? 'SELECTED CHAT' : 'SETTINGS'}</span>
+        {settings.isLoading && !currentModel ? <div className="telemetry-skeleton model-skeleton"><i /></div> : settings.isError && !currentModel ? <div className="telemetry-error"><span>Model configuration unavailable.</span><button type="button" onClick={() => settings.refetch()}>Retry</button></div> : activeProvider && activeModelId ? <strong data-testid="text-telemetry-model">{modelDisplayName(activeProvider, activeModelId)}</strong> : <strong data-testid="text-telemetry-model">No model selected</strong>}
+        {activeProvider && activeModelId && <span className="telemetry-model-id" data-testid="text-telemetry-model-id">{activeProvider} / {activeModelId}</span>}
       </div>
       {settings.data && <div className="telemetry-search" data-testid="status-search-provider">
         <div className="telemetry-search-heading"><span className="telemetry-kicker">SEARCH FALLBACK ENGINES</span><span className="telemetry-search-mode">{settings.data.searchMode ?? 'not set'}</span></div>

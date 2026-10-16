@@ -85,7 +85,7 @@ paths:
             schema: { $ref: "#/components/schemas/ThreadUpdate" }
       responses:
         "200":
-          description: Renamed or pinned chat
+          description: Updated chat title, pin, archive state, or active model
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ConversationThread" }
@@ -784,6 +784,8 @@ components:
         title: { type: string, minLength: 1, maxLength: 100 }
         pinned: { type: boolean }
         archived: { type: boolean }
+        provider: { type: string, enum: [openai, deepseek, gemini, anthropic, openrouter, ollama] }
+        modelId: { type: string, minLength: 1, maxLength: 120 }
     AssistantTask:
       type: object
       required: [id, objective, status, currentStep, result, error, logs, provider, modelId, recommendationKind, recommendationReason, recommendedProvider, recommendedModelId, retryAvailable, requiresModelConfirmation, pendingApprovalId, pendingApprovalKind, approvalSummary, approvalDetails, requiresApproval, createdAt, updatedAt]

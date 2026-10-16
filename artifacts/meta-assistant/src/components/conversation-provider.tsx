@@ -17,6 +17,7 @@ const STORAGE_KEY = 'forge:selected-thread';
 
 type Ctx = {
   threads: ConversationThread[];
+  currentModel: { provider: NonNullable<ConversationThread['provider']>; modelId: string } | undefined;
   loading: boolean;
   error: boolean;
   retry: () => void;
@@ -26,6 +27,7 @@ type Ctx = {
   newChat: () => void;
   creating: boolean;
   rename: (id: string, title: string) => Promise<void>;
+  setModel: (id: string, provider: NonNullable<ConversationThread['provider']>, modelId: string) => Promise<void>;
   setPinned: (id: string, pinned: boolean) => Promise<void>;
   remove: (id: string) => Promise<void>;
   actionError: string;
@@ -53,14 +55,23 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
   const [selectedId, setSelectedId] = useState<string | undefined>();
   const [showArchived, setShowArchived] = useState(false);
   const [actionError, setActionError] = useState('');
+  const [modelOverrides, setModelOverrides] = useState<Record<string, { provider: NonNullable<ConversationThread['provider']>; modelId: string }>>({});
   const [resetSignal, setResetSignal] = useState(0);
   const selectionVersion = useRef(0);
+  const modelSaveVersions = useRef<Record<string, number>>({});
+  const modelSaveQueue = useRef<Promise<void>>(Promise.resolve());
   const initialSelectionDone = useRef(false);
   const list = useListConversationThreads({ includeArchived: showArchived }, { query: { queryKey: getListConversationThreadsQueryKey({ includeArchived: showArchived }), refetchInterval: 10_000 } });
   const create = useCreateConversationThread();
   const update = useUpdateConversationThread();
   const del = useDeleteConversationThread();
   const threads = useMemo(() => list.data ?? [], [list.data]);
+  const selectedThread = threads.find((thread) => thread.id === selectedId);
+  const currentModel = selectedId
+    ? modelOverrides[selectedId] ?? (selectedThread?.provider && selectedThread.modelId
+      ? { provider: selectedThread.provider, modelId: selectedThread.modelId }
+      : undefined)
+    : undefined;
 
   const select = useCallback((id: string | undefined) => {
     initialSelectionDone.current = true;
@@ -112,6 +123,44 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
     } catch (error) { setActionError('The chat could not be renamed.'); throw error; }
   }, [update, qc]);
 
+  const setModel = useCallback(async (
+    id: string,
+    provider: NonNullable<ConversationThread['provider']>,
+    modelId: string,
+  ) => {
+    const version = (modelSaveVersions.current[id] ?? 0) + 1;
+    modelSaveVersions.current[id] = version;
+    setActionError('');
+    setModelOverrides((previous) => ({ ...previous, [id]: { provider, modelId } }));
+    const save = async () => {
+      await update.mutateAsync({ id, data: { provider, modelId } });
+      await qc.invalidateQueries({ queryKey: getListConversationThreadsQueryKey() });
+      await qc.invalidateQueries({ queryKey: getGetConversationThreadQueryKey(id) });
+    };
+    const pending = modelSaveQueue.current.then(save, save);
+    modelSaveQueue.current = pending.then(() => undefined, () => undefined);
+    try {
+      await pending;
+      if (modelSaveVersions.current[id] === version) {
+        setModelOverrides((previous) => {
+          const next = { ...previous };
+          delete next[id];
+          return next;
+        });
+      }
+    } catch (error) {
+      if (modelSaveVersions.current[id] === version) {
+        setModelOverrides((previous) => {
+          const next = { ...previous };
+          delete next[id];
+          return next;
+        });
+        setActionError('The selected model could not be saved for this chat.');
+      }
+      throw error;
+    }
+  }, [update, qc]);
+
   const setPinned = useCallback(async (id: string, pinned: boolean) => {
     setActionError('');
     try {
@@ -151,8 +200,8 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
     finally { await qc.invalidateQueries({ queryKey: getListConversationThreadsQueryKey() }); }
   };
   const value: Ctx = {
-    threads, loading: list.isLoading, error: list.isError, retry: () => { void list.refetch(); },
-    selectedId, select, adopt, newChat, creating: create.isPending, rename, setPinned, remove,
+    threads, currentModel, loading: list.isLoading, error: list.isError, retry: () => { void list.refetch(); },
+    selectedId, select, adopt, newChat, creating: create.isPending, rename, setModel, setPinned, remove,
     actionError, clearActionError: () => setActionError(''), resetSignal,
     showArchived, toggleArchived: () => setShowArchived((v) => !v), archiveOld, restore,
   };
