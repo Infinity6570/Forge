@@ -14,3 +14,9 @@ The user explicitly requires the clinic-style rotating sphere, satellite rings, 
 **Why:** The user repeatedly reported that the effects were still invisible. Merely running a hidden canvas is not success.
 
 **How to apply:** Verify the composed app visually, not just canvas pixels. Preserve FX off, reduced-motion static artwork, and hidden-tab pause behavior. Compositor hints and desynchronized Canvas 2D do not guarantee hardware rasterization or a particular frame rate.
+
+When an agent task is active, make the ambient sphere, orbits, and particle network visibly more energetic; restore the idle animation when work ends. Keep the reduced-motion variant static while updating its appearance to reflect state changes.
+
+**Why:** The user wants the backdrop to react to agent work rather than remain a passive decoration.
+
+**How to apply:** Drive renderer activity from the authoritative task/generation state, including while a task is pending. Smoothly intensify and settle visual properties without creating a separate RAF loop or forcing non-Sci-Fi themes to show the canvas.

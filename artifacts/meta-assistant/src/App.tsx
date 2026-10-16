@@ -568,6 +568,11 @@ function Dashboard() {
   const isPending = createTask.isPending;
   const isGenerating = activeExecution || (isPending && !stopRequestedTaskId);
   const thinkingAura = cyberFxActive && isGenerating;
+  useEffect(() => {
+    const working = isGenerating;
+    document.documentElement.dataset.agentWorking = String(working);
+    window.dispatchEvent(new CustomEvent('forge:agent-state', { detail: { working } }));
+  }, [isGenerating]);
   const threadBusy = !!threadId && (!threadDetail.data || (!!threadDetail.data.activeTaskId && threadDetail.data.activeTaskId !== stoppedTaskId));
   const stopTask = [...tasks].reverse().find((task) => ['running', 'processing', 'queued'].includes(String(task.status)) && !localStop(task))
     ?? [actionTask.data, details.data].find((task) => task && ['running', 'processing', 'queued'].includes(String(task.status)) && !localStop(task));

@@ -3,6 +3,7 @@ import { createCyberBackground } from '@/lib/cyber-background-renderer';
 
 const readEnabled = () => document.documentElement.dataset.theme === 'scifi'
   && document.documentElement.dataset.cyberFx !== 'off';
+const readWorking = () => document.documentElement.dataset.agentWorking === 'true';
 
 export function AmbientBackground() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -32,6 +33,15 @@ export function AmbientBackground() {
     if (!renderer) return;
     let frame = 0;
     let previous = 0;
+    const setWorkState = (event?: Event) => {
+      const detail = (event as CustomEvent<{ working?: boolean }> | undefined)?.detail;
+      const working = detail?.working ?? readWorking();
+      renderer.setWorking(working, reducedMotion);
+      canvas.dataset.activity = working ? 'working' : 'idle';
+      // Reduced-motion mode stays static, but redraws once to reflect the
+      // current work state without starting an animation loop.
+      if (reducedMotion) renderer.draw(0);
+    };
     const tick = (timestamp: number) => {
       frame = 0;
       if (document.hidden) return;
@@ -52,10 +62,12 @@ export function AmbientBackground() {
     const leave = (event: MouseEvent) => { if (!event.relatedTarget) renderer.pointer(-9999, -9999); };
     const click = (event: MouseEvent) => { if (!reducedMotion) renderer.ripple(event.clientX, event.clientY); };
     resize();
+    setWorkState();
     window.addEventListener('resize', resize, { passive: true });
     window.addEventListener('mousemove', move, { passive: true });
     window.addEventListener('mouseout', leave, { passive: true });
     window.addEventListener('click', click, { passive: true });
+    window.addEventListener('forge:agent-state', setWorkState);
     document.addEventListener('visibilitychange', restart);
     return () => {
       cancelAnimationFrame(frame);
@@ -63,6 +75,7 @@ export function AmbientBackground() {
       window.removeEventListener('mousemove', move);
       window.removeEventListener('mouseout', leave);
       window.removeEventListener('click', click);
+      window.removeEventListener('forge:agent-state', setWorkState);
       document.removeEventListener('visibilitychange', restart);
       renderer.clear();
     };

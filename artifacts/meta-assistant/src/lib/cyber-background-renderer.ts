@@ -25,6 +25,7 @@ export function createCyberBackground(canvas: HTMLCanvasElement) {
   }
   let width = 0, height = 0, count = 0, sphereCount = 420, t = 140;
   let mouseX = -9999, mouseY = -9999, parallaxX = 0, parallaxY = 0, rippleIndex = 0;
+  let workTarget = 0, workEnergy = 0;
   const tau = Math.PI * 2;
 
   const resize = () => {
@@ -56,6 +57,9 @@ export function createCyberBackground(canvas: HTMLCanvasElement) {
 
   const draw = (dt: number) => {
     t += dt;
+    workEnergy += (workTarget - workEnergy) * Math.min(1, 0.045 * dt);
+    const beat = 0.5 + 0.5 * Math.sin(t * 0.055);
+    const workPulse = workEnergy * beat;
     const targetX = mouseX < 0 ? 0 : mouseX / width - 0.5;
     const targetY = mouseY < 0 ? 0 : mouseY / height - 0.5;
     parallaxX += (targetX - parallaxX) * Math.min(1, 0.045 * dt);
@@ -73,9 +77,10 @@ export function createCyberBackground(canvas: HTMLCanvasElement) {
       ctx.strokeStyle = wave === 1 ? '#b44cff' : wave === 2 ? '#ff3ea5' : '#00f0ff';
       ctx.globalAlpha = 0.65; ctx.lineWidth = 1.8; ctx.stroke();
     }
-    const radius = Math.min(width, height) * 0.31;
+    const radius = Math.min(width, height) * 0.31 * (1 + workPulse * 0.045);
     const cx = width * 0.72 + parallaxX * 42, cy = height * 0.48 + parallaxY * 42;
-    const ay = t * 0.0025 + parallaxX * 0.4, ax = 0.35 + Math.sin(t * 0.001) * 0.2 + parallaxY * 0.3;
+    const ay = t * (0.0025 + workEnergy * 0.0018) + parallaxX * 0.4;
+    const ax = 0.35 + Math.sin(t * 0.001 + workPulse * 0.6) * (0.2 + workEnergy * 0.06) + parallaxY * 0.3;
     const cosY = Math.cos(ay), sinY = Math.sin(ay), cosX = Math.cos(ax), sinX = Math.sin(ax);
     for (let i = 0; i < sphereCount * 3; i += 3) {
       const x = sphere[i], y = sphere[i + 1], z = sphere[i + 2];
@@ -88,22 +93,22 @@ export function createCyberBackground(canvas: HTMLCanvasElement) {
       const depth = Math.max(0, Math.min(1, (1 - z2) / 2));
       const size = 1.6 + depth * 3.2;
       ctx.fillStyle = sphereColors[Math.min(31, Math.floor(depth * 31))];
-      ctx.globalAlpha = 0.28 + depth * 0.72;
+      ctx.globalAlpha = Math.min(1, 0.28 + depth * 0.72 + workPulse * (0.12 + depth * 0.16));
       ctx.fillRect(cx + x1 * radius * scale - size / 2, cy + y1 * radius * scale - size / 2, size, size);
     }
     for (let orbit = 0; orbit < 3; orbit++) {
       const rx = radius * (1.25 + orbit * 0.18), ry = radius * (0.28 + orbit * 0.05);
       const rotation = t * 0.0015 * (orbit % 2 ? -1 : 1) + orbit;
       ctx.beginPath(); ctx.strokeStyle = orbit === 1 ? '#b44cff' : '#00f0ff';
-      ctx.globalAlpha = 0.75; ctx.lineWidth = 2;
+      ctx.globalAlpha = Math.min(1, 0.75 + workPulse * 0.22); ctx.lineWidth = 2 + workPulse * 1.1;
       ctx.ellipse(cx, cy, rx, ry, rotation, 0, tau); ctx.stroke();
-      const angle = t * (0.01 + orbit * 0.004), ex = Math.cos(angle) * rx, ey = Math.sin(angle) * ry;
+      const angle = t * (0.01 + orbit * 0.004 + workEnergy * 0.005), ex = Math.cos(angle) * rx, ey = Math.sin(angle) * ry;
       ctx.globalAlpha = 1;
       ctx.drawImage(glow, cx + ex * Math.cos(rotation) - ey * Math.sin(rotation) - 20,
         cy + ex * Math.sin(rotation) + ey * Math.cos(rotation) - 20);
     }
     // Squared-distance checks avoid sqrt/hypot in the O(n²) network loop.
-    const damping = Math.pow(0.995, dt);
+      const damping = Math.pow(0.995 - workEnergy * 0.002, dt);
     for (let i = 0; i < count * 6; i += 6) {
       const dx = floaters[i] - mouseX, dy = floaters[i + 1] - mouseY, d2 = dx * dx + dy * dy;
       if (d2 < 26000) {
@@ -111,23 +116,23 @@ export function createCyberBackground(canvas: HTMLCanvasElement) {
         floaters[i + 2] += dx * force; floaters[i + 3] += dy * force;
       }
       floaters[i + 2] *= damping; floaters[i + 3] *= damping;
-      floaters[i + 2] += Math.sin(t * 0.01 + i) * 0.002 * dt;
-      floaters[i + 3] += Math.cos(t * 0.01 + i) * 0.002 * dt;
+      floaters[i + 2] += Math.sin(t * (0.01 + workEnergy * 0.01) + i) * (0.002 + workEnergy * 0.003) * dt;
+      floaters[i + 3] += Math.cos(t * (0.01 + workEnergy * 0.01) + i) * (0.002 + workEnergy * 0.003) * dt;
       floaters[i] = (floaters[i] + floaters[i + 2] * dt + width) % width;
       floaters[i + 1] = (floaters[i + 1] + floaters[i + 3] * dt + height) % height;
       ctx.strokeStyle = '#00f0ff'; ctx.lineWidth = 0.85;
       for (let j = i + 6; j < count * 6; j += 6) {
         const lx = floaters[i] - floaters[j], ly = floaters[i + 1] - floaters[j + 1], distance2 = lx * lx + ly * ly;
         if (distance2 >= 21025) continue;
-        ctx.globalAlpha = (1 - distance2 / 21025) * 0.45;
+        ctx.globalAlpha = (1 - distance2 / 21025) * (0.45 + workPulse * 0.3);
         ctx.beginPath(); ctx.moveTo(floaters[i], floaters[i + 1]); ctx.lineTo(floaters[j], floaters[j + 1]); ctx.stroke();
       }
       if (d2 < 32400) {
         ctx.globalAlpha = (1 - d2 / 32400) * 0.8;
         ctx.beginPath(); ctx.moveTo(floaters[i], floaters[i + 1]); ctx.lineTo(mouseX, mouseY); ctx.stroke();
       }
-      ctx.globalAlpha = 0.9; ctx.fillStyle = floaters[i + 5] ? '#b44cff' : '#00f0ff';
-      ctx.beginPath(); ctx.arc(floaters[i], floaters[i + 1], floaters[i + 4], 0, tau); ctx.fill();
+      ctx.globalAlpha = Math.min(1, 0.9 + workPulse * 0.1); ctx.fillStyle = floaters[i + 5] ? '#b44cff' : '#00f0ff';
+      ctx.beginPath(); ctx.arc(floaters[i], floaters[i + 1], floaters[i + 4] * (1 + workPulse * 0.55), 0, tau); ctx.fill();
     }
     for (let i = 0; i < ripples.length; i += 4) {
       if (ripples[i + 3] < 0.02) continue;
@@ -139,6 +144,10 @@ export function createCyberBackground(canvas: HTMLCanvasElement) {
   };
   return {
     resize, draw,
+    setWorking(working: boolean, snap = false) {
+      workTarget = working ? 1 : 0;
+      if (snap) workEnergy = workTarget;
+    },
     pointer(x: number, y: number) { mouseX = x; mouseY = y; },
     ripple(x: number, y: number) {
       const i = rippleIndex * 4; rippleIndex = (rippleIndex + 1) % 12;
