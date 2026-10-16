@@ -419,12 +419,33 @@ class ProviderSettingsTests(unittest.IsolatedAsyncioTestCase):
             geminiApiKey="replacement-gemini-key",
         )
 
-        self.assertEqual(wrong_provider_response.status_code, 422, wrong_provider_response.text)
-        self.assertIn("Gemini model ID", wrong_provider_response.json()["detail"])
+        self.assertEqual(wrong_provider_response.status_code, 400, wrong_provider_response.text)
+        self.assertIn("Openai API key", wrong_provider_response.json()["detail"])
         self.assertEqual(self.env_file.read_text(), saved_env)
         self.assertEqual(os.environ["AGENT_MODEL"], "gemini-2.5-flash")
         self.assertEqual(os.environ["GEMINI_FALLBACK_MODEL"], "gemini-2.5-flash-lite")
         self.assertEqual(os.environ["GEMINI_API_KEY"], "saved-gemini-key")
+
+    async def test_settings_dispatches_provider_from_selected_model_prefix(self) -> None:
+        claude = await self.put_settings(
+            base_url="http://127.0.0.1",
+            provider="openai",
+            model_id="claude-sonnet-5-5",
+            anthropicApiKey="sk-ant-prefix-dispatch-test",
+        )
+        self.assertEqual(claude.status_code, 200, claude.text)
+        self.assertEqual(claude.json()["provider"], "anthropic")
+        self.assertEqual(claude.json()["modelId"], "claude-sonnet-5-5")
+
+        gpt = await self.put_settings(
+            base_url="http://127.0.0.1",
+            provider="gemini",
+            model_id="gpt-4.1-mini",
+            openaiApiKey="sk-openai-prefix-dispatch-test",
+        )
+        self.assertEqual(gpt.status_code, 200, gpt.text)
+        self.assertEqual(gpt.json()["provider"], "openai")
+        self.assertEqual(gpt.json()["modelId"], "gpt-4.1-mini")
     async def test_non_gemini_fallback_does_not_replace_saved_settings(self) -> None:
         saved_response = await self.put_settings(
             base_url="http://127.0.0.1",

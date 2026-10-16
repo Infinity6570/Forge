@@ -18,7 +18,6 @@ import tempfile
 import threading
 import uuid
 import zipfile
-from copy import deepcopy
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from io import BytesIO
@@ -1585,10 +1584,14 @@ def resolve_model_provider(
     model_id: str,
     anthropic_key_available: bool | None = None,
 ) -> tuple[str, str]:
-    """Route Google model IDs to Google even if a stale provider field disagrees."""
+    """Resolve provider from an explicit model namespace before trusting stale UI state."""
     canonical = model_id.removeprefix("models/")
     if canonical.startswith(("gemini-", "gemma-")):
         return "gemini", model_id
+    if canonical.startswith("claude-"):
+        return "anthropic", model_id
+    if canonical.startswith("gpt-"):
+        return "openai", model_id
     return resolve_direct_anthropic_model(provider, model_id, anthropic_key_available)
 
 
@@ -1704,10 +1707,7 @@ async def create_completion_with_fallback(
         if on_text:
             await on_text(None)
         if "messages" in kwargs:
-            if provider == "gemini":
-                kwargs["messages"] = deepcopy(kwargs["messages"])
-            else:
-                kwargs["messages"] = prepare_history(kwargs["messages"], provider)
+            kwargs["messages"] = prepare_history(kwargs["messages"], provider)
         response = await client.chat.completions.create(**kwargs)
         completion = await collect_completion(response, on_text)
         if provider == "anthropic" and completion.choices:
@@ -4378,30 +4378,6 @@ async def update_settings(body: SettingsInput, request: Request) -> dict[str, An
             status_code=403,
             detail="Local Blender and Unreal tools can only be enabled from a localhost copy.",
         )
-    if body.provider == "ollama" and not local_allowed:
-        raise HTTPException(status_code=403, detail="Ollama is available only from a localhost copy.")
-    fallback_model = (body.fallbackModelId or "").strip()
-    ollama_base_url = None
-    if body.ollamaBaseUrl is not None or body.provider == "ollama":
-        try:
-            ollama_base_url = validate_ollama_base_url(
-                body.ollamaBaseUrl or os.getenv("OLLAMA_BASE_URL", DEFAULT_OLLAMA_BASE_URL)
-            )
-        except ValueError as error:
-            raise HTTPException(status_code=422, detail=str(error)) from error
-    if not MODEL_ID_PATTERN.fullmatch(body.modelId):
-        raise HTTPException(status_code=422, detail="That model ID contains unsupported characters.")
-    if body.provider == "gemini" and not GEMINI_MODEL_ID_PATTERN.fullmatch(body.modelId):
-        raise HTTPException(status_code=422, detail="That Gemini model ID is not valid.")
-    if body.provider == "gemini" and fallback_model and not GEMINI_MODEL_ID_PATTERN.fullmatch(fallback_model):
-        raise HTTPException(status_code=422, detail="That Gemini fallback model ID is not valid.")
-    values = {
-        "OPENAI_API_KEY": body.openaiApiKey,
-        "DEEPSEEK_API_KEY": body.deepseekApiKey,
-        "GEMINI_API_KEY": body.geminiApiKey,
-        "ANTHROPIC_API_KEY": body.anthropicApiKey,
-        "OPENROUTER_API_KEY": body.openrouterApiKey,
-    }
     anthropic_key_available = bool(
         credential_for("anthropic")
         or (body.anthropicApiKey and body.anthropicApiKey.strip())
@@ -4411,6 +4387,30 @@ async def update_settings(body: SettingsInput, request: Request) -> dict[str, An
         body.modelId,
         anthropic_key_available,
     )
+    if settings_provider == "ollama" and not local_allowed:
+        raise HTTPException(status_code=403, detail="Ollama is available only from a localhost copy.")
+    fallback_model = (body.fallbackModelId or "").strip()
+    ollama_base_url = None
+    if body.ollamaBaseUrl is not None or settings_provider == "ollama":
+        try:
+            ollama_base_url = validate_ollama_base_url(
+                body.ollamaBaseUrl or os.getenv("OLLAMA_BASE_URL", DEFAULT_OLLAMA_BASE_URL)
+            )
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+    if not MODEL_ID_PATTERN.fullmatch(body.modelId):
+        raise HTTPException(status_code=422, detail="That model ID contains unsupported characters.")
+    if settings_provider == "gemini" and not GEMINI_MODEL_ID_PATTERN.fullmatch(settings_model):
+        raise HTTPException(status_code=422, detail="That Gemini model ID is not valid.")
+    if settings_provider == "gemini" and fallback_model and not GEMINI_MODEL_ID_PATTERN.fullmatch(fallback_model):
+        raise HTTPException(status_code=422, detail="That Gemini fallback model ID is not valid.")
+    values = {
+        "OPENAI_API_KEY": body.openaiApiKey,
+        "DEEPSEEK_API_KEY": body.deepseekApiKey,
+        "GEMINI_API_KEY": body.geminiApiKey,
+        "ANTHROPIC_API_KEY": body.anthropicApiKey,
+        "OPENROUTER_API_KEY": body.openrouterApiKey,
+    }
     required_key_name = KEY_NAMES.get(settings_provider)
     pending_key = values.get(required_key_name) if required_key_name else None
     if settings_provider != "ollama" and not credential_for(settings_provider) and not (pending_key and pending_key.strip()):
@@ -4423,7 +4423,7 @@ async def update_settings(body: SettingsInput, request: Request) -> dict[str, An
     set_key(str(ENV_FILE), "AGENT_MODEL", settings_model, quote_mode="always")
     if ollama_base_url is not None:
         set_key(str(ENV_FILE), "OLLAMA_BASE_URL", ollama_base_url, quote_mode="always")
-    if body.provider == "gemini" and body.fallbackModelId is not None:
+    if settings_provider == "gemini" and body.fallbackModelId is not None:
         set_key(str(ENV_FILE), "GEMINI_FALLBACK_MODEL", fallback_model, quote_mode="always")
     set_key(str(ENV_FILE), "RUN_LOCAL_CODE", "true", quote_mode="never")
     set_key(str(ENV_FILE), "RUN_LOCAL_APP_PREVIEWS", str(body.appPreviewsEnabled).lower(), quote_mode="never")

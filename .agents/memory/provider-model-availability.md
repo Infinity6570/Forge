@@ -20,3 +20,9 @@ The Google Gen AI adapter must use the native SDK and preserve Gemini candidate 
 **Why:** Converting native turns through an OpenAI-shaped history serializer can drop signature fields or lose function-call/response pairing, while modality-specific models do not use ordinary text-generation defaults.
 
 **How to apply:** Keep raw Gemini parts intact across tool rounds, use `generate_content_stream` for standard models and `live.connect` for Live models, and handle image/audio output separately from text.
+
+Thread history stays lossless and provider-neutral; create a provider-specific copy at dispatch time rather than rewriting stored messages. Tool outputs must keep their call IDs when converted between Anthropic `tool_use`/`tool_result`, Gemini `functionCall`/`functionResponse`, and OpenAI-compatible `tool` turns. Anthropic's accepted wire TTL is `"5m"` for the requested 300 seconds.
+
+**Why:** A user can change providers mid-thread, and mutating the stored history or sending provider-specific roles verbatim can break tool pairing or make earlier turns unreadable to the new provider.
+
+**How to apply:** Normalize a copied history for the active provider, map Gemini function responses to user-role content, and preserve/repair matching tool IDs before sending OpenAI-compatible history.

@@ -70,27 +70,83 @@ def assistant_turn(message: Any, provider: str = "") -> dict[str, Any]:
     return turn
 
 
+def _recover_function_calls_from_native_parts(message: dict[str, Any]) -> None:
+    """Keep older native Gemini turns usable after the active provider changes."""
+    if message.get("tool_calls") or not isinstance(message.get("parts"), list):
+        return
+    recovered: list[dict[str, Any]] = []
+    for index, part in enumerate(message["parts"]):
+        if not isinstance(part, dict):
+            continue
+        function_call = part.get("functionCall") or part.get("function_call")
+        if not isinstance(function_call, dict):
+            continue
+        name = function_call.get("name")
+        if not isinstance(name, str) or not name:
+            continue
+        arguments = function_call.get("args", function_call.get("arguments", {}))
+        signature = part.get("thoughtSignature") or part.get("thought_signature")
+        call: dict[str, Any] = {
+            "id": str(function_call.get("id") or f"gemini_call_{index}"),
+            "type": "function",
+            "function": {
+                "name": name,
+                "arguments": arguments if isinstance(arguments, str) else json.dumps(arguments, ensure_ascii=False),
+            },
+        }
+        if signature:
+            call["extra_content"] = {"google": {"thought_signature": signature}}
+        recovered.append(call)
+    if recovered:
+        message["tool_calls"] = recovered
+
+
+def _match_tool_result_ids(messages: list[dict[str, Any]]) -> None:
+    """Repair legacy tool results that omitted the OpenAI tool_call_id field."""
+    pending: list[tuple[str, str]] = []
+    for message in messages:
+        role = message.get("role")
+        if role == "assistant":
+            for call in message.get("tool_calls") or []:
+                call_id = call.get("id")
+                function = call.get("function") or {}
+                if call_id:
+                    pending.append((str(call_id), str(function.get("name") or "")))
+        elif role == "tool":
+            call_id = message.get("tool_call_id")
+            name = str(message.get("name") or "")
+            match_index = next(
+                (index for index, (_, call_name) in enumerate(pending) if name and call_name == name),
+                0 if pending else None,
+            )
+            if call_id:
+                pending = [(item_id, item_name) for item_id, item_name in pending if item_id != str(call_id)]
+            elif match_index is not None:
+                message["tool_call_id"] = pending.pop(match_index)[0]
+
+
 def prepare_history(messages: list[dict[str, Any]], provider: str) -> list[dict[str, Any]]:
-    """Repair old/unsigned Google traces on replay without changing valid parts."""
-    prepared = [
-        assistant_turn(message, provider)
-        if provider == "gemini" and message.get("role") in {"assistant", "model"}
-        else to_wire(message)
-        for message in messages
-    ]
-    # Native candidate parts are retained in stored history for lossless replay
-    # and diagnostics, but the current Gemini client uses the OpenAI-compatible
-    # endpoint, whose wire format is tool_calls + extra_content.google.
-    if provider == "gemini":
-        for message in prepared:
-            message.pop("parts", None)
-            # Thought text is retained with the stored turn for internal
-            # diagnostics, but it is neither user-facing content nor part of
-            # the OpenAI-compatible Gemini request history.
-            message.pop("reasoning_content", None)
-    # Raw stored turns stay lossless. Other providers do not accept Google's
-    # opaque message extensions, so normalize only their outgoing wire copy.
-    if provider in {"openai", "deepseek", "ollama"}:
+    """Build a provider-ready copy while retaining the stored, provider-neutral turns."""
+    prepared: list[dict[str, Any]] = []
+    for message in messages:
+        role = message.get("role")
+        if role in {"assistant", "model"}:
+            turn = assistant_turn(message, "gemini" if provider == "gemini" else "")
+            _recover_function_calls_from_native_parts(turn)
+            if role == "model":
+                turn["role"] = "assistant"
+            prepared.append(turn)
+            continue
+        turn = to_wire(message)
+        if not isinstance(turn, dict):
+            continue
+        if turn.get("role") == "function":
+            turn["role"] = "tool"
+        prepared.append(turn)
+
+    # Gemini's native SDK consumes exact candidate parts and converts tool
+    # results to functionResponse parts. Never strip Google signatures here.
+    if provider in {"openai", "deepseek", "ollama", "openrouter"}:
         allowed = {"role", "content", "name", "tool_calls", "tool_call_id", "function_call", "refusal", "audio"}
         if provider == "deepseek":
             allowed.add("reasoning_content")
@@ -101,6 +157,7 @@ def prepare_history(messages: list[dict[str, Any]], provider: str) -> list[dict[
                     {key: value for key, value in call.items() if key in {"id", "type", "function"}}
                     for call in message["tool_calls"]
                 ]
+        _match_tool_result_ids(prepared)
     return prepared
 
 

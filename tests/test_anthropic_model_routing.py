@@ -81,6 +81,16 @@ class AnthropicProviderRoutingTests(unittest.IsolatedAsyncioTestCase):
             ("openrouter", "anthropic/claude-3.7-sonnet"),
         )
 
+    async def test_provider_dispatch_uses_claude_and_gpt_model_prefixes(self) -> None:
+        self.assertEqual(
+            main.resolve_model_provider("openai", "claude-opus-5-5"),
+            ("anthropic", "claude-opus-5-5"),
+        )
+        self.assertEqual(
+            main.resolve_model_provider("deepseek", "gpt-4o"),
+            ("openai", "gpt-4o"),
+        )
+
     async def test_anthropic_messages_preserve_tool_call_and_pair_result(self) -> None:
         system, messages = _anthropic_messages([
             {"role": "system", "content": "Use tools carefully."},
@@ -127,12 +137,12 @@ class AnthropicProviderRoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(request["system"], [{
             "type": "text",
             "text": "Be concise.",
-            "cache_control": {"type": "ephemeral"},
+            "cache_control": {"type": "ephemeral", "ttl": "5m"},
         }])
         self.assertEqual(request["model"], "claude-sonnet-5-5")
         self.assertEqual(request["tools"][0]["name"], "web_search")
-        self.assertEqual(request["tools"][0]["cache_control"], {"type": "ephemeral"})
-        self.assertEqual(request["cache_control"], {"type": "ephemeral"})
+        self.assertEqual(request["tools"][0]["cache_control"], {"type": "ephemeral", "ttl": "5m"})
+        self.assertEqual(request["cache_control"], {"type": "ephemeral", "ttl": "5m"})
         self.assertEqual(request["max_tokens"], 16384)
         self.assertEqual(request["thinking"], {
             "type": "adaptive",

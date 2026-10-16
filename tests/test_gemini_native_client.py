@@ -148,7 +148,8 @@ class GeminiNativeClientTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(completion.choices[0].message.content, "Gemini reply")
         request_contents = models.kwargs["contents"]
-        self.assertEqual([content.role for content in request_contents], ["user", "model", "tool"])
+        self.assertEqual([content.role for content in request_contents], ["user", "model", "user"])
+        self.assertTrue(all(content.role in {"user", "model"} for content in request_contents))
         model_part = request_contents[1].parts[0].model_dump(
             mode="json", exclude_none=True, by_alias=True
         )

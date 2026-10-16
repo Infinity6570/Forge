@@ -15,6 +15,11 @@ from openai.types.chat import ChatCompletion
 from llm_protocol import to_wire
 
 THINKING_BINDING_BETA = "thinking-binding-controls-2026-08-01"
+ANTHROPIC_CACHE_TTL = "5m"  # Anthropic's wire value for the requested 300-second TTL.
+
+
+def _anthropic_cache_control() -> dict[str, str]:
+    return {"type": "ephemeral", "ttl": ANTHROPIC_CACHE_TTL}
 THINKING_BLOCK_TYPES = {"thinking", "redacted_thinking"}
 
 
@@ -148,18 +153,18 @@ def _anthropic_request(kwargs: dict[str, Any]) -> dict[str, Any]:
         "model": model,
         "messages": messages,
         "max_tokens": max(16384, int(requested_max_tokens)),
-        "cache_control": {"type": "ephemeral"},
+        "cache_control": _anthropic_cache_control(),
         "extra_headers": {"anthropic-beta": THINKING_BINDING_BETA},
     }
     if system:
         request["system"] = [{
             "type": "text",
             "text": system,
-            "cache_control": {"type": "ephemeral"},
+            "cache_control": _anthropic_cache_control(),
         }]
     tools = _anthropic_tools(kwargs.get("tools"))
     if tools:
-        tools[-1]["cache_control"] = {"type": "ephemeral"}
+        tools[-1]["cache_control"] = _anthropic_cache_control()
         request["tools"] = tools
         choice = kwargs.get("tool_choice")
         if choice == "required":

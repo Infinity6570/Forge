@@ -151,7 +151,9 @@ def _make_contents(messages: list[dict[str, Any]]) -> tuple[list[types.Content],
             except (json.JSONDecodeError, TypeError):
                 response = {"result": tool_text}
             part = types.Part.from_function_response(name=name, response=response)
-            contents.append(types.Content(role="tool", parts=[part]))
+            # Gemini Content roles are limited to user/model. Function results
+            # are user turns even though their parts are functionResponse.
+            contents.append(types.Content(role="user", parts=[part]))
             continue
 
         if role == "user":
