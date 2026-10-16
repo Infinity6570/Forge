@@ -231,6 +231,10 @@ html[data-theme] .stream-model-badge {
   font:10px var(--font-mono); white-space:nowrap;
 }
 html[data-theme] .stream-model-badge { max-width:190px; overflow:hidden; text-overflow:ellipsis; color:var(--accent); }
+html[data-theme] .stream-route-badge {
+  max-width:150px; overflow:hidden; padding:2px 5px; border-left:1px solid color-mix(in srgb,var(--accent) 55%,transparent);
+  color:var(--text-muted); font:9px var(--font-mono); text-overflow:ellipsis; text-transform:uppercase; white-space:nowrap;
+}
 html[data-theme] .stream-status-badge .online-pip { width:6px; height:6px; }
 html[data-theme] .stream-heading-right .status-divider { display:none; }
 html[data-theme] .stream-heading-right .text-link { display:inline-flex; flex:none; align-items:center; gap:5px; white-space:nowrap; }
@@ -317,6 +321,8 @@ html[data-theme] .telemetry-stats strong { color:var(--accent); font-size:17px; 
 html[data-theme] .telemetry-model { display:grid; gap:4px; margin-top:9px; padding-top:8px; border-top:1px solid var(--border); }
 html[data-theme] .telemetry-model > strong { overflow-wrap:anywhere; color:var(--text-primary); font-size:13px; font-weight:600; }
 html[data-theme] .telemetry-model-id { overflow-wrap:anywhere; color:var(--text-muted); font-size:9px; }
+html[data-theme] .telemetry-route-decision { display:grid; justify-items:start; gap:4px; margin-top:5px; color:var(--accent); font:9px var(--font-mono); text-transform:uppercase; }
+html[data-theme] .telemetry-route-decision small { color:var(--text-muted); font-size:8px; line-height:1.4; text-transform:none; }
 html[data-theme] .telemetry-search { display:grid; gap:7px; margin-top:8px; padding-top:7px; border-top:1px solid var(--border); }
 html[data-theme] .telemetry-search-heading { display:flex; align-items:center; justify-content:space-between; gap:8px; }
 html[data-theme] .telemetry-search-mode { color:var(--accent); font-size:8px; text-transform:uppercase; }

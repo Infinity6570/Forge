@@ -37,6 +37,25 @@ test('stores a model by chat, restores it, and ignores malformed selections', ()
   }
 });
 
+test('persists provider-scoped auto routing independently for each chat', () => {
+  const cleanup = memoryStorage();
+  try {
+    saveChatModelPreference('thread-auto', { mode: 'auto', autoRouteMode: 'auto-gemini' });
+    assert.deepEqual(loadChatModelPreference('thread-auto'), {
+      mode: 'auto',
+      autoRouteMode: 'auto-gemini',
+    });
+    assert.equal(modeForSavedPreference(loadChatModelPreference('thread-auto')!), 'auto-gemini');
+    localStorage.setItem('forge:chat-model:bad-auto', JSON.stringify({
+      mode: 'auto',
+      autoRouteMode: 'auto-ollama',
+    }));
+    assert.equal(loadChatModelPreference('bad-auto'), null);
+  } finally {
+    cleanup();
+  }
+});
+
 test('restores the most recently used model in the selected thread', () => {
   const latest = newestThreadModel([
     { provider: 'deepseek', modelId: 'deepseek-chat', createdAt: '2026-01-01T00:00:00Z' },

@@ -1431,7 +1431,7 @@ AUTO_ROUTE_LABELS = {
 
 def classify_task_intent(prompt: str, selected_file_count: int = 0) -> str:
     text = prompt.casefold()
-    if re.search(r"\b(image|photo|picture|screenshot|diagram|visual|multimodal|describe this)\b", text) or selected_file_count:
+    if re.search(r"\b(image|photo|picture|screenshot|diagram|visual|multimodal|describe this)\b", text):
         return "image_multimodal"
     if re.search(r"\b(scopus|google scholar|literature review|systematic review|meta-analysis|academic search|papers|journal articles|clinical trials)\b", text):
         return "deep_academic_search"

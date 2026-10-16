@@ -58,6 +58,19 @@ export const AssistantTaskProvider = {
 /**
  * @nullable
  */
+export type AssistantTaskRoutingMode = typeof AssistantTaskRoutingMode[keyof typeof AssistantTaskRoutingMode] | null;
+
+
+export const AssistantTaskRoutingMode = {
+  'auto-gemini': 'auto-gemini',
+  'auto-claude': 'auto-claude',
+  'auto-openai': 'auto-openai',
+  'auto-global': 'auto-global',
+} as const;
+
+/**
+ * @nullable
+ */
 export type AssistantTaskRecommendationKind = typeof AssistantTaskRecommendationKind[keyof typeof AssistantTaskRecommendationKind] | null;
 
 
@@ -96,6 +109,12 @@ export interface AssistantTask {
   logs: TaskLog[];
   provider: AssistantTaskProvider;
   modelId: string;
+  /** @nullable */
+  routingMode: AssistantTaskRoutingMode;
+  /** @nullable */
+  routingIntent: string | null;
+  /** @nullable */
+  routingReason: string | null;
   /** @nullable */
   recommendationKind: AssistantTaskRecommendationKind;
   /** @nullable */
@@ -239,6 +258,16 @@ export const TaskInputProvider = {
   ollama: 'ollama',
 } as const;
 
+export type TaskInputAutoRouteMode = typeof TaskInputAutoRouteMode[keyof typeof TaskInputAutoRouteMode];
+
+
+export const TaskInputAutoRouteMode = {
+  'auto-gemini': 'auto-gemini',
+  'auto-claude': 'auto-claude',
+  'auto-openai': 'auto-openai',
+  'auto-global': 'auto-global',
+} as const;
+
 export interface TaskInput {
   /**
      * @minLength 1
@@ -255,6 +284,7 @@ export interface TaskInput {
      * @maxLength 120
      */
   model?: string;
+  autoRouteMode?: TaskInputAutoRouteMode;
   fileIds?: string[];
 }
 

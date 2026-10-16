@@ -587,7 +587,7 @@ function Dashboard() {
       return { provider: parts[1] as AssistantTask['provider'], model: parts[2] };
     }
     if (mode === 'last-used' && lastUsedModel?.provider && lastUsedModel.modelId) {
-      return { provider: lastUsedModel.provider, model: lastUsedModel.modelId };
+      return { provider: lastUsedModel.provider as AssistantTask['provider'], model: lastUsedModel.modelId };
     }
     if (mode === 'configured' && settingsQuery.data) {
       return { provider: settingsQuery.data.provider, model: settingsQuery.data.modelId };

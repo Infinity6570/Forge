@@ -8,6 +8,7 @@
 import type { AssistantTaskProvider } from './assistantTaskProvider';
 import type { AssistantTaskRecommendationKind } from './assistantTaskRecommendationKind';
 import type { AssistantTaskRecommendedProvider } from './assistantTaskRecommendedProvider';
+import type { AssistantTaskRoutingMode } from './assistantTaskRoutingMode';
 import type { AssistantTaskStatus } from './assistantTaskStatus';
 import type { TaskLog } from './taskLog';
 
@@ -26,6 +27,12 @@ export interface AssistantTask {
   logs: TaskLog[];
   provider: AssistantTaskProvider;
   modelId: string;
+  /** @nullable */
+  routingMode: AssistantTaskRoutingMode;
+  /** @nullable */
+  routingIntent: string | null;
+  /** @nullable */
+  routingReason: string | null;
   /** @nullable */
   recommendationKind: AssistantTaskRecommendationKind;
   /** @nullable */

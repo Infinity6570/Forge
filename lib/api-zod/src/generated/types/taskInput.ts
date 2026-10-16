@@ -5,6 +5,7 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { TaskInputAutoRouteMode } from './taskInputAutoRouteMode';
 import type { TaskInputProvider } from './taskInputProvider';
 
 export interface TaskInput {
@@ -23,5 +24,6 @@ export interface TaskInput {
      * @maxLength 120
      */
   model?: string;
+  autoRouteMode?: TaskInputAutoRouteMode;
   fileIds?: string[];
 }
