@@ -1,5 +1,6 @@
 """Local SQLite conversations and public thread APIs, independent of any host."""
 import json
+import os
 import re
 import uuid
 from contextlib import contextmanager
@@ -70,6 +71,31 @@ def malformed_empty_assistant(turn: dict[str, Any]) -> bool:
         content is None
         or (isinstance(content, str) and (not content.strip() or content.strip() == LEGACY_EMPTY_RESPONSE))
     )
+
+
+def _history_tool_limit() -> int:
+    """Max characters of one old tool result replayed into a new task (0 = no limit)."""
+    try:
+        return max(0, int(os.getenv("FORGE_HISTORY_TOOL_CHARS", "4000")))
+    except ValueError:
+        return 4000
+
+
+def compact_history_turn(turn: dict[str, Any], limit: int | None = None) -> dict[str, Any]:
+    """Shorten a large tool result from an earlier task before it is replayed.
+
+    The assistant's own reply from that task already summarises the result, so
+    replaying a 100k-character search dump on every later message only costs
+    cache writes. Truncation is deterministic, which keeps the cached prefix
+    stable between requests. The current task is never compacted.
+    """
+    limit = _history_tool_limit() if limit is None else limit
+    content = turn.get("content")
+    if limit <= 0 or turn.get("role") != "tool" or not isinstance(content, str) or len(content) <= limit:
+        return turn
+    omitted = len(content) - limit
+    note = f"\n[... {omitted} characters omitted from an earlier turn to save context; re-run the tool if the detail is needed]"
+    return {**turn, "content": content[:limit] + note}
 
 
 def sanitize_turns(turns: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -259,7 +285,7 @@ class ThreadStore:
                     if turn.get("tool_calls"):
                         turn["tool_calls"] = [{key: value for key, value in call.items()
                                               if key in {"id", "type", "function"}} for call in turn["tool_calls"]]
-                turns.append(turn)
+                turns.append(compact_history_turn(turn))
             return turns
 
     def checkpoint(self, task_id: str, messages: list[dict[str, Any]], start: int) -> None:

@@ -40,6 +40,7 @@ from fastapi.staticfiles import StaticFiles
 from openai import APIStatusError, AsyncOpenAI
 from llm_protocol import TextCallback, assistant_turn, collect_completion, prepare_history
 from model_client import AnthropicChatClient
+from usage_cost import anthropic_usage_summary
 from conversation_threads import ThreadStore, thread_routers
 from history_display import display_task
 from task_text_stream import TaskTextStreamHub
@@ -1704,6 +1705,12 @@ async def create_completion_with_fallback(
                     "Anthropic prompt cache · "
                     f"cache_read_input_tokens={cache_read} · "
                     f"cache_creation_input_tokens={cache_created}",
+                    "info",
+                    update_step=False,
+                )
+                log_task(
+                    task_id,
+                    anthropic_usage_summary(model_state["model"], usage),
                     "info",
                     update_step=False,
                 )

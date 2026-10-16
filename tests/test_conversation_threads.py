@@ -351,7 +351,21 @@ class ConversationTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("payload", response.text)
         self.assertNotIn("Z" * 10_000, response.text)
         self.assertNotIn("preserve-exactly", response.text)
-        self.assertEqual(main.THREADS.history(thread_id, "next"), turns)
+        replayed = main.THREADS.history(thread_id, "next")
+        self.assertEqual(len(replayed), len(turns))
+        # Only the old tool result text is shortened; tool calls, signatures and
+        # every other turn replay exactly.
+        self.assertEqual([replayed[i] for i in (0, 1, 3)], [turns[i] for i in (0, 1, 3)])
+        self.assertEqual(replayed[1]["tool_calls"][0]["extra_content"], calls[0]["extra_content"])
+        self.assertEqual(replayed[2]["tool_call_id"], "big-call")
+        self.assertTrue(replayed[2]["content"].startswith("R" * 4000))
+        self.assertLess(len(replayed[2]["content"]), 5000)
+        self.assertIn("omitted from an earlier turn", replayed[2]["content"])
+        # Setting the limit to 0 restores fully lossless replay.
+        import os
+        from unittest.mock import patch
+        with patch.dict(os.environ, {"FORGE_HISTORY_TOOL_CHARS": "0"}):
+            self.assertEqual(main.THREADS.history(thread_id, "next"), turns)
         for endpoint in ["/api/assistant/dashboard", "/api/assistant/tasks"]:
             self.assertLess(len((await self.client.get(endpoint)).content), 25_000)
 
