@@ -15,6 +15,7 @@ type Props = {
   onOpen: (task: AssistantTask) => void;
   messages?: ConversationMessage[];
   liveText?: { taskId: string; text: string };
+  onUserScrollUp?: () => void;
   hasEarlier?: boolean;
   loadingEarlier?: boolean;
   earlierError?: boolean;
@@ -165,7 +166,7 @@ const TaskArticle = memo(function TaskArticle({ task, extras, text, onOpen }: {
 
 const EMPTY_MESSAGES: ConversationMessage[] = [];
 
-export function ActivityStream({ tasks, loading, onOpen, messages, liveText, hasEarlier, loadingEarlier, earlierError, onLoadEarlier }: Props) {
+export function ActivityStream({ tasks, loading, onOpen, messages, liveText, onUserScrollUp, hasEarlier, loadingEarlier, earlierError, onLoadEarlier }: Props) {
   const scroller = useRef<HTMLDivElement>(null);
   const following = useRef(true);
   const prependSnapshot = useRef<{ height: number; top: number; anchor?: HTMLElement; offset: number } | null>(null);
@@ -203,6 +204,7 @@ export function ActivityStream({ tasks, loading, onOpen, messages, liveText, has
     scrollTimer.current = setTimeout(() => { programmatic.current = false; }, smooth && !reduced ? 800 : 0);
   }, []);
   const pauseFollow = useCallback(() => {
+    onUserScrollUp?.();
     prependSnapshot.current = null;
     programmatic.current = false;
     following.current = false;
@@ -210,7 +212,7 @@ export function ActivityStream({ tasks, loading, onOpen, messages, liveText, has
     if (scrollTimer.current) clearTimeout(scrollTimer.current);
     const el = scroller.current;
     if (el) el.scrollTo({ top: el.scrollTop, behavior: 'instant' });
-  }, []);
+  }, [onUserScrollUp]);
   const restorePrepend = useCallback(() => {
     const el = scroller.current;
     const snapshot = prependSnapshot.current;

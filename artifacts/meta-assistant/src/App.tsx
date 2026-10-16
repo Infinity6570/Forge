@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useThreadHistory } from '@/hooks/use-thread-history';
+import { SmoothStreamer } from '@/lib/smooth-streamer';
 import type { CSSProperties, FormEvent, ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
@@ -447,6 +448,8 @@ function Dashboard() {
   const [objective, setObjective] = useState('');
   const [submitError, setSubmitError] = useState('');
   const [liveText, setLiveText] = useState<{ taskId: string; text: string }>();
+  const liveStreamer = useRef<SmoothStreamer | null>(null);
+  const flushLiveText = useCallback(() => { liveStreamer.current?.flush(); }, []);
   const [stopRequestedTaskId, setStopRequestedTaskId] = useState<string>();
   const [stoppedTaskId, setStoppedTaskId] = useState<string>();
   const [selectedTaskId, setSelectedTaskId] = useState<string>();
@@ -526,28 +529,20 @@ function Dashboard() {
     }
     const taskId = streamTaskId;
     const activeThreadId = threadId;
-    let text = '';
-    let frameId: number | undefined;
     let disposed = false;
-    const publish = (next: string) => {
-      text = next;
-      const flush = () => {
-        frameId = undefined;
-        if (!disposed) setLiveText({ taskId, text });
-      };
-      if (frameId === undefined) {
-        frameId = window.requestAnimationFrame(flush);
-      }
-    };
+    const streamer = new SmoothStreamer((visibleText) => {
+      if (!disposed) setLiveText({ taskId, text: visibleText });
+    });
+    liveStreamer.current = streamer;
     const stream = new EventSource(`/api/assistant/tasks/${encodeURIComponent(taskId)}/stream`);
     stream.onmessage = (message) => {
       try {
         const event = JSON.parse(message.data) as { type?: string; text?: string; status?: string };
-        if (event.type === 'snapshot') publish(event.text ?? '');
-        else if (event.type === 'reset') publish('');
-        else if (event.type === 'delta') publish(text + (event.text ?? ''));
+        if (event.type === 'snapshot') streamer.replace(event.text ?? '');
+        else if (event.type === 'reset') streamer.replace('');
+        else if (event.type === 'delta') streamer.push(event.text ?? '');
         else if (event.type === 'end') {
-          publish(event.text ?? text);
+          streamer.complete(event.text);
           stream.close();
           void qc.invalidateQueries({ queryKey: getGetConversationThreadQueryKey(activeThreadId) });
           void qc.invalidateQueries({ queryKey: getGetAssistantTaskQueryKey(taskId) });
@@ -560,7 +555,8 @@ function Dashboard() {
     return () => {
       disposed = true;
       stream.close();
-      if (frameId !== undefined) window.cancelAnimationFrame(frameId);
+      streamer.dispose();
+      if (liveStreamer.current === streamer) liveStreamer.current = null;
     };
   }, [threadId, streamTaskId, qc]);
   const streamTitle = activeExecution ? liveStreamTask?.objective ?? threadTitle : threadTitle;
@@ -670,7 +666,7 @@ function Dashboard() {
       <div className="stream-heading-main">{isGenerating && <span className="status-indicator live live-label" data-testid="status-streaming" aria-live="polite"><span className="online-pip working" />STREAMING</span>}<h2 className="thread-title" title={streamTitle} data-testid="text-thread-title">{streamTitle}</h2></div>
       <div className="stream-heading-right"><div className="command-status" data-testid="status-agent-state"><span className="stream-model-badge">{settingsQuery.data ? modelDisplayName(settingsQuery.data.provider, settingsQuery.data.modelId) : 'Configured model'}</span><span className="stream-status-badge"><span className={`online-pip ${isGenerating ? 'working' : ''}`} />{summary.isLoading ? 'Connecting' : isGenerating ? 'Running' : 'Idle'}</span></div><Link href="/tasks" className="text-link" data-testid="link-all-tasks">Task activity <ArrowRight size={14} /></Link></div>
     </div>
-      {threadId && threadDetail.isError && !threadStale && !threadDetail.data ? <QueryProblem retry={() => threadDetail.refetch()} message="This chat could not be loaded." /> : <ActivityStream key={threadId ?? 'new'} tasks={tasks} messages={threadMessages} liveText={liveText} loading={!!threadId && threadDetail.isLoading} onOpen={(task) => setSelectedTaskId(task.id)} hasEarlier={threadDetail.hasNextPage} loadingEarlier={threadDetail.isFetchingNextPage} earlierError={threadDetail.isFetchNextPageError} onLoadEarlier={() => threadDetail.fetchNextPage()} />}
+      {threadId && threadDetail.isError && !threadStale && !threadDetail.data ? <QueryProblem retry={() => threadDetail.refetch()} message="This chat could not be loaded." /> : <ActivityStream key={threadId ?? 'new'} tasks={tasks} messages={threadMessages} liveText={liveText} onUserScrollUp={flushLiveText} loading={!!threadId && threadDetail.isLoading} onOpen={(task) => setSelectedTaskId(task.id)} hasEarlier={threadDetail.hasNextPage} loadingEarlier={threadDetail.isFetchingNextPage} earlierError={threadDetail.isFetchNextPageError} onLoadEarlier={() => threadDetail.fetchNextPage()} />}
     </section>
     <TaskActionDock task={actionTask.data} />
     <section className="composer-panel command-composer">
