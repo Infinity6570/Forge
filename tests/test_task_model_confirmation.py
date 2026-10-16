@@ -138,6 +138,24 @@ class TaskModelConfirmationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(thread.json()["tasks"][-1]["modelId"], "deepseek-reasoner")
         await self.finish_worker(task["id"])
 
+    async def test_picker_model_update_persists_immediately_without_a_chat_request(self) -> None:
+        created = await self.post("/api/assistant/threads", {"title": "Model selection sync"})
+        self.assertEqual(created.status_code, 201, created.text)
+        thread_id = created.json()["id"]
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=main.app),
+            base_url="http://127.0.0.1",
+        ) as client:
+            updated = await client.patch(
+                f"/api/assistant/threads/{thread_id}",
+                json={"provider": "gemini", "modelId": "gemini-3.8-flash"},
+            )
+            loaded = await client.get(f"/api/assistant/threads/{thread_id}")
+        self.assertEqual(updated.status_code, 200, updated.text)
+        self.assertEqual(loaded.status_code, 200, loaded.text)
+        self.assertEqual(loaded.json()["provider"], "gemini")
+        self.assertEqual(loaded.json()["modelId"], "gemini-3.8-flash")
+
     async def test_complex_task_waits_without_starting_worker_until_choice(self) -> None:
         task = await self.create_task("Refactor the architecture across multiple files.")
 

@@ -7,10 +7,11 @@ type Props = {
   onChange: (value: string) => void;
   configuredLabel: string;
   lastUsedLabel: string | null;
+  currentSessionLabel?: string;
   groups: ModelPickerGroup[];
 };
 
-export function ChatModelPicker({ value, onChange, configuredLabel, lastUsedLabel, groups }: Props) {
+export function ChatModelPicker({ value, onChange, configuredLabel, lastUsedLabel, currentSessionLabel, groups }: Props) {
   const selectedParts = value.split('|');
   const hasListedSelection = selectedParts.length === 3 && groups.some((group) =>
     group.id === selectedParts[1] && group.items.some((item) => item.id === selectedParts[2]),
@@ -23,7 +24,7 @@ export function ChatModelPicker({ value, onChange, configuredLabel, lastUsedLabe
       <SelectGroup>
         <SelectItem value="configured" className="model-menu-item">{configuredLabel}</SelectItem>
         <SelectItem value="last-used" disabled={!lastUsedLabel} className="model-menu-item">Last used · {lastUsedLabel ?? 'unavailable'}</SelectItem>
-        {!hasListedSelection && selectedParts.length === 3 && selectedParts[0] === 'direct' && <SelectItem value={value} className="model-menu-item">Current session · {selectedParts[2]}</SelectItem>}
+        {!hasListedSelection && selectedParts.length === 3 && selectedParts[0] === 'direct' && <SelectItem value={value} className="model-menu-item">{currentSessionLabel ?? selectedParts[2]}</SelectItem>}
       </SelectGroup>
       {groups.map((group) => <SelectGroup key={group.id}>
         <SelectSeparator className="model-menu-sep" />

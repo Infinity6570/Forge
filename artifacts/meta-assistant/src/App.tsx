@@ -156,12 +156,29 @@ function formatSize(bytes: number) {
 }
 
 function modelDisplayName(provider?: string | null, model?: string | null) {
-  if (provider === 'deepseek' && model === 'deepseek-reasoner') return 'DeepSeek Reasoner';
-  if (provider === 'gemini' && model === 'gemini-2.5-pro') return 'Gemini 2.5 Pro';
-  if (provider === 'openrouter' && model === 'anthropic/claude-3.7-sonnet') return 'Claude 3.7 Sonnet';
-  if (provider === 'anthropic') return `Claude · ${model || 'model'}`;
-  if (provider === 'openai' && model === 'gpt-4.1') return 'GPT-4.1';
-  return model || 'recommended model';
+  const knownNames: Record<string, string> = {
+    'deepseek-chat': 'DeepSeek Chat',
+    'deepseek-reasoner': 'DeepSeek Reasoner',
+    'gemini-2.5-flash': 'Gemini 2.5 Flash',
+    'gemini-2.5-pro': 'Gemini 2.5 Pro',
+    'gemini-3.5-flash-lite': 'Gemini 3.5 Flash Lite',
+    'gemini-3.8-flash': 'Gemini 3.8 Flash',
+    'gemma-4-31b-it': 'Gemma 4 31B',
+    'gpt-4o': 'GPT-4o',
+    'gpt-4o-mini': 'GPT-4o mini',
+    'gpt-4.1': 'GPT-4.1',
+    'o3-mini': 'o3-mini',
+    'claude-haiku-5-5': 'Claude Haiku 5.5',
+    'claude-sonnet-5-5': 'Claude Sonnet 5.5',
+    'claude-opus-5-5': 'Claude Opus 5.5',
+    'anthropic/claude-3.7-sonnet': 'Claude 3.7 Sonnet',
+    'anthropic/claude-haiku-5.5': 'Claude Haiku 5.5',
+    'anthropic/claude-sonnet-5.5': 'Claude Sonnet 5.5',
+    'anthropic/claude-opus-5.5': 'Claude Opus 5.5',
+    'deepseek/deepseek-chat': 'DeepSeek Chat (OpenRouter)',
+  };
+  if (!model) return 'recommended model';
+  return knownNames[model] ?? (provider === 'anthropic' ? `Claude · ${model}` : model);
 }
 
 function statusTone(status: string) {
@@ -544,7 +561,7 @@ function Dashboard() {
     if (!threadId || !model?.provider) return;
     const version = ++modelSelectionVersion.current;
     setSubmitError('');
-    void conv.setModel(threadId, model.provider, model.model).catch(() => {
+    void conv.setModel(threadId, model.provider as Parameters<typeof conv.setModel>[1], model.model).catch(() => {
       if (modelSelectionVersion.current !== version) return;
       const persisted = referenceModel;
       const restoredMode = persisted?.provider && persisted.modelId
@@ -590,6 +607,9 @@ function Dashboard() {
     window.addEventListener('forge:model-applied', syncModel);
     return () => window.removeEventListener('forge:model-applied', syncModel);
   }, [changeModelMode]);
+  const displayModelMode = threadId && !threadDetail.data && conv.currentModel
+    ? `direct|${conv.currentModel.provider}|${conv.currentModel.modelId}`
+    : modelMode;
   const actionTaskId = tasks.find((task) => task.requiresApproval || task.requiresModelConfirmation)?.id
     ?? tasks.find((task) => ['running', 'processing', 'queued', 'awaiting_confirmation', 'awaiting_approval'].includes(task.status))?.id
     ?? [...tasks].reverse().find((task) => task.recommendationKind === 'fallback')?.id ?? '';
@@ -691,7 +711,7 @@ function Dashboard() {
     const text = objective.trim();
     if (!text || createTask.isPending || uploadingAttachment || threadBusy) return;
     setSubmitError('');
-    const selectedModel = resolveModelMode(modelMode);
+    const selectedModel = resolveModelMode(displayModelMode);
     if (!selectedModel) {
       setSubmitError('The active model is still loading. Wait a moment and try again.');
       return;
@@ -752,7 +772,7 @@ function Dashboard() {
       if (attachmentInput.current) attachmentInput.current.value = '';
     }
   };
-  const selectedModelForDisplay = resolveModelMode(modelMode);
+  const selectedModelForDisplay = resolveModelMode(displayModelMode);
   return <AppShell page="home"><div className="dashboard-page command-center enter" data-task-active={activeExecution ? 'true' : 'false'} data-testid="dashboard-command-center">
     {summary.isError && <QueryProblem retry={() => summary.refetch()} message="Your overview is temporarily unavailable." />}
     <section className={`activity-panel execution-panel${thinkingAura ? ' cyber-thinking-aura' : ''}`} data-task-active={isGenerating ? 'true' : 'false'}><div className="activity-panel-heading">
@@ -770,7 +790,7 @@ function Dashboard() {
         {submitError && <p className="field-error" role="alert">{submitError}</p>}
         <div className="composer-bottom"><div className="composer-actions">
           <span className="composer-counter" data-testid="text-prompt-counter">{objective.length.toLocaleString()} / 12,000</span>
-          <ChatModelPicker value={modelMode} onChange={changeModelMode} configuredLabel={settingsQuery.data ? modelDisplayName(settingsQuery.data.provider, settingsQuery.data.modelId) : 'Loading model…'} lastUsedLabel={lastUsedModel?.provider && lastUsedModel.modelId ? modelDisplayName(lastUsedModel.provider, lastUsedModel.modelId) : null} groups={Object.entries(models).filter(([groupProvider]) => groupProvider !== 'ollama' || settingsQuery.data?.localSetupAllowed).map(([groupProvider, items]) => ({ id: groupProvider, label: groupProvider === 'gemini' ? 'Google Gemini' : groupProvider === 'anthropic' ? 'Anthropic Claude' : groupProvider === 'openrouter' ? 'OpenRouter' : groupProvider === 'ollama' ? 'Local · Ollama' : groupProvider === 'openai' ? 'OpenAI' : 'DeepSeek', items }))} />
+          <ChatModelPicker value={displayModelMode} onChange={changeModelMode} configuredLabel={settingsQuery.data ? modelDisplayName(settingsQuery.data.provider, settingsQuery.data.modelId) : 'Loading model…'} lastUsedLabel={lastUsedModel?.provider && lastUsedModel.modelId ? modelDisplayName(lastUsedModel.provider, lastUsedModel.modelId) : null} currentSessionLabel={selectedModelForDisplay ? modelDisplayName(selectedModelForDisplay.provider, selectedModelForDisplay.model) : undefined} groups={Object.entries(models).filter(([groupProvider]) => groupProvider !== 'ollama' || settingsQuery.data?.localSetupAllowed).map(([groupProvider, items]) => ({ id: groupProvider, label: groupProvider === 'gemini' ? 'Google Gemini' : groupProvider === 'anthropic' ? 'Anthropic Claude' : groupProvider === 'openrouter' ? 'OpenRouter' : groupProvider === 'ollama' ? 'Local · Ollama' : groupProvider === 'openai' ? 'OpenAI' : 'DeepSeek', items }))} />
           <input ref={attachmentInput} type="file" hidden onChange={(event) => { void attachFile(event.currentTarget.files?.[0]); }} data-testid="input-task-attachment" />
           <button type="button" className="button button-quiet submit-button composer-attach" title="Attach a file" aria-label={uploadingAttachment ? 'Uploading attachment' : 'Attach a file'} onClick={() => attachmentInput.current?.click()} disabled={uploadingAttachment} data-testid="button-attach-task-file">{uploadingAttachment ? <LoaderCircle className="spin" size={12} /> : <Upload size={12} />}</button>
           {stopTargetId ? <button type="button" className="button submit-button button-stop-task" disabled={abort.isPending || stopRequestedTaskId === stopTargetId} title="Stop the active task (Escape)" aria-label="Stop active task" aria-keyshortcuts="Escape" onClick={() => requestStop(stopTargetId)} data-testid="button-stop-task"><StopCircle size={12} />{stopRequestedTaskId === stopTargetId ? 'Stopping…' : 'Stop task'}<kbd>Esc</kbd></button>
@@ -1308,8 +1328,8 @@ const models = {
     { id: 'o3-mini', name: 'o3-mini', detail: 'Reasoning for technical work', descriptor: 'DEEP FOCUS', color: 'gold' },
   ],
   deepseek: [
-    { id: 'deepseek-chat', name: 'deepseek-chat', detail: 'Default · Balanced V3/V4-Flash mode · Tool calling', descriptor: 'BALANCED', color: 'sage' },
-    { id: 'deepseek-reasoner', name: 'deepseek-reasoner', detail: 'Thinking mode for complex logic and math', descriptor: 'DEEP FOCUS', color: 'gold' },
+    { id: 'deepseek-chat', name: 'DeepSeek Chat', detail: 'Default · Balanced V3/V4-Flash mode · Tool calling', descriptor: 'BALANCED', color: 'sage' },
+    { id: 'deepseek-reasoner', name: 'DeepSeek Reasoner', detail: 'Thinking mode for complex logic and math', descriptor: 'DEEP FOCUS', color: 'gold' },
   ],
   gemini: [
     { id: 'gemini-3.5-flash-lite', name: 'Gemini 3.5 Flash Lite', detail: 'Default · Budget-first', descriptor: 'QUICK', color: 'blue' },
