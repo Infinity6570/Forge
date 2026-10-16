@@ -53,6 +53,7 @@ class TaskTextSSETests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("text/event-stream", response.headers["content-type"])
         self.assertEqual(response.headers["cache-control"], "no-cache, no-transform")
         self.assertEqual(response.headers["x-accel-buffering"], "no")
+        self.assertNotIn("content-encoding", response.headers)
         body = response.text
         self.assertIn('"type":"reset"', body)
         self.assertIn('"type":"delta","text":"Fast"', body)

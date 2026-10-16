@@ -318,6 +318,16 @@ class ConversationTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual([t["id"] for t in threads],
                              ["newest-active", "newer-created", "older-created", "pinned-old"])
 
+    async def test_metadata_response_is_gzipped_above_threshold(self):
+        with main.THREADS.transaction() as db:
+            for n in range(15):
+                main.THREADS.create(db, f"Saved conversation {n}")
+        response = await self.client.get("/api/assistant/threads", headers={"Accept-Encoding": "gzip"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers["content-encoding"], "gzip")
+        self.assertIn("Accept-Encoding", response.headers["vary"])
+        self.assertEqual(len(response.json()), 15)
+
     async def test_large_tool_payload_is_display_only_and_startup_is_metadata(self):
         timestamp = main.utc_now()
         calls = [{"id": "big-call", "type": "function", "function": {

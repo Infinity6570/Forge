@@ -259,19 +259,32 @@ export function ActivityStream({ tasks, loading, onOpen, messages, liveText, has
     return () => ro.disconnect();
   }, [loading, loadingEarlier, toBottom, restorePrepend, ordered.length]);
 
+  useEffect(() => {
+    const el = scroller.current;
+    if (!el) return;
+    const wheel = (event: WheelEvent) => { if (event.deltaY < 0) pauseFollow(); };
+    const scroll = () => {
+      if (programmatic.current) return;
+      prependSnapshot.current = null;
+      const distance = distanceFromBottom(el);
+      following.current = distance < 48;
+      setPaused(distance > 200);
+    };
+    el.addEventListener('wheel', wheel, { passive: true });
+    el.addEventListener('scroll', scroll, { passive: true });
+    el.addEventListener('touchstart', pauseFollow, { passive: true });
+    return () => {
+      el.removeEventListener('wheel', wheel);
+      el.removeEventListener('scroll', scroll);
+      el.removeEventListener('touchstart', pauseFollow);
+    };
+  }, [loading, ordered.length, pauseFollow]);
+
   if (loading) return <div className="activity-stream exec-stream"><div className="exec-skeleton" aria-busy="true"><i /><i /><i /><i /></div></div>;
   if (!ordered.length) return <div className="activity-stream exec-stream"><div className="stream-empty"><Activity size={20} /><strong>Waiting for your first task</strong><span>Send a request below. Real execution steps will appear here.</span></div></div>;
 
   return <div className="exec-wrap">
-    <div className="activity-stream exec-stream" ref={scroller} data-testid="activity-stream" tabIndex={0} onPointerDown={(e) => { if (e.clientX >= e.currentTarget.getBoundingClientRect().right - 16) pauseFollow(); }} onWheel={(e) => { if (e.deltaY < 0) pauseFollow(); }} onTouchStart={pauseFollow} onKeyDown={(e) => { if (['ArrowUp', 'PageUp', 'Home'].includes(e.key)) pauseFollow(); }} onScroll={(e) => {
-      if (programmatic.current) return;
-      prependSnapshot.current = null;
-      const el = e.currentTarget;
-      const distance = distanceFromBottom(el);
-      const near = distance < 48;
-      following.current = near;
-      setPaused(distance > 200);
-    }}><div className="exec-inner">
+    <div className="activity-stream exec-stream" ref={scroller} data-testid="activity-stream" tabIndex={0} onPointerDown={(e) => { if (e.clientX >= e.currentTarget.getBoundingClientRect().right - 16) pauseFollow(); }} onKeyDown={(e) => { if (['ArrowUp', 'PageUp', 'Home'].includes(e.key)) pauseFollow(); }}><div className="exec-inner">
       {hasEarlier && <div className="exec-earlier"><button type="button" disabled={loadingEarlier} onClick={() => {
         const el = scroller.current;
         if (!el || !onLoadEarlier) return;

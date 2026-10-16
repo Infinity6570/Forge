@@ -264,8 +264,7 @@ function AppShell({ children, page }: { children: ReactNode; page: Page }) {
     setPreviewMaximized(false);
   };
   const renderNavItem = ({ href, label, icon: Icon }: typeof navItems[number]) => <Link key={href} href={href} className={`nav-link ${current === (href === '/' ? 'home' : href.slice(1)) ? 'active' : ''}`} onClick={() => setMobileOpen(false)} aria-label={label} title={sidebarCollapsed ? label : undefined} data-testid={`link-nav-${href === '/' ? 'home' : href.slice(1)}`}><Icon size={17} /><span>{label}</span>{href === '/tasks' && <span className="nav-trailing"><span className="nav-dot" /></span>}</Link>;
-  return <div className={`app-frame shell-noise ${inspectorOpen ? 'inspector-open' : 'inspector-closed'} ${sidebarCollapsed ? 'sidebar-collapsed' : ''} ${previewMaximized ? 'preview-maximized' : ''}`} style={{ '--inspector-width': `${displayedInspectorWidth}px`, ...(sidebarCollapsed && viewportWidth > 900 ? { '--sidebar-w': '64px' } : {}) } as CSSProperties}>
-    <AmbientBackground />
+  return <><AmbientBackground /><div className={`app-frame shell-noise ${inspectorOpen ? 'inspector-open' : 'inspector-closed'} ${sidebarCollapsed ? 'sidebar-collapsed' : ''} ${previewMaximized ? 'preview-maximized' : ''}`} style={{ '--inspector-width': `${displayedInspectorWidth}px`, ...(sidebarCollapsed && viewportWidth > 900 ? { '--sidebar-w': '64px' } : {}) } as CSSProperties}>
     <aside className={`sidebar ${sidebarCollapsed ? 'sidebar-collapsed' : ''} ${mobileOpen ? 'mobile-open' : ''}`}>
       <div className="brand"><div className="brand-mark" aria-hidden="true"><svg viewBox="0 0 32 32" fill="none"><path d="M5 9.5 16 4l11 5.5-4.7 2.35L16 9l-6.3 2.85L5 9.5Z" /><path d="m5 9.5 2.8 12L16 27l8.2-5.5L27 9.5" /><path d="m9.7 11.85 1.55 7.1L16 22l4.75-3.05 1.55-7.1" /><path d="m11.25 18.95 4.75-2.6 4.75 2.6M16 9v7.35" /></svg></div><div className="brand-copy"><div className="brand-name">Forge</div><div className="brand-caption">LOCAL OPERATIONS</div></div><span className="runtime-ready-dot" aria-label="Local runtime ready" title="Local runtime ready" /><button className="sidebar-close icon-button" onClick={() => setMobileOpen(false)} aria-label="Close navigation"><X size={17} /></button></div>
       <NewChatAction collapsed={sidebarCollapsed} onPicked={() => setMobileOpen(false)} />
@@ -285,7 +284,7 @@ function AppShell({ children, page }: { children: ReactNode; page: Page }) {
     </main>
     {inspectorOpen && <div className="inspector-resize" role="separator" aria-orientation="vertical" aria-label="Resize workspace inspector" aria-valuemin={range.min} aria-valuemax={range.max} aria-valuenow={displayedInspectorWidth} tabIndex={0} onPointerDown={(event) => { event.preventDefault(); setResizingInspector(true); }} onKeyDown={(event) => { if (event.key === 'ArrowLeft') setInspectorWidth(Math.min(range.max, displayedInspectorWidth + 10)); if (event.key === 'ArrowRight') setInspectorWidth(Math.max(range.min, displayedInspectorWidth - 10)); }} data-testid="separator-inspector"><GripVertical size={14} /></div>}
     {inspectorOpen && <InspectorPanel onClose={closeInspector} defaultTab={current === 'home' ? 'telemetry' : 'preview'} previewMaximized={previewMaximized} onPreviewMaximizedChange={setPreviewMaximized} />}
-  </div>;
+  </div></>;
 }
 
 function ReminderNotifications() {
@@ -530,16 +529,13 @@ function Dashboard() {
     let text = '';
     let frameId: number | undefined;
     let disposed = false;
-    const publish = (next: string, immediate = false) => {
+    const publish = (next: string) => {
       text = next;
       const flush = () => {
         frameId = undefined;
         if (!disposed) setLiveText({ taskId, text });
       };
-      if (immediate) {
-        if (frameId !== undefined) window.cancelAnimationFrame(frameId);
-        flush();
-      } else if (frameId === undefined) {
+      if (frameId === undefined) {
         frameId = window.requestAnimationFrame(flush);
       }
     };
@@ -551,7 +547,7 @@ function Dashboard() {
         else if (event.type === 'reset') publish('');
         else if (event.type === 'delta') publish(text + (event.text ?? ''));
         else if (event.type === 'end') {
-          publish(event.text ?? text, true);
+          publish(event.text ?? text);
           stream.close();
           void qc.invalidateQueries({ queryKey: getGetConversationThreadQueryKey(activeThreadId) });
           void qc.invalidateQueries({ queryKey: getGetAssistantTaskQueryKey(taskId) });

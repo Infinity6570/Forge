@@ -2243,24 +2243,25 @@ html[data-theme] .inspector-content .preview-frame {
 #root { position:relative;isolation:isolate; }
 .ambient-background {
   position:fixed;
-  z-index:-1;
+  z-index:0;
   inset:0;
   display:none;
   width:100vw;
   height:100vh;
-  opacity:.3;
+  opacity:1;
   pointer-events:none;
+  transform:translate3d(0,0,0);
+  backface-visibility:hidden;
+  isolation:isolate;
+  contain:layout style paint;
 }
 html[data-theme="scifi"][data-cyber-fx="on"] .ambient-background { display:block; }
 html[data-theme="scifi"] #root { background:transparent; }
-html[data-theme="scifi"] body {
-  background:
-    radial-gradient(ellipse at 76% 43%,rgba(3,34,49,.42),transparent 42%),
-    radial-gradient(ellipse at 14% 82%,rgba(18,8,37,.34),transparent 42%),
-    var(--bg-main)!important;
-}
+html[data-theme="scifi"],
+html[data-theme="scifi"] body { background:#04070d!important; }
 html[data-theme="scifi"] .app-frame {
   position:relative;
+  z-index:1;
   isolation:isolate;
   background:transparent!important;
 }
@@ -2299,9 +2300,7 @@ html[data-theme="scifi"] .preview-frame-shell {
   transition:border-color .2s ease,box-shadow .2s ease,background-color .2s ease;
 }
 html[data-theme="scifi"] .sidebar,
-html[data-theme="scifi"] .right-inspector {
-  background-color:rgba(3,8,19,.88)!important;
-}
+html[data-theme="scifi"] .right-inspector { background:rgba(8,13,24,.68)!important; }
 html[data-theme="scifi"] .topbar {
   background-color:rgba(4,9,20,.82)!important;
   box-shadow:0 8px 26px rgba(0,0,0,.2),inset 0 -1px rgba(0,243,255,.08);
@@ -2344,15 +2343,34 @@ html[data-theme="scifi"][data-cyber-fx="on"] body::after {
 /* Skip off-screen chat paint/layout; raw accordions mount only when opened. */
 .exec-task {
   content-visibility:auto;
-  contain-intrinsic-size: auto 120px;
+  contain-intrinsic-size: auto 140px;
 }
 html[data-theme="scifi"] .activity-panel,
 html[data-theme="scifi"] .exec-task,
 html[data-theme="scifi"] .exec-result {
-  /* Large scrolling reading surfaces must not re-blur every streamed token. */
+  /* Text itself stays unfiltered; glass lives on its outer compositor layer. */
   -webkit-backdrop-filter:none!important;
   backdrop-filter:none!important;
 }
+html[data-theme="scifi"] :is(.sidebar,.activity-panel,.right-inspector) {
+  background:rgba(8,13,24,.68)!important;
+  -webkit-backdrop-filter:blur(12px)!important;
+  backdrop-filter:blur(12px)!important;
+}
+html[data-theme="scifi"] :is(.sidebar,.exec-stream,.right-inspector) {
+  transform:translate3d(0,0,0);
+  backface-visibility:hidden;
+  isolation:isolate;
+  contain:layout style paint;
+}
+html[data-theme="scifi"] :is(.exec-task,.exec-result,.exec-inner,.preview-workspace) {
+  background:transparent!important;
+}
+html[data-theme="scifi"] .telemetry-section { background:rgba(8,13,24,.22)!important; }
+html[data-theme="scifi"] :is(.button,.icon-button,.nav-link,.theme-option,.cyber-fx-toggle,.filter-pill,.preview-mode-switcher button) {
+  transition:transform .18s ease,opacity .18s ease;
+}
+.exec-step:not([open]) { content-visibility:auto; contain-intrinsic-size:auto 140px; }
 .exec-thinking .exec-steps,
 .exec-raw {
   max-height:300px;
@@ -2376,6 +2394,6 @@ html[data-theme="scifi"] .exec-result {
 .chat-archive-controls [role="alertdialog"] { padding:8px; font-size:12px; color:var(--text-primary); }
 .chat-archive-controls [role="alertdialog"] p { margin-bottom:8px; }
 @media(prefers-reduced-motion:reduce) {
-  .ambient-background { opacity:.15; }
+  .ambient-background { opacity:.7; }
   html[data-theme="scifi"][data-cyber-fx="on"] body::after { animation:none!important; }
 }

@@ -34,6 +34,7 @@ from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from dotenv import load_dotenv, set_key
 from fastapi import FastAPI, File, Form, HTTPException, Request, Response, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from openai import APIStatusError, AsyncOpenAI
@@ -3090,6 +3091,7 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title="Universal Meta-Agent Assistant", version="1.0.0", lifespan=lifespan)
+app.add_middleware(GZipMiddleware, minimum_size=1000, compresslevel=4)
 for conversation_router in thread_routers(THREADS, task_dict, redact_provider_keys):
     app.include_router(conversation_router)
 app.add_middleware(
