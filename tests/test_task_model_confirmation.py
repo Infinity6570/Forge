@@ -109,6 +109,35 @@ class TaskModelConfirmationTests(unittest.IsolatedAsyncioTestCase):
         )
         await self.finish_worker(task["id"])
 
+    async def test_explicit_model_field_routes_and_is_saved_with_the_thread(self) -> None:
+        response = await self.post(
+            "/api/assistant/tasks",
+            {
+                "objective": "Check a selected model override.",
+                "threadId": None,
+                "provider": "deepseek",
+                "modelId": "deepseek-chat",
+                "model": "deepseek-reasoner",
+                "fileIds": [],
+            },
+        )
+        self.assertEqual(response.status_code, 201, response.text)
+        task = response.json()
+        self.assertEqual(task["provider"], "deepseek")
+        self.assertEqual(task["modelId"], "deepseek-reasoner")
+        await self.wait_for_worker()
+        self.assertEqual(self.worker_calls[0][1:3], ("deepseek", "deepseek-reasoner"))
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=main.app),
+            base_url="http://127.0.0.1",
+        ) as client:
+            thread = await client.get(f"/api/assistant/threads/{task['threadId']}")
+        self.assertEqual(thread.status_code, 200, thread.text)
+        self.assertEqual(thread.json()["provider"], "deepseek")
+        self.assertEqual(thread.json()["modelId"], "deepseek-reasoner")
+        self.assertEqual(thread.json()["tasks"][-1]["modelId"], "deepseek-reasoner")
+        await self.finish_worker(task["id"])
+
     async def test_complex_task_waits_without_starting_worker_until_choice(self) -> None:
         task = await self.create_task("Refactor the architecture across multiple files.")
 

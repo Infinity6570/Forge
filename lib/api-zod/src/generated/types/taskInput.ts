@@ -18,5 +18,10 @@ export interface TaskInput {
   provider?: TaskInputProvider;
   /** @maxLength 120 */
   modelId?: string;
+  /**
+     * @minLength 1
+     * @maxLength 120
+     */
+  model?: string;
   fileIds?: string[];
 }

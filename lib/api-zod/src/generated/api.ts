@@ -65,10 +65,16 @@ export const ListConversationThreadsQueryParams = zod.object({
   "includeArchived": zod.coerce.boolean().default(listConversationThreadsQueryIncludeArchivedDefault)
 })
 
+export const listConversationThreadsResponseModelIdMax = 120;
+
+
+
 export const ListConversationThreadsResponseItem = zod.object({
   "id": zod.string(),
   "title": zod.string(),
   "pinned": zod.boolean(),
+  "provider": zod.union([zod.literal('openai'),zod.literal('deepseek'),zod.literal('gemini'),zod.literal('anthropic'),zod.literal('openrouter'),zod.literal('ollama'),zod.literal(null)]).nullable(),
+  "modelId": zod.string().max(listConversationThreadsResponseModelIdMax).nullable(),
   "activeTaskId": zod.string().nullable(),
   "messageCount": zod.number().int(),
   "historyBytes": zod.number().int().optional(),
@@ -88,10 +94,16 @@ export const CreateConversationThreadBody = zod.object({
   "title": zod.string().min(1).max(createConversationThreadBodyTitleMax).default(createConversationThreadBodyTitleDefault)
 })
 
+export const createConversationThreadResponseModelIdMax = 120;
+
+
+
 export const CreateConversationThreadResponse = zod.object({
   "id": zod.string(),
   "title": zod.string(),
   "pinned": zod.boolean(),
+  "provider": zod.union([zod.literal('openai'),zod.literal('deepseek'),zod.literal('gemini'),zod.literal('anthropic'),zod.literal('openrouter'),zod.literal('ollama'),zod.literal(null)]).nullable(),
+  "modelId": zod.string().max(createConversationThreadResponseModelIdMax).nullable(),
   "activeTaskId": zod.string().nullable(),
   "messageCount": zod.number().int(),
   "historyBytes": zod.number().int().optional(),
@@ -116,10 +128,16 @@ export const GetConversationThreadQueryParams = zod.object({
   "before": zod.coerce.number().int().min(1).optional()
 })
 
+export const getConversationThreadResponseOneModelIdMax = 120;
+
+
+
 export const GetConversationThreadResponse = zod.object({
   "id": zod.string(),
   "title": zod.string(),
   "pinned": zod.boolean(),
+  "provider": zod.union([zod.literal('openai'),zod.literal('deepseek'),zod.literal('gemini'),zod.literal('anthropic'),zod.literal('openrouter'),zod.literal('ollama'),zod.literal(null)]).nullable(),
+  "modelId": zod.string().max(getConversationThreadResponseOneModelIdMax).nullable(),
   "activeTaskId": zod.string().nullable(),
   "messageCount": zod.number().int(),
   "historyBytes": zod.number().int().optional(),
@@ -191,10 +209,16 @@ export const UpdateConversationThreadBody = zod.object({
   "archived": zod.boolean().optional()
 })
 
+export const updateConversationThreadResponseModelIdMax = 120;
+
+
+
 export const UpdateConversationThreadResponse = zod.object({
   "id": zod.string(),
   "title": zod.string(),
   "pinned": zod.boolean(),
+  "provider": zod.union([zod.literal('openai'),zod.literal('deepseek'),zod.literal('gemini'),zod.literal('anthropic'),zod.literal('openrouter'),zod.literal('ollama'),zod.literal(null)]).nullable(),
+  "modelId": zod.string().max(updateConversationThreadResponseModelIdMax).nullable(),
   "activeTaskId": zod.string().nullable(),
   "messageCount": zod.number().int(),
   "historyBytes": zod.number().int().optional(),
@@ -214,10 +238,16 @@ export const DeleteConversationThreadResponse = zod.void()
 /**
  * @summary List saved chat sessions by most recent activity
  */
+export const listThreadSessionsResponseModelIdMax = 120;
+
+
+
 export const ListThreadSessionsResponseItem = zod.object({
   "id": zod.string(),
   "title": zod.string(),
   "pinned": zod.boolean(),
+  "provider": zod.union([zod.literal('openai'),zod.literal('deepseek'),zod.literal('gemini'),zod.literal('anthropic'),zod.literal('openrouter'),zod.literal('ollama'),zod.literal(null)]).nullable(),
+  "modelId": zod.string().max(listThreadSessionsResponseModelIdMax).nullable(),
   "activeTaskId": zod.string().nullable(),
   "messageCount": zod.number().int(),
   "historyBytes": zod.number().int().optional(),
@@ -240,10 +270,16 @@ export const CreateThreadSessionBody = zod.object({
   "title": zod.string().min(1).max(createThreadSessionBodyTitleMax).default(createThreadSessionBodyTitleDefault)
 })
 
+export const createThreadSessionResponseModelIdMax = 120;
+
+
+
 export const CreateThreadSessionResponse = zod.object({
   "id": zod.string(),
   "title": zod.string(),
   "pinned": zod.boolean(),
+  "provider": zod.union([zod.literal('openai'),zod.literal('deepseek'),zod.literal('gemini'),zod.literal('anthropic'),zod.literal('openrouter'),zod.literal('ollama'),zod.literal(null)]).nullable(),
+  "modelId": zod.string().max(createThreadSessionResponseModelIdMax).nullable(),
   "activeTaskId": zod.string().nullable(),
   "messageCount": zod.number().int(),
   "historyBytes": zod.number().int().optional(),
@@ -332,6 +368,8 @@ export const createAssistantTaskBodyObjectiveMax = 12000;
 
 export const createAssistantTaskBodyModelIdMax = 120;
 
+export const createAssistantTaskBodyModelMax = 120;
+
 
 
 export const CreateAssistantTaskBody = zod.object({
@@ -339,6 +377,7 @@ export const CreateAssistantTaskBody = zod.object({
   "threadId": zod.string().nullish(),
   "provider": zod.enum(['openai', 'deepseek', 'gemini', 'anthropic', 'openrouter', 'ollama']).optional(),
   "modelId": zod.string().max(createAssistantTaskBodyModelIdMax).optional(),
+  "model": zod.string().min(1).max(createAssistantTaskBodyModelMax).optional(),
   "fileIds": zod.array(zod.string().uuid()).optional()
 })
 

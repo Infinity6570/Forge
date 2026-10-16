@@ -739,11 +739,13 @@ components:
             $ref: "#/components/schemas/AssistantTask"
     ConversationThread:
       type: object
-      required: [id, title, pinned, createdAt, updatedAt, activeTaskId, messageCount]
+      required: [id, title, pinned, provider, modelId, createdAt, updatedAt, activeTaskId, messageCount]
       properties:
         id: { type: string }
         title: { type: string }
         pinned: { type: boolean }
+        provider: { type: ["string", "null"], enum: [openai, deepseek, gemini, anthropic, openrouter, ollama, null] }
+        modelId: { type: ["string", "null"], maxLength: 120 }
         activeTaskId: { type: ["string", "null"] }
         messageCount: { type: integer }
         historyBytes: { type: integer }
@@ -835,6 +837,10 @@ components:
           enum: [openai, deepseek, gemini, anthropic, openrouter, ollama]
         modelId:
           type: string
+          maxLength: 120
+        model:
+          type: string
+          minLength: 1
           maxLength: 120
         fileIds:
           type: array

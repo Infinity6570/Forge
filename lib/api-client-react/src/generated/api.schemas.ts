@@ -128,10 +128,32 @@ export interface DashboardSummary {
   recentTasks: AssistantTask[];
 }
 
+/**
+ * @nullable
+ */
+export type ConversationThreadProvider = typeof ConversationThreadProvider[keyof typeof ConversationThreadProvider] | null;
+
+
+export const ConversationThreadProvider = {
+  openai: 'openai',
+  deepseek: 'deepseek',
+  gemini: 'gemini',
+  anthropic: 'anthropic',
+  openrouter: 'openrouter',
+  ollama: 'ollama',
+} as const;
+
 export interface ConversationThread {
   id: string;
   title: string;
   pinned: boolean;
+  /** @nullable */
+  provider: ConversationThreadProvider;
+  /**
+     * @maxLength 120
+     * @nullable
+     */
+  modelId: string | null;
   /** @nullable */
   activeTaskId: string | null;
   messageCount: number;
@@ -210,6 +232,11 @@ export interface TaskInput {
   provider?: TaskInputProvider;
   /** @maxLength 120 */
   modelId?: string;
+  /**
+     * @minLength 1
+     * @maxLength 120
+     */
+  model?: string;
   fileIds?: string[];
 }
 

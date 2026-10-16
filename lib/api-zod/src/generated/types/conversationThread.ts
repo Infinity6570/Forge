@@ -5,11 +5,19 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { ConversationThreadProvider } from './conversationThreadProvider';
 
 export interface ConversationThread {
   id: string;
   title: string;
   pinned: boolean;
+  /** @nullable */
+  provider: ConversationThreadProvider;
+  /**
+     * @maxLength 120
+     * @nullable
+     */
+  modelId: string | null;
   /** @nullable */
   activeTaskId: string | null;
   messageCount: number;

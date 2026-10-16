@@ -26,6 +26,7 @@ export * from './conversationMessage';
 export * from './conversationMessageRole';
 export * from './conversationThread';
 export * from './conversationThreadDetail';
+export * from './conversationThreadProvider';
 export * from './dashboardSummary';
 export * from './fileUploadInput';
 export * from './getConversationThreadParams';

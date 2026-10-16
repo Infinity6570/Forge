@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useThreadHistory } from '@/hooks/use-thread-history';
 import { SmoothStreamer } from '@/lib/smooth-streamer';
+import {
+  loadChatModelPreference,
+  modeForSavedPreference,
+  newestThreadModel,
+  saveChatModelPreference,
+} from '@/lib/chat-model-preference';
 import type { CSSProperties, FormEvent, ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
@@ -471,11 +477,6 @@ function Dashboard() {
     }
   }, [objective]);
   useEffect(() => {
-    const syncModel = () => setModelMode('configured');
-    window.addEventListener('forge:model-applied', syncModel);
-    return () => window.removeEventListener('forge:model-applied', syncModel);
-  }, []);
-  useEffect(() => {
     const syncCyberFx = () => {
       const root = document.documentElement;
       setCyberFxActive(root.dataset.theme === 'scifi' && root.dataset.cyberFx === 'on');
@@ -508,6 +509,59 @@ function Dashboard() {
   const tasks = useMemo(() => (threadId ? threadDetail.data?.tasks ?? [] : []), [threadId, threadDetail.data]);
   const threadMessages = threadDetail.data?.messages;
   const threadTitle = threadId ? threadDetail.data?.title ?? conv.threads.find((t) => t.id === threadId)?.title ?? 'Chat' : 'New chat';
+  const latestTaskModel = newestThreadModel(tasks);
+  const referenceModel = useMemo(
+    () => threadDetail.data?.provider && threadDetail.data.modelId
+      ? { provider: threadDetail.data.provider, modelId: threadDetail.data.modelId }
+      : latestTaskModel,
+    [threadDetail.data?.provider, threadDetail.data?.modelId, latestTaskModel],
+  );
+  const savedModelPreference = loadChatModelPreference(threadId);
+  const lastUsedModel = referenceModel ?? (savedModelPreference?.mode === 'last-used'
+    ? { provider: savedModelPreference.provider, modelId: savedModelPreference.model }
+    : undefined);
+  const resolveModelMode = useCallback((mode: string) => {
+    const parts = mode.split('|');
+    if (parts.length === 3 && parts[0] === 'direct' && Object.hasOwn(models, parts[1])) {
+      return { provider: parts[1] as AssistantTask['provider'], model: parts[2] };
+    }
+    if (mode === 'last-used' && lastUsedModel?.provider && lastUsedModel.modelId) {
+      return { provider: lastUsedModel.provider, model: lastUsedModel.modelId };
+    }
+    if (mode === 'configured' && settingsQuery.data) {
+      return { provider: settingsQuery.data.provider, model: settingsQuery.data.modelId };
+    }
+    return undefined;
+  }, [lastUsedModel, settingsQuery.data]);
+  const changeModelMode = useCallback((mode: string) => {
+    setModelMode(mode);
+    const model = resolveModelMode(mode);
+    const [kind] = mode.split('|');
+    saveChatModelPreference(threadId, model
+      ? { mode: kind as 'configured' | 'last-used' | 'direct', provider: model.provider, model: model.model }
+      : { mode: 'configured' });
+  }, [resolveModelMode, threadId]);
+  useEffect(() => {
+    if (threadId && !threadDetail.data) return;
+    const saved = loadChatModelPreference(threadId);
+    if (saved && (saved.mode !== 'last-used' || savedModelPreference?.provider && savedModelPreference.model)) {
+      setModelMode(modeForSavedPreference(saved));
+      return;
+    }
+    const previousModel = referenceModel;
+    const mode = previousModel?.provider && previousModel.modelId
+      ? `direct|${previousModel.provider}|${previousModel.modelId}`
+      : 'configured';
+    setModelMode(mode);
+    if (previousModel?.provider && previousModel.modelId) {
+      saveChatModelPreference(threadId, { mode: 'direct', provider: previousModel.provider, model: previousModel.modelId });
+    }
+  }, [threadId, threadDetail.data, savedModelPreference?.model, savedModelPreference?.provider, tasks, referenceModel]);
+  useEffect(() => {
+    const syncModel = () => changeModelMode('configured');
+    window.addEventListener('forge:model-applied', syncModel);
+    return () => window.removeEventListener('forge:model-applied', syncModel);
+  }, [changeModelMode]);
   const actionTaskId = tasks.find((task) => task.requiresApproval || task.requiresModelConfirmation)?.id
     ?? tasks.find((task) => ['running', 'processing', 'queued', 'awaiting_confirmation', 'awaiting_approval'].includes(task.status))?.id
     ?? [...tasks].reverse().find((task) => task.recommendationKind === 'fallback')?.id ?? '';
@@ -560,7 +614,6 @@ function Dashboard() {
     };
   }, [threadId, streamTaskId, qc]);
   const streamTitle = activeExecution ? liveStreamTask?.objective ?? threadTitle : threadTitle;
-  const referenceModel = [...tasks].reverse().find((task) => task.modelId);
   const isPending = createTask.isPending;
   const isGenerating = activeExecution || (isPending && !stopRequestedTaskId);
   const thinkingAura = cyberFxActive && isGenerating;
@@ -610,8 +663,19 @@ function Dashboard() {
     const text = objective.trim();
     if (!text || createTask.isPending || uploadingAttachment || threadBusy) return;
     setSubmitError('');
-    const directModel = modelMode.startsWith('direct|') ? modelMode.split('|') : undefined;
-    createTask.mutate({ data: { objective: text, ...(threadId ? { threadId } : {}), ...(attachments.length ? { fileIds: attachments.map((file) => file.id) } : {}), ...(directModel?.length === 3 ? { provider: directModel[1] as AssistantTask['provider'], modelId: directModel[2] } : modelMode === 'last-used' && referenceModel ? { provider: referenceModel.provider, modelId: referenceModel.modelId } : {}) } }, {
+    const selectedModel = resolveModelMode(modelMode);
+    if (!selectedModel) {
+      setSubmitError('The active model is still loading. Wait a moment and try again.');
+      return;
+    }
+    createTask.mutate({ data: {
+      objective: text,
+      model: selectedModel.model,
+      provider: selectedModel.provider as AssistantTask['provider'],
+      modelId: selectedModel.model,
+      ...(threadId ? { threadId } : {}),
+      ...(attachments.length ? { fileIds: attachments.map((file) => file.id) } : {}),
+    } }, {
       onSuccess: async (task) => {
         if (task.threadId) {
           await qc.invalidateQueries({ queryKey: getGetConversationThreadQueryKey(task.threadId) });
@@ -677,7 +741,7 @@ function Dashboard() {
         {submitError && <p className="field-error" role="alert">{submitError}</p>}
         <div className="composer-bottom"><div className="composer-actions">
           <span className="composer-counter" data-testid="text-prompt-counter">{objective.length.toLocaleString()} / 12,000</span>
-          <ChatModelPicker value={modelMode} onChange={setModelMode} configuredLabel={settingsQuery.data ? modelDisplayName(settingsQuery.data.provider, settingsQuery.data.modelId) : 'Loading model…'} lastUsedLabel={referenceModel ? modelDisplayName(referenceModel.provider, referenceModel.modelId) : null} groups={Object.entries(models).filter(([groupProvider]) => groupProvider !== 'ollama' || settingsQuery.data?.localSetupAllowed).map(([groupProvider, items]) => ({ id: groupProvider, label: groupProvider === 'gemini' ? 'Google Gemini' : groupProvider === 'anthropic' ? 'Anthropic Claude' : groupProvider === 'openrouter' ? 'OpenRouter' : groupProvider === 'ollama' ? 'Local · Ollama' : groupProvider === 'openai' ? 'OpenAI' : 'DeepSeek', items }))} />
+          <ChatModelPicker value={modelMode} onChange={changeModelMode} configuredLabel={settingsQuery.data ? modelDisplayName(settingsQuery.data.provider, settingsQuery.data.modelId) : 'Loading model…'} lastUsedLabel={lastUsedModel?.provider && lastUsedModel.modelId ? modelDisplayName(lastUsedModel.provider, lastUsedModel.modelId) : null} groups={Object.entries(models).filter(([groupProvider]) => groupProvider !== 'ollama' || settingsQuery.data?.localSetupAllowed).map(([groupProvider, items]) => ({ id: groupProvider, label: groupProvider === 'gemini' ? 'Google Gemini' : groupProvider === 'anthropic' ? 'Anthropic Claude' : groupProvider === 'openrouter' ? 'OpenRouter' : groupProvider === 'ollama' ? 'Local · Ollama' : groupProvider === 'openai' ? 'OpenAI' : 'DeepSeek', items }))} />
           <input ref={attachmentInput} type="file" hidden onChange={(event) => { void attachFile(event.currentTarget.files?.[0]); }} data-testid="input-task-attachment" />
           <button type="button" className="button button-quiet submit-button composer-attach" title="Attach a file" aria-label={uploadingAttachment ? 'Uploading attachment' : 'Attach a file'} onClick={() => attachmentInput.current?.click()} disabled={uploadingAttachment} data-testid="button-attach-task-file">{uploadingAttachment ? <LoaderCircle className="spin" size={12} /> : <Upload size={12} />}</button>
           {stopTargetId ? <button type="button" className="button submit-button button-stop-task" disabled={abort.isPending || stopRequestedTaskId === stopTargetId} title="Stop the active task (Escape)" aria-label="Stop active task" aria-keyshortcuts="Escape" onClick={() => requestStop(stopTargetId)} data-testid="button-stop-task"><StopCircle size={12} />{stopRequestedTaskId === stopTargetId ? 'Stopping…' : 'Stop task'}<kbd>Esc</kbd></button>

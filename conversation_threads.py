@@ -97,7 +97,8 @@ class ThreadStore:
         connection.executescript("""
           CREATE TABLE IF NOT EXISTS conversation_threads (
             id TEXT PRIMARY KEY, title TEXT NOT NULL, pinned INTEGER NOT NULL DEFAULT 0,
-            created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+            created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+            model_provider TEXT, model_id TEXT);
           CREATE TABLE IF NOT EXISTS conversation_messages (
             ordering INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT NOT NULL UNIQUE,
             thread_id TEXT NOT NULL REFERENCES conversation_threads(id),
@@ -112,6 +113,19 @@ class ThreadStore:
         """)
         if "archived" not in {row[1] for row in connection.execute("PRAGMA table_info(conversation_threads)")}:
             connection.execute("ALTER TABLE conversation_threads ADD COLUMN archived INTEGER NOT NULL DEFAULT 0")
+        thread_columns = {row[1] for row in connection.execute("PRAGMA table_info(conversation_threads)")}
+        if "model_provider" not in thread_columns:
+            connection.execute("ALTER TABLE conversation_threads ADD COLUMN model_provider TEXT")
+        if "model_id" not in thread_columns:
+            connection.execute("ALTER TABLE conversation_threads ADD COLUMN model_id TEXT")
+        connection.execute(
+            "UPDATE conversation_threads SET "
+            "model_provider=(SELECT provider FROM tasks WHERE tasks.thread_id=conversation_threads.id "
+            "ORDER BY created_at DESC,id DESC LIMIT 1),"
+            "model_id=(SELECT model_id FROM tasks WHERE tasks.thread_id=conversation_threads.id "
+            "ORDER BY created_at DESC,id DESC LIMIT 1) "
+            "WHERE model_id IS NULL AND EXISTS(SELECT 1 FROM tasks WHERE tasks.thread_id=conversation_threads.id)"
+        )
         if not connection.execute("SELECT 1 FROM conversation_meta WHERE name='legacy_backfill'").fetchone():
             for task in connection.execute("SELECT * FROM tasks WHERE thread_id IS NULL ORDER BY created_at,id").fetchall():
                 thread_id = self.create(connection, title_from_prompt(task["objective"]), task["created_at"])
@@ -121,6 +135,14 @@ class ThreadStore:
                     turns.append({"role": "assistant", "content": task["result"]})
                 self.save(connection, thread_id, task["id"], turns, json.loads(task["logs_json"]), task["created_at"])
             connection.execute("INSERT INTO conversation_meta(name) VALUES('legacy_backfill')")
+        connection.execute(
+            "UPDATE conversation_threads SET "
+            "model_provider=(SELECT provider FROM tasks WHERE tasks.thread_id=conversation_threads.id "
+            "ORDER BY created_at DESC,id DESC LIMIT 1),"
+            "model_id=(SELECT model_id FROM tasks WHERE tasks.thread_id=conversation_threads.id "
+            "ORDER BY created_at DESC,id DESC LIMIT 1) "
+            "WHERE model_id IS NULL AND EXISTS(SELECT 1 FROM tasks WHERE tasks.thread_id=conversation_threads.id)"
+        )
         if not connection.execute("SELECT 1 FROM conversation_meta WHERE name='empty_final_response_cleanup'").fetchone():
             for row in connection.execute(
                 "SELECT id,protocol_json FROM conversation_messages WHERE role='assistant'"
@@ -161,6 +183,13 @@ class ThreadStore:
             raise HTTPException(404, "Chat not found.")
         return row
 
+    def set_model(self, connection, thread_id: str, provider: str, model_id: str) -> None:
+        self.require(connection, thread_id)
+        connection.execute(
+            "UPDATE conversation_threads SET model_provider=?,model_id=? WHERE id=?",
+            (provider, model_id, thread_id),
+        )
+
     def active(self, connection, thread_id: str):
         return connection.execute(
             "SELECT id FROM tasks WHERE thread_id=? AND status IN (?,?,?,?) ORDER BY created_at LIMIT 1",
@@ -175,6 +204,7 @@ class ThreadStore:
             "FROM conversation_messages WHERE thread_id=?", (row["id"],)
         ).fetchone()[0]
         return {"id": row["id"], "title": row["title"], "pinned": bool(row["pinned"]),
+                "provider": row["model_provider"], "modelId": row["model_id"],
                 "createdAt": row["created_at"], "updatedAt": row["updated_at"],
                 "activeTaskId": active["id"] if active else None, "messageCount": count,
                 "historyBytes": size, "archived": bool(row["archived"])}

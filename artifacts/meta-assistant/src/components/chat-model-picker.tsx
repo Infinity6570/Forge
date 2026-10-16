@@ -11,6 +11,10 @@ type Props = {
 };
 
 export function ChatModelPicker({ value, onChange, configuredLabel, lastUsedLabel, groups }: Props) {
+  const selectedParts = value.split('|');
+  const hasListedSelection = selectedParts.length === 3 && groups.some((group) =>
+    group.id === selectedParts[1] && group.items.some((item) => item.id === selectedParts[2]),
+  );
   return <Select value={value} onValueChange={onChange}>
     <SelectTrigger className="composer-model model-trigger" aria-label="Task model" data-testid="select-task-model">
       <Zap size={12} aria-hidden="true" /><span className="model-trigger-value"><SelectValue /></span>
@@ -19,6 +23,7 @@ export function ChatModelPicker({ value, onChange, configuredLabel, lastUsedLabe
       <SelectGroup>
         <SelectItem value="configured" className="model-menu-item">{configuredLabel}</SelectItem>
         <SelectItem value="last-used" disabled={!lastUsedLabel} className="model-menu-item">Last used · {lastUsedLabel ?? 'unavailable'}</SelectItem>
+        {!hasListedSelection && selectedParts.length === 3 && selectedParts[0] === 'direct' && <SelectItem value={value} className="model-menu-item">Current session · {selectedParts[2]}</SelectItem>}
       </SelectGroup>
       {groups.map((group) => <SelectGroup key={group.id}>
         <SelectSeparator className="model-menu-sep" />

@@ -1279,6 +1279,7 @@ class TaskInput(BaseModel):
     objective: str = Field(min_length=1, max_length=12_000)
     provider: str | None = None
     modelId: str | None = None
+    model: str | None = Field(default=None, min_length=1, max_length=120)
     fileIds: list[str] = Field(default_factory=list, max_length=30)
     threadId: str | None = None
 
@@ -3439,7 +3440,8 @@ async def create_task(body: TaskInput, request: Request) -> dict[str, Any]:
     provider = body.provider or os.getenv("AGENT_PROVIDER", "deepseek")
     if provider not in MODEL_OPTIONS:
         raise HTTPException(status_code=422, detail="Choose a supported AI provider.")
-    model = body.modelId or os.getenv("AGENT_MODEL", DEFAULT_MODELS[provider])
+    # Keep modelId backward-compatible while honoring the explicit active-session selection.
+    model = body.model or body.modelId or os.getenv("AGENT_MODEL", DEFAULT_MODELS[provider])
     provider, model = resolve_direct_anthropic_model(provider, model)
     if not MODEL_ID_PATTERN.fullmatch(model) or (
         provider == "gemini" and not GEMINI_MODEL_ID_PATTERN.fullmatch(model)
@@ -3470,6 +3472,7 @@ async def create_task(body: TaskInput, request: Request) -> dict[str, Any]:
     with THREADS.transaction() as connection:
         thread_id = body.threadId or THREADS.create(connection)
         THREADS.append_user(connection, thread_id, task_id, body.objective.strip(), now)
+        THREADS.set_model(connection, thread_id, provider, model)
         connection.execute(
         "INSERT INTO tasks(id,objective,status,current_step,logs_json,provider,model_id,"
         "recommendation_kind,recommendation_reason,recommended_provider,recommended_model_id,"
