@@ -461,7 +461,24 @@ class ProviderSettingsTests(unittest.IsolatedAsyncioTestCase):
         os.environ["AGENT_PROVIDER"] = "gemini"
         response = await self.get_settings()
         self.assertEqual(response.json()["modelId"], "gemini-3.5-flash-lite")
-        self.assertEqual(main.MODEL_OPTIONS["gemini"], {"gemini-3.5-flash-lite", "gemini-3.8-flash", "gemma-4-31b-it"})
+        self.assertEqual(main.MODEL_OPTIONS["gemini"], {
+            "gemini-4-argon",
+            "gemini-3.8-flash",
+            "gemini-3.8-live",
+            "gemini-3.8-live-extended-thinking",
+            "gemini-3.8-flash-tts",
+            "gemini-3.8-flash-lite-tts",
+            "gemini-3.6-flash",
+            "gemini-3.5-flash-lite",
+            "gemini-3.1-flash-lite",
+            "gemini-nano-banana-2.1",
+            "gemini-3.1-flash-image",
+            "gemini-3.1-flash-lite-image",
+            "gemini-3-pro-image",
+            "gemini-3.1-pro-preview",
+            "gemini-3-flash-preview",
+            "gemma-4-31b-it",
+        })
         self.assertTrue(main.is_budget_model("gemini", "gemini-3.5-flash-lite"))
 
     async def test_apply_model_preserves_keys_and_execution_settings(self) -> None:

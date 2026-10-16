@@ -18,6 +18,7 @@ import tempfile
 import threading
 import uuid
 import zipfile
+from copy import deepcopy
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from io import BytesIO
@@ -40,6 +41,7 @@ from fastapi.staticfiles import StaticFiles
 from openai import APIStatusError, AsyncOpenAI
 from llm_protocol import TextCallback, assistant_turn, collect_completion, prepare_history
 from model_client import AnthropicChatClient
+from gemini_client import GeminiChatClient
 from usage_cost import anthropic_usage_summary
 from conversation_threads import ThreadStore, thread_routers
 from history_display import display_task
@@ -188,8 +190,21 @@ MODEL_OPTIONS = {
     "openai": {"gpt-4o", "gpt-4o-mini", "o3-mini", "gpt-4.1-mini", "gpt-4.1", "gpt-4.1-nano"},
     "deepseek": {"deepseek-chat", "deepseek-reasoner"},
     "gemini": {
+        "gemini-4-argon",
+        "gemini-3.8-live",
+        "gemini-3.8-live-extended-thinking",
+        "gemini-3.8-flash-tts",
+        "gemini-3.8-flash-lite-tts",
         "gemini-3.5-flash-lite",
         "gemini-3.8-flash",
+        "gemini-3.6-flash",
+        "gemini-3.1-flash-lite",
+        "gemini-nano-banana-2.1",
+        "gemini-3.1-flash-image",
+        "gemini-3.1-flash-lite-image",
+        "gemini-3-pro-image",
+        "gemini-3.1-pro-preview",
+        "gemini-3-flash-preview",
         "gemma-4-31b-it",
     },
     "anthropic": {"claude-haiku-5-5", "claude-sonnet-5-5", "claude-opus-5-5"},
@@ -1307,6 +1322,7 @@ def get_settings(local_allowed: bool, provider_settings_allowed: bool) -> dict[s
     model = os.getenv("AGENT_MODEL", DEFAULT_MODELS[provider])
     if not MODEL_ID_PATTERN.fullmatch(model):
         model = DEFAULT_MODELS[provider]
+    provider, model = resolve_model_provider(provider, model)
     try:
         vault_values = get_vault_values(tuple(VAULT_KEY_CATEGORIES))
     except VaultLockedError:
@@ -1407,7 +1423,14 @@ def is_budget_model(provider: str, model: str) -> bool:
     budget_models = {
         "openai": {"gpt-4.1-mini", "gpt-4.1-nano"},
         "deepseek": {"deepseek-chat"},
-        "gemini": {"gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-3.5-flash-lite", "gemma-4-31b-it"},
+        "gemini": {
+            "gemini-2.5-flash",
+            "gemini-2.5-flash-lite",
+            "gemini-3.5-flash-lite",
+            "gemini-3.1-flash-lite",
+            "gemini-3.8-flash-lite-tts",
+            "gemma-4-31b-it",
+        },
         "openrouter": {"deepseek/deepseek-chat", "anthropic/claude-haiku-5.5"},
         "ollama": {"qwen2.5-coder", "llama3.3"},
     }
@@ -1557,6 +1580,18 @@ def resolve_direct_anthropic_model(
     return provider, model_id
 
 
+def resolve_model_provider(
+    provider: str,
+    model_id: str,
+    anthropic_key_available: bool | None = None,
+) -> tuple[str, str]:
+    """Route Google model IDs to Google even if a stale provider field disagrees."""
+    canonical = model_id.removeprefix("models/")
+    if canonical.startswith(("gemini-", "gemma-")):
+        return "gemini", model_id
+    return resolve_direct_anthropic_model(provider, model_id, anthropic_key_available)
+
+
 def missing_provider_key_message(provider: str) -> str:
     if provider == "openrouter":
         return "Please configure your OpenRouter API key in Preferences/Vault before selecting this model."
@@ -1645,12 +1680,7 @@ def create_llm_client(provider: str) -> Any:
     if not key:
         raise RuntimeError(f"No {provider.title()} API key is configured. Open provider settings to add one.")
     if provider == "gemini":
-        return AsyncOpenAI(
-            api_key=key,
-            base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
-            timeout=90,
-            max_retries=2,
-        )
+        return GeminiChatClient(key, media_output_dir=WORKSPACE / "generated-media")
     if provider == "deepseek":
         return AsyncOpenAI(
             api_key=key,
@@ -1674,7 +1704,10 @@ async def create_completion_with_fallback(
         if on_text:
             await on_text(None)
         if "messages" in kwargs:
-            kwargs["messages"] = prepare_history(kwargs["messages"], provider)
+            if provider == "gemini":
+                kwargs["messages"] = deepcopy(kwargs["messages"])
+            else:
+                kwargs["messages"] = prepare_history(kwargs["messages"], provider)
         response = await client.chat.completions.create(**kwargs)
         completion = await collect_completion(response, on_text)
         if provider == "anthropic" and completion.choices:
@@ -1718,10 +1751,24 @@ async def create_completion_with_fallback(
 
     try:
         return await request_completion()
-    except APIStatusError as error:
+    except Exception as error:
+        status_code = (
+            getattr(error, "status_code", None)
+            or getattr(getattr(error, "response", None), "status_code", None)
+            or getattr(error, "code", None)
+        )
+        if isinstance(status_code, str):
+            status_code = {
+                "RESOURCE_EXHAUSTED": 429,
+                "UNAVAILABLE": 503,
+            }.get(status_code, status_code)
+        try:
+            status_code = int(status_code)
+        except (TypeError, ValueError):
+            pass
         if (
             provider != "gemini"
-            or error.status_code not in {429, 503}
+            or status_code not in {429, 503}
             or not fallback_model
             or fallback_model == model_state["model"]
         ):
@@ -1733,7 +1780,7 @@ async def create_completion_with_fallback(
         db_run("UPDATE tasks SET model_id=?,updated_at=? WHERE id=?", (fallback_model, utc_now(), task_id))
         log_task(
             task_id,
-            f"{previous_model} returned HTTP {error.status_code}; retrying with fallback model {fallback_model}.",
+            f"{previous_model} returned HTTP {status_code}; retrying with fallback model {fallback_model}.",
             "warning",
         )
         return await request_completion()
@@ -2747,6 +2794,7 @@ async def run_agent_task(
     successful_workspace_write_paths = successful_workspace_writes_in_history(resume_messages)
     fallback_model = os.getenv("GEMINI_FALLBACK_MODEL", "").strip()
     messages: list[dict[str, Any]] = []
+    client: Any | None = None
     history_start = row["thread_context_start"]
     try:
         db_run("UPDATE tasks SET status='running',result=NULL,updated_at=? WHERE id=?", (utc_now(), task_id))
@@ -3101,6 +3149,12 @@ async def run_agent_task(
                 str(stream_row["status"]),
                 redact_provider_keys(stream_row["result"] or ""),
             )
+        close_client = getattr(client, "close", None)
+        if callable(close_client):
+            try:
+                await close_client()
+            except Exception as close_error:
+                log_task(task_id, f"Provider client cleanup failed: {redact_provider_keys(str(close_error))[:500]}", "warning")
 
 
 async def retry_failed_specialist_step(task_id: str) -> None:
@@ -3540,7 +3594,7 @@ async def create_task(body: TaskInput, request: Request) -> dict[str, Any]:
         raise HTTPException(status_code=422, detail="Choose a supported AI provider.")
     # Keep modelId backward-compatible while honoring the explicit active-session selection.
     model = body.model or body.modelId or os.getenv("AGENT_MODEL", DEFAULT_MODELS[provider])
-    provider, model = resolve_direct_anthropic_model(provider, model)
+    provider, model = resolve_model_provider(provider, model)
     if not MODEL_ID_PATTERN.fullmatch(model) or (
         provider == "gemini" and not GEMINI_MODEL_ID_PATTERN.fullmatch(model)
     ):
@@ -4352,7 +4406,7 @@ async def update_settings(body: SettingsInput, request: Request) -> dict[str, An
         credential_for("anthropic")
         or (body.anthropicApiKey and body.anthropicApiKey.strip())
     )
-    settings_provider, settings_model = resolve_direct_anthropic_model(
+    settings_provider, settings_model = resolve_model_provider(
         body.provider,
         body.modelId,
         anthropic_key_available,
@@ -4386,7 +4440,7 @@ async def apply_working_model(body: ModelSelectionInput, request: Request) -> di
     if not can_manage_provider_settings(request):
         raise HTTPException(status_code=403, detail="Model settings can only be changed from this app's preview or a local copy.")
     local_allowed = is_local_setup_allowed(request)
-    provider, model = resolve_direct_anthropic_model(body.provider, body.modelId)
+    provider, model = resolve_model_provider(body.provider, body.modelId)
     if provider == "ollama" and not local_allowed:
         raise HTTPException(status_code=403, detail="Ollama is available only from a localhost copy.")
     fallback = (body.fallbackModelId or "").strip()

@@ -21,3 +21,4 @@ playwright>=1.49,<2
 cryptography>=43,<51
 yfinance>=1.7,<2
 anthropic
+google-genai>=2.31,<3
