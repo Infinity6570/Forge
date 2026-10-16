@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import os
 import random
+import re
 from typing import Any, Callable
 from urllib.parse import urlparse
 import httpx
@@ -310,10 +311,19 @@ async def routed_search(
     validate_url: Callable[[str], str],
     throttle_key: str | None = None,
     key_resolver: KeyResolver | None = None,
+    domains: list[str] | None = None,
 ) -> dict[str, Any]:
     query = query.strip()[:500]
     if not query:
         raise SearchError("Search query cannot be empty.")
+    if domains:
+        if not isinstance(domains, list) or len(domains) > 8 or any(
+            not isinstance(domain, str) or not re.fullmatch(
+                r"(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,63}", domain
+            ) for domain in domains
+        ):
+            raise SearchError("domains must contain up to 8 plain domain names, not URLs.")
+        query += " (" + " OR ".join(f"site:{domain.lower()}" for domain in dict.fromkeys(domains)) + ")"
     settings = search_settings(key_resolver)
     mode, engine = settings["searchMode"], settings["searchApiProvider"]
     browser = BrowserRunner(validate_url)

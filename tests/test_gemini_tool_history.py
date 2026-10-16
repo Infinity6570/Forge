@@ -94,6 +94,24 @@ class GeminiToolHistoryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(task["result"], "Hi! How can I help?")
         self.assertNotIn("All actions have completed", str(create.call_args.kwargs["messages"]))
 
+    async def test_academic_abstracts_are_not_truncated_in_tool_followup(self):
+        output = json.dumps({"engine": "academic-search", "results": [
+            {"title": "Clinical trial", "abstract": "Full abstract text. " * 1200}
+        ]})
+        create = AsyncMock(side_effect=[
+            self.signed_stream(name="academic_search", arguments={"query": "dental trial"}),
+            self.text_stream(),
+        ])
+        client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+        with patch.object(main, "create_llm_client", return_value=client), patch.object(
+            main, "execute_tool", new=AsyncMock(return_value=output)
+        ):
+            await main.run_agent_task("signed", [])
+        history = create.call_args.kwargs["messages"]
+        tool_result = next(turn for turn in history if turn["role"] == "tool")
+        self.assertGreater(len(output), 16_000)
+        self.assertEqual(tool_result["content"], output)
+
     async def test_native_tool_result_is_sent_back_for_final_candidate_text(self):
         tool_response = {
             "candidates": [{
