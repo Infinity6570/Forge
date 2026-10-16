@@ -817,7 +817,7 @@ components:
         modelId: { type: string, minLength: 1, maxLength: 120 }
     AssistantTask:
       type: object
-      required: [id, objective, status, currentStep, result, error, logs, provider, modelId, recommendationKind, recommendationReason, recommendedProvider, recommendedModelId, retryAvailable, requiresModelConfirmation, pendingApprovalId, pendingApprovalKind, approvalSummary, approvalDetails, requiresApproval, createdAt, updatedAt]
+      required: [id, objective, status, currentStep, result, error, logs, provider, modelId, routingMode, routingIntent, routingReason, recommendationKind, recommendationReason, recommendedProvider, recommendedModelId, retryAvailable, requiresModelConfirmation, pendingApprovalId, pendingApprovalKind, approvalSummary, approvalDetails, requiresApproval, createdAt, updatedAt]
       properties:
         id: { type: string, format: uuid }
         objective: { type: string }
@@ -834,6 +834,9 @@ components:
             $ref: "#/components/schemas/TaskLog"
         provider: { type: string, enum: [openai, deepseek, gemini, anthropic, openrouter, ollama] }
         modelId: { type: string }
+        routingMode: { type: ["string", "null"], enum: [auto-gemini, auto-claude, auto-openai, auto-global, null] }
+        routingIntent: { type: ["string", "null"] }
+        routingReason: { type: ["string", "null"] }
         recommendationKind: { type: ["string", "null"], enum: [complexity, fallback, null] }
         recommendationReason: { type: ["string", "null"] }
         recommendedProvider: { type: ["string", "null"], enum: [openai, deepseek, gemini, anthropic, openrouter, ollama, null] }
@@ -873,6 +876,9 @@ components:
           type: string
           minLength: 1
           maxLength: 120
+        autoRouteMode:
+          type: string
+          enum: [auto-gemini, auto-claude, auto-openai, auto-global]
         fileIds:
           type: array
           items: { type: string, format: uuid }

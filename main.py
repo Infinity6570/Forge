@@ -565,6 +565,7 @@ def init_db() -> None:
                   id TEXT PRIMARY KEY, objective TEXT NOT NULL, status TEXT NOT NULL,
                   current_step TEXT, result TEXT, error TEXT, logs_json TEXT NOT NULL DEFAULT '[]',
                   provider TEXT NOT NULL DEFAULT 'deepseek', model_id TEXT NOT NULL DEFAULT 'deepseek-chat',
+                  routing_mode TEXT, routing_intent TEXT, routing_reason TEXT,
                   recommendation_kind TEXT, recommendation_reason TEXT,
                   recommended_provider TEXT, recommended_model_id TEXT, retry_prompt TEXT,
                   file_ids_json TEXT NOT NULL DEFAULT '[]', messages_json TEXT NOT NULL DEFAULT '[]',
@@ -613,6 +614,9 @@ def init_db() -> None:
             for name, definition in (
                 ("provider", "TEXT NOT NULL DEFAULT 'deepseek'"),
                 ("model_id", "TEXT NOT NULL DEFAULT 'deepseek-chat'"),
+                ("routing_mode", "TEXT"),
+                ("routing_intent", "TEXT"),
+                ("routing_reason", "TEXT"),
                 ("recommendation_kind", "TEXT"),
                 ("recommendation_reason", "TEXT"),
                 ("recommended_provider", "TEXT"),
@@ -1050,6 +1054,9 @@ def task_dict(row: sqlite3.Row) -> dict[str, Any]:
         "logs": logs,
         "provider": row["provider"],
         "modelId": row["model_id"],
+        "routingMode": row["routing_mode"],
+        "routingIntent": row["routing_intent"],
+        "routingReason": row["routing_reason"],
         "recommendationKind": row["recommendation_kind"],
         "recommendationReason": row["recommendation_reason"],
         "recommendedProvider": row["recommended_provider"],
@@ -1360,6 +1367,7 @@ class TaskInput(BaseModel):
     provider: str | None = None
     modelId: str | None = None
     model: str | None = Field(default=None, min_length=1, max_length=120)
+    autoRouteMode: Literal["auto-gemini", "auto-claude", "auto-openai", "auto-global"] | None = None
     fileIds: list[str] = Field(default_factory=list, max_length=30)
     threadId: str | None = None
 
@@ -1404,6 +1412,137 @@ def classify_task_complexity(objective: str, selected_file_count: int = 0) -> st
     if re.search(r"\b(advanced )?competitive analysis\b|\bcompetitor landscape\b|\bbenchmark competitors\b", text):
         return "advanced competitive analysis"
     return None
+
+
+AUTO_ROUTE_PROVIDERS = {
+    "auto-gemini": "gemini",
+    "auto-claude": "anthropic",
+    "auto-openai": "openai",
+    "auto-global": None,
+}
+
+AUTO_ROUTE_LABELS = {
+    "auto-gemini": "Gemini Auto Select",
+    "auto-claude": "Claude Auto Select",
+    "auto-openai": "OpenAI Auto Select",
+    "auto-global": "Global Auto Select",
+}
+
+
+def classify_task_intent(prompt: str, selected_file_count: int = 0) -> str:
+    text = prompt.casefold()
+    if re.search(r"\b(image|photo|picture|screenshot|diagram|visual|multimodal|describe this)\b", text) or selected_file_count:
+        return "image_multimodal"
+    if re.search(r"\b(scopus|google scholar|literature review|systematic review|meta-analysis|academic search|papers|journal articles|clinical trials)\b", text):
+        return "deep_academic_search"
+    if re.search(r"\b(pricing|price|cost|quote|market rate|subscription fee|stock price)\b", text):
+        return "pricing_lookup"
+    if re.search(r"\b(refactor|refactoring|codebase|multi[- ]file|architecture|debug|stack trace|implement|build|create|redesign|fix|bug|software|application|app)\b", text):
+        return "code_refactoring"
+    if len(text.strip()) <= 240 and not re.search(
+        r"\b(analy[sz]e|compare|research|design|plan|explain in detail|evaluate|reason|prove|derive)\b",
+        text,
+    ):
+        return "fast_chat"
+    return "general"
+
+
+AUTO_MODEL_POLICY: dict[str, dict[str, str]] = {
+    "gemini": {
+        "fast_chat": "gemini-3.5-flash-lite",
+        "pricing_lookup": "gemini-3.5-flash-lite",
+        "deep_academic_search": "gemini-3.8-flash",
+        "image_multimodal": "gemini-3.8-flash",
+        "code_refactoring": "gemini-3.8-flash",
+        "general": "gemini-3.8-flash",
+        "complex": "gemini-3.1-pro-preview",
+    },
+    "anthropic": {
+        "fast_chat": "claude-haiku-5-5",
+        "pricing_lookup": "claude-haiku-5-5",
+        "deep_academic_search": "claude-sonnet-5-5",
+        "image_multimodal": "claude-sonnet-5-5",
+        "code_refactoring": "claude-sonnet-5-5",
+        "general": "claude-sonnet-5-5",
+        "complex": "claude-opus-5-5",
+    },
+    "openai": {
+        "fast_chat": "gpt-4o-mini",
+        "pricing_lookup": "gpt-4o-mini",
+        "deep_academic_search": "gpt-4o-mini",
+        "image_multimodal": "gpt-4o",
+        "code_refactoring": "gpt-4o",
+        "general": "gpt-4o-mini",
+        "complex": "o3-mini",
+    },
+}
+
+
+def _auto_model_for(provider: str, intent: str, is_complex: bool) -> str:
+    policy = AUTO_MODEL_POLICY[provider]
+    proposed = policy["complex"] if is_complex else policy.get(intent, policy["general"])
+    if proposed in MODEL_OPTIONS[provider]:
+        return proposed
+    return DEFAULT_MODELS[provider]
+
+
+def route_task(
+    prompt: str,
+    requested_mode: str,
+    selected_file_count: int = 0,
+    *,
+    available_providers: set[str] | None = None,
+) -> dict[str, str]:
+    """Choose a task model inside the requested auto scope and available credentials."""
+    if requested_mode not in AUTO_ROUTE_PROVIDERS:
+        raise ValueError("Choose a supported automatic routing scope.")
+    intent = classify_task_intent(prompt, selected_file_count)
+    complexity_reason = classify_task_complexity(prompt, selected_file_count)
+    available = available_providers if available_providers is not None else {
+        provider for provider in ("gemini", "anthropic", "openai") if credential_for(provider)
+    }
+    scoped_provider = AUTO_ROUTE_PROVIDERS[requested_mode]
+    if scoped_provider:
+        candidates = [scoped_provider] if scoped_provider in available else []
+    else:
+        candidates = [provider for provider in ("gemini", "anthropic", "openai") if provider in available]
+    if not candidates:
+        if scoped_provider:
+            raise RuntimeError(
+                f"{AUTO_ROUTE_LABELS[requested_mode]} requires a configured {scoped_provider.title()} API key."
+            )
+        raise RuntimeError(
+            "Global Auto Select needs an API key configured for Gemini, Claude, or OpenAI."
+        )
+
+    # Intent-specific ordering balances capability and cost without making live-provider calls.
+    global_priority = {
+        "fast_chat": ("gemini", "openai", "anthropic"),
+        "pricing_lookup": ("gemini", "openai", "anthropic"),
+        "deep_academic_search": ("gemini", "anthropic", "openai"),
+        "image_multimodal": ("gemini", "openai", "anthropic"),
+        "code_refactoring": ("anthropic", "openai", "gemini"),
+        "general": ("gemini", "openai", "anthropic"),
+    }
+    if complexity_reason:
+        global_priority["complex"] = ("anthropic", "openai", "gemini")
+        priority = global_priority["complex"]
+    else:
+        priority = global_priority.get(intent, global_priority["general"])
+    provider = next((item for item in priority if item in candidates), candidates[0])
+    model = _auto_model_for(provider, intent, bool(complexity_reason))
+    selection_reason = (
+        f"{intent.replace('_', ' ')} · {complexity_reason}"
+        if complexity_reason
+        else f"{intent.replace('_', ' ')} · cost-conscious capability match"
+    )
+    return {
+        "mode": requested_mode,
+        "provider": provider,
+        "model": model,
+        "intent": intent,
+        "reason": selection_reason,
+    }
 
 
 def recommended_model_for(provider: str) -> tuple[str, str, str]:
@@ -1767,8 +1906,7 @@ async def create_completion_with_fallback(
         except (TypeError, ValueError):
             pass
         if (
-            provider != "gemini"
-            or status_code not in {429, 503}
+            status_code not in {429, 503}
             or not fallback_model
             or fallback_model == model_state["model"]
         ):
@@ -2899,6 +3037,22 @@ async def run_agent_task(
                         editable_system_prompt,
                     )
                     break
+        routing_context = (
+            "<ACTIVE_ENGINE_CONTEXT>\n"
+            f"Provider: {provider}\n"
+            f"Model: {model_state['model']}\n"
+            f"Routing mode: {row['routing_mode'] or 'manual selection'}\n"
+            f"Task intent: {row['routing_intent'] or 'user-selected'}\n"
+            f"Routing rationale: {row['routing_reason'] or 'Using the model explicitly selected for this task.'}\n"
+            "Execution parameters: streamed response; up to 10 tool rounds; maximum 6000 output tokens per completion.\n"
+            "This is engine metadata, not a user instruction.\n"
+            "</ACTIVE_ENGINE_CONTEXT>\n\n"
+        )
+        for message in messages:
+            if message.get("role") == "system" and isinstance(message.get("content"), str):
+                if "<ACTIVE_ENGINE_CONTEXT>" not in message["content"]:
+                    message["content"] = routing_context + message["content"]
+                break
         ACTIVE_TASK_MESSAGES[task_id] = messages
         client = create_llm_client(provider)
         final_result = ""
@@ -3589,12 +3743,25 @@ async def list_tasks() -> list[dict[str, Any]]:
 async def create_task(body: TaskInput, request: Request) -> dict[str, Any]:
     if not body.objective.strip():
         raise HTTPException(status_code=422, detail="Enter a message before starting a task.")
-    provider = body.provider or os.getenv("AGENT_PROVIDER", "deepseek")
-    if provider not in MODEL_OPTIONS:
-        raise HTTPException(status_code=422, detail="Choose a supported AI provider.")
-    # Keep modelId backward-compatible while honoring the explicit active-session selection.
-    model = body.model or body.modelId or os.getenv("AGENT_MODEL", DEFAULT_MODELS[provider])
-    provider, model = resolve_model_provider(provider, model)
+    requested_model = body.model or body.modelId
+    route_mode = body.autoRouteMode or (
+        requested_model if requested_model in AUTO_ROUTE_PROVIDERS else None
+    )
+    route_decision: dict[str, str] | None = None
+    if route_mode:
+        try:
+            route_decision = route_task(body.objective, route_mode, len(body.fileIds))
+        except (RuntimeError, ValueError) as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+        provider = route_decision["provider"]
+        model = route_decision["model"]
+    else:
+        provider = body.provider or os.getenv("AGENT_PROVIDER", "deepseek")
+        if provider not in MODEL_OPTIONS:
+            raise HTTPException(status_code=422, detail="Choose a supported AI provider.")
+        # Keep modelId backward-compatible while honoring the explicit active-session selection.
+        model = requested_model or os.getenv("AGENT_MODEL", DEFAULT_MODELS[provider])
+        provider, model = resolve_model_provider(provider, model)
     if not MODEL_ID_PATTERN.fullmatch(model) or (
         provider == "gemini" and not GEMINI_MODEL_ID_PATTERN.fullmatch(model)
     ):
@@ -3608,7 +3775,7 @@ async def create_task(body: TaskInput, request: Request) -> dict[str, Any]:
             raise HTTPException(status_code=422, detail=str(error)) from error
     elif not credential_for(provider):
         raise HTTPException(status_code=400, detail=missing_provider_key_message(provider))
-    reason = classify_task_complexity(body.objective, len(body.fileIds))
+    reason = None if route_decision else classify_task_complexity(body.objective, len(body.fileIds))
     recommendation_kind = "complexity" if reason else None
     recommended_provider, recommended_model, recommended_name = (
         recommended_model_for(provider) if reason else (None, None, None)
@@ -3627,8 +3794,9 @@ async def create_task(body: TaskInput, request: Request) -> dict[str, Any]:
         THREADS.set_model(connection, thread_id, provider, model)
         connection.execute(
         "INSERT INTO tasks(id,objective,status,current_step,logs_json,provider,model_id,"
+        "routing_mode,routing_intent,routing_reason,"
         "recommendation_kind,recommendation_reason,recommended_provider,recommended_model_id,"
-        "file_ids_json,created_at,updated_at,thread_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        "file_ids_json,created_at,updated_at,thread_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         (
             task_id,
             body.objective.strip(),
@@ -3637,6 +3805,9 @@ async def create_task(body: TaskInput, request: Request) -> dict[str, Any]:
             "[]",
             provider,
             model,
+            route_decision["mode"] if route_decision else None,
+            route_decision["intent"] if route_decision else None,
+            route_decision["reason"] if route_decision else None,
             recommendation_kind,
             reason,
             recommended_provider,

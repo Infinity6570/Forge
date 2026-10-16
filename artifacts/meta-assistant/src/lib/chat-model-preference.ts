@@ -3,9 +3,10 @@ const PROVIDERS = new Set(['openai', 'deepseek', 'gemini', 'anthropic', 'openrou
 const MODEL_ID = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,119}$/;
 
 export type ChatModelPreference = {
-  mode: 'configured' | 'last-used' | 'direct';
+  mode: 'configured' | 'last-used' | 'direct' | 'auto';
   provider?: string;
   model?: string;
+  autoRouteMode?: 'auto-gemini' | 'auto-claude' | 'auto-openai' | 'auto-global';
 };
 
 const storageKey = (threadId?: string) => `${STORAGE_PREFIX}${threadId || 'new'}`;
@@ -15,7 +16,8 @@ export function loadChatModelPreference(threadId?: string): ChatModelPreference 
     const raw = localStorage.getItem(storageKey(threadId));
     if (!raw) return null;
     const saved = JSON.parse(raw) as Partial<ChatModelPreference>;
-    if (!['configured', 'last-used', 'direct'].includes(saved.mode ?? '')) return null;
+    if (!['configured', 'last-used', 'direct', 'auto'].includes(saved.mode ?? '')) return null;
+    if (saved.mode === 'auto' && !['auto-gemini', 'auto-claude', 'auto-openai', 'auto-global'].includes(saved.autoRouteMode ?? '')) return null;
     if (saved.mode === 'direct' || saved.mode === 'last-used') {
       if (!saved.provider || !PROVIDERS.has(saved.provider)
         || !saved.model || !MODEL_ID.test(saved.model)) return null;
@@ -38,6 +40,7 @@ export function modeForSavedPreference(preference: ChatModelPreference): string 
   if (preference.mode === 'direct' && preference.provider && preference.model) {
     return `direct|${preference.provider}|${preference.model}`;
   }
+  if (preference.mode === 'auto' && preference.autoRouteMode) return preference.autoRouteMode;
   return preference.mode;
 }
 

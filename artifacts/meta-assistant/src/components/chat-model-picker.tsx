@@ -24,6 +24,12 @@ export function ChatModelPicker({ value, onChange, configuredLabel, lastUsedLabe
       <SelectGroup>
         <SelectItem value="configured" className="model-menu-item">{configuredLabel}</SelectItem>
         <SelectItem value="last-used" disabled={!lastUsedLabel} className="model-menu-item">Last used · {lastUsedLabel ?? 'unavailable'}</SelectItem>
+        <SelectSeparator className="model-menu-sep" />
+        <SelectLabel className="model-menu-label">AUTONOMOUS ROUTING</SelectLabel>
+        <SelectItem value="auto-gemini" className="model-menu-item">Gemini: Auto Select</SelectItem>
+        <SelectItem value="auto-claude" className="model-menu-item">Claude: Auto Select</SelectItem>
+        <SelectItem value="auto-openai" className="model-menu-item">OpenAI: Auto Select</SelectItem>
+        <SelectItem value="auto-global" className="model-menu-item">Global Auto Select</SelectItem>
         {!hasListedSelection && selectedParts.length === 3 && selectedParts[0] === 'direct' && <SelectItem value={value} className="model-menu-item">{currentSessionLabel ?? selectedParts[2]}</SelectItem>}
       </SelectGroup>
       {groups.map((group) => <SelectGroup key={group.id}>

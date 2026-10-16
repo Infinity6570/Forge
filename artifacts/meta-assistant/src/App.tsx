@@ -197,6 +197,30 @@ function modelDisplayName(provider?: string | null, model?: string | null) {
   return knownNames[model] ?? (provider === 'anthropic' ? `Claude · ${model}` : model);
 }
 
+const AUTO_ROUTE_MODES = ['auto-gemini', 'auto-claude', 'auto-openai', 'auto-global'] as const;
+type AutoRouteMode = typeof AUTO_ROUTE_MODES[number];
+type ResolvedChatModel = {
+  provider: AssistantTask['provider'];
+  model: string;
+  autoRouteMode?: AutoRouteMode;
+};
+const AUTO_ROUTE_PROVIDERS: Record<AutoRouteMode, AssistantTask['provider']> = {
+  'auto-gemini': 'gemini',
+  'auto-claude': 'anthropic',
+  'auto-openai': 'openai',
+  'auto-global': 'gemini',
+};
+const AUTO_ROUTE_LABELS: Record<AutoRouteMode, string> = {
+  'auto-gemini': 'Gemini Auto Select',
+  'auto-claude': 'Claude Auto Select',
+  'auto-openai': 'OpenAI Auto Select',
+  'auto-global': 'Global Auto Select',
+};
+
+function isAutoRouteMode(value: string): value is AutoRouteMode {
+  return AUTO_ROUTE_MODES.includes(value as AutoRouteMode);
+}
+
 function statusTone(status: string) {
   if (status === 'running' || status === 'processing' || status === 'queued' || status === 'awaiting_confirmation' || status === 'awaiting_approval' || status === 'active') return 'live';
   if (status === 'completed' || status === 'fired') return 'done';
@@ -554,7 +578,10 @@ function Dashboard() {
   const lastUsedModel = referenceModel ?? (savedModelPreference?.mode === 'last-used'
     ? { provider: savedModelPreference.provider, modelId: savedModelPreference.model }
     : undefined);
-  const resolveModelMode = useCallback((mode: string) => {
+  const resolveModelMode = useCallback((mode: string): ResolvedChatModel | undefined => {
+    if (isAutoRouteMode(mode)) {
+      return { provider: AUTO_ROUTE_PROVIDERS[mode], model: mode, autoRouteMode: mode };
+    }
     const parts = mode.split('|');
     if (parts.length === 3 && parts[0] === 'direct' && Object.hasOwn(models, parts[1])) {
       return { provider: parts[1] as AssistantTask['provider'], model: parts[2] };
@@ -570,11 +597,12 @@ function Dashboard() {
   const changeModelMode = useCallback((mode: string) => {
     setModelMode(mode);
     const model = resolveModelMode(mode);
-    const [kind] = mode.split('|');
-    saveChatModelPreference(threadId, model
-      ? { mode: kind as 'configured' | 'last-used' | 'direct', provider: model.provider, model: model.model }
-      : { mode: 'configured' });
-    if (!threadId || !model?.provider) return;
+    saveChatModelPreference(threadId, model?.autoRouteMode
+      ? { mode: 'auto', autoRouteMode: model.autoRouteMode }
+      : model
+        ? { mode: mode === 'configured' || mode === 'last-used' ? mode : 'direct', provider: model.provider, model: model.model }
+        : { mode: 'configured' });
+    if (!threadId || !model?.provider || model.autoRouteMode) return;
     const version = ++modelSelectionVersion.current;
     setSubmitError('');
     void conv.setModel(threadId, model.provider as Parameters<typeof conv.setModel>[1], model.model).catch(() => {
@@ -593,6 +621,10 @@ function Dashboard() {
   useEffect(() => {
     if (threadId && !threadDetail.data) return;
     const saved = loadChatModelPreference(threadId);
+    if (saved?.mode === 'auto' && saved.autoRouteMode) {
+      setModelMode(saved.autoRouteMode);
+      return;
+    }
     const sessionProvider = threadDetail.data?.provider;
     const sessionModel = threadDetail.data?.modelId;
     if (sessionProvider && sessionModel) {
@@ -623,7 +655,7 @@ function Dashboard() {
     window.addEventListener('forge:model-applied', syncModel);
     return () => window.removeEventListener('forge:model-applied', syncModel);
   }, [changeModelMode]);
-  const displayModelMode = threadId && !threadDetail.data && conv.currentModel
+  const displayModelMode = !isAutoRouteMode(modelMode) && threadId && !threadDetail.data && conv.currentModel
     ? `direct|${conv.currentModel.provider}|${conv.currentModel.modelId}`
     : modelMode;
   const actionTaskId = tasks.find((task) => task.requiresApproval || task.requiresModelConfirmation)?.id
@@ -734,9 +766,10 @@ function Dashboard() {
     }
     createTask.mutate({ data: {
       objective: text,
-      model: selectedModel.model,
       provider: selectedModel.provider as AssistantTask['provider'],
-      modelId: selectedModel.model,
+      ...(selectedModel.autoRouteMode
+        ? { autoRouteMode: selectedModel.autoRouteMode }
+        : { model: selectedModel.model, modelId: selectedModel.model }),
       ...(threadId ? { threadId } : {}),
       ...(attachments.length ? { fileIds: attachments.map((file) => file.id) } : {}),
     } }, {
@@ -789,11 +822,21 @@ function Dashboard() {
     }
   };
   const selectedModelForDisplay = resolveModelMode(displayModelMode);
+  const latestMatchingRouteTask = selectedModelForDisplay?.autoRouteMode
+    ? [...tasks].reverse().find((task) => task.routingMode === selectedModelForDisplay.autoRouteMode)
+    : undefined;
+  const activeModelBadge = selectedModelForDisplay?.autoRouteMode
+    ? latestMatchingRouteTask
+      ? `${AUTO_ROUTE_LABELS[selectedModelForDisplay.autoRouteMode]} · ${modelDisplayName(latestMatchingRouteTask.provider, latestMatchingRouteTask.modelId)}`
+      : AUTO_ROUTE_LABELS[selectedModelForDisplay.autoRouteMode]
+    : selectedModelForDisplay
+      ? modelDisplayName(selectedModelForDisplay.provider, selectedModelForDisplay.model)
+      : 'Configured model';
   return <AppShell page="home"><div className="dashboard-page command-center enter" data-task-active={activeExecution ? 'true' : 'false'} data-testid="dashboard-command-center">
     {summary.isError && <QueryProblem retry={() => summary.refetch()} message="Your overview is temporarily unavailable." />}
     <section className={`activity-panel execution-panel${thinkingAura ? ' cyber-thinking-aura' : ''}`} data-task-active={isGenerating ? 'true' : 'false'}><div className="activity-panel-heading">
       <div className="stream-heading-main">{isGenerating && <span className="status-indicator live live-label" data-testid="status-streaming" aria-live="polite"><span className="online-pip working" />STREAMING</span>}<h2 className="thread-title" title={streamTitle} data-testid="text-thread-title">{streamTitle}</h2></div>
-      <div className="stream-heading-right"><div className="command-status" data-testid="status-agent-state"><span className="stream-model-badge" data-testid="text-active-session-model">{selectedModelForDisplay ? modelDisplayName(selectedModelForDisplay.provider, selectedModelForDisplay.model) : 'Configured model'}</span><span className="stream-status-badge"><span className={`online-pip ${isGenerating ? 'working' : ''}`} />{summary.isLoading ? 'Connecting' : isGenerating ? 'Running' : 'Idle'}</span></div><Link href="/tasks" className="text-link" data-testid="link-all-tasks">Task activity <ArrowRight size={14} /></Link></div>
+       <div className="stream-heading-right"><div className="command-status" data-testid="status-agent-state"><span className="stream-model-badge" data-testid="text-active-session-model">{activeModelBadge}</span>{latestMatchingRouteTask && <span className="stream-route-badge" data-testid="badge-routing-decision" title={latestMatchingRouteTask.routingReason ?? undefined}>{latestMatchingRouteTask.routingIntent?.replaceAll('_', ' ')}</span>}<span className="stream-status-badge"><span className={`online-pip ${isGenerating ? 'working' : ''}`} />{summary.isLoading ? 'Connecting' : isGenerating ? 'Running' : 'Idle'}</span></div><Link href="/tasks" className="text-link" data-testid="link-all-tasks">Task activity <ArrowRight size={14} /></Link></div>
     </div>
       {threadId && threadDetail.isError && !threadStale && !threadDetail.data ? <QueryProblem retry={() => threadDetail.refetch()} message="This chat could not be loaded." /> : <ActivityStream key={threadId ?? 'new'} tasks={tasks} messages={threadMessages} liveText={liveText} onUserScrollUp={flushLiveText} loading={!!threadId && threadDetail.isLoading} onOpen={(task) => setSelectedTaskId(task.id)} hasEarlier={threadDetail.hasNextPage} loadingEarlier={threadDetail.isFetchingNextPage} earlierError={threadDetail.isFetchNextPageError} onLoadEarlier={() => threadDetail.fetchNextPage()} />}
     </section>
@@ -1168,8 +1211,13 @@ function SystemTelemetry() {
   const recentFiles = getRecentFiles(files.data);
   const recentNotes = getRecentNotes(notes.data);
   const recentLogs = getRecentTaskLogs(tasks.data);
-  const activeProvider = currentModel?.provider ?? settings.data?.provider;
-  const activeModelId = currentModel?.modelId ?? settings.data?.modelId;
+  const latestThreadTask = selectedId
+    ? (tasks.data ?? [])
+      .filter((task) => task.threadId === selectedId)
+      .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt))[0]
+    : undefined;
+  const activeProvider = latestThreadTask?.provider ?? currentModel?.provider ?? settings.data?.provider;
+  const activeModelId = latestThreadTask?.modelId ?? currentModel?.modelId ?? settings.data?.modelId;
   const searchEngines = settings.data ? [
     { id: 'tavily', label: 'TAVILY', configured: settings.data.hasTavilyKey, selected: settings.data.searchMode === 'api' && settings.data.searchApiProvider === 'tavily' },
     { id: 'serper', label: 'SERPER', configured: settings.data.hasSerperKey, selected: settings.data.searchMode === 'api' && settings.data.searchApiProvider === 'serper' },
@@ -1188,6 +1236,11 @@ function SystemTelemetry() {
         <span className="telemetry-kicker">ACTIVE MODEL · {currentModel ? 'SELECTED CHAT' : 'SETTINGS'}</span>
         {settings.isLoading && !currentModel ? <div className="telemetry-skeleton model-skeleton"><i /></div> : settings.isError && !currentModel ? <div className="telemetry-error"><span>Model configuration unavailable.</span><button type="button" onClick={() => settings.refetch()}>Retry</button></div> : activeProvider && activeModelId ? <strong data-testid="text-telemetry-model">{modelDisplayName(activeProvider, activeModelId)}</strong> : <strong data-testid="text-telemetry-model">No model selected</strong>}
         {activeProvider && activeModelId && <span className="telemetry-model-id" data-testid="text-telemetry-model-id">{activeProvider} / {activeModelId}</span>}
+        {latestThreadTask?.routingMode && isAutoRouteMode(latestThreadTask.routingMode) && <div className="telemetry-route-decision" data-testid="status-auto-routing-decision">
+          <span className="telemetry-live-tag">{AUTO_ROUTE_LABELS[latestThreadTask.routingMode]}</span>
+          <span>{latestThreadTask.routingIntent?.replaceAll('_', ' ') ?? 'task intent'}</span>
+          {latestThreadTask.routingReason && <small>{latestThreadTask.routingReason}</small>}
+        </div>}
       </div>
       {settings.data && <div className="telemetry-search" data-testid="status-search-provider">
         <div className="telemetry-search-heading"><span className="telemetry-kicker">SEARCH FALLBACK ENGINES</span><span className="telemetry-search-mode">{settings.data.searchMode ?? 'not set'}</span></div>
