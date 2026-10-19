@@ -76,6 +76,7 @@ from tools.elevated_runner import (
     validate_elevated_command,
 )
 from tools.browser_runner import BrowserRunner, chromium_available
+from tools.screen_capture import inspect_local_page
 from tools.web_search import routed_search, search_settings
 
 SUPPORTIVE_PERSONA = (
@@ -1192,6 +1193,9 @@ def tool_activity_summary(name: str, args: dict[str, Any], *, finished: bool = F
     elif name in {"web_search", "academic_search"}:
         verb = "Academic search" if name == "academic_search" else "Web search"
         target = str(args.get("query", ""))
+    elif name == "inspect_local_page":
+        verb = "Inspected local page" if finished else "Inspecting local page"
+        target = str(args.get("url", "localhost"))
     elif name in {"web_fetch", "fetch_url", "fetch_webpage"}:
         verb = "Fetched endpoint" if finished else "Fetching endpoint"
         target = str(args.get("url", ""))
@@ -1715,6 +1719,7 @@ SPECIALIST_READ_ONLY_TOOLS = frozenset({
     "list_directory",
     "read_workspace_file",
     "read_file",
+    "inspect_local_page",
 })
 SPECIALIST_MAX_TOOL_ROUNDS = 3
 
@@ -2976,6 +2981,14 @@ async def execute_tool(
         if search_settings(get_vault_secret)["searchMode"] == "chromium":
             return json.dumps(await BrowserRunner(validate_public_url).fetch(str(arguments.get("url", ""))), ensure_ascii=False)
         return await fetch_public_page(str(arguments.get("url", "")))
+    if name == "inspect_local_page":
+        try:
+            return json.dumps(
+                await inspect_local_page(str(arguments.get("url", ""))),
+                ensure_ascii=False,
+            )
+        except (ValueError, OSError, RuntimeError) as error:
+            return json.dumps({"error": str(error)[:1_000]}, ensure_ascii=False)
     if name == "search_workspace":
         needle = str(arguments.get("query", "")).casefold()[:300]
         results = []
@@ -3227,6 +3240,7 @@ TOOLS = [
     {"type": "function", "function": {"name": "get_realtime_gold_quote", "description": "Get the live XAU/USD spot price in USD per troy ounce. Uses the keyless Gold API feed first, then optional GoldAPI.io, and labels the 15-minute delayed Yahoo fallback explicitly.", "parameters": {"type": "object", "properties": {}}}},
     {"type": "function", "function": {"name": "get_realtime_energy_quote", "description": "Get the latest WTI crude oil or natural gas quote. Uses OilPriceAPI when a saved key is available and otherwise falls back to Yahoo Finance with an explicit 15-minute delay warning. Returns USD/barrel for WTI or USD/MMBtu for natural gas.", "parameters": {"type": "object", "properties": {"asset": {"type": "string", "enum": ["WTI", "NATURAL_GAS"]}}, "required": ["asset"]}}},
     {"type": "function", "function": {"name": "fetch_webpage", "description": "Extract readable text from one public HTTPS web page.", "parameters": {"type": "object", "properties": {"url": {"type": "string"}}, "required": ["url"]}}},
+    {"type": "function", "function": {"name": "inspect_local_page", "description": "Inspect a rendered local web page before proposing or applying UI changes. Only HTTP(S) URLs on localhost, 127.0.0.1, or ::1 are accepted; outbound requests and non-read HTTP methods are blocked. Returns visible page text, controls and their current state, composer state, console errors, and a screenshot path.", "parameters": {"type": "object", "properties": {"url": {"type": "string", "maxLength": 2048, "description": "HTTP(S) URL served from localhost, such as http://127.0.0.1:5173/."}}, "required": ["url"], "additionalProperties": False}}},
     {"type": "function", "function": {"name": "search_workspace", "description": "Find matching excerpts in uploaded files and saved notes.", "parameters": {"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]}}},
     {"type": "function", "function": {"name": "read_document", "description": "Read extracted text from an uploaded file by its file ID.", "parameters": {"type": "object", "properties": {"fileId": {"type": "string"}}, "required": ["fileId"]}}},
     {"type": "function", "function": {"name": "save_note", "description": "Save a reusable note to SQLite and a Markdown file in the local workspace.", "parameters": {"type": "object", "properties": {"title": {"type": "string"}, "content": {"type": "string"}, "tags": {"type": "array", "items": {"type": "string"}}}, "required": ["title", "content"]}}},
@@ -3406,6 +3420,8 @@ async def run_agent_task(
                 "For code and app tasks, inspect the existing project first with list_directory and read_file, then preserve "
                 "the current project structure. Build complete multi-file projects with clear modules, relative imports, and "
                 "matching configuration files using write_file; do not collapse a multi-file request into one HTML file. "
+                "When changing the UI of an app that is already running on localhost, call inspect_local_page before proposing "
+                "or applying the UI change; use its rendered text, controls, composer state, console errors, and screenshot path. "
                 "Use a standalone index.html only when the user specifically asks for a simple static page or that is the right "
                 "deliverable. File paths are project-root-relative; the workspace/ subfolder is available as part of the project. "
                 + preview_guidance + terminal_guidance + engine_guidance
