@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import tempfile
@@ -113,6 +114,87 @@ class AutonomousExecutionTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(task["result"])
         self.assertIn("did not write any files", task["error"])
         self.assertIn("Proceed immediately to create these files using write_file now.", create.await_args.kwargs["messages"][-1]["content"])
+
+    async def test_independent_research_and_specialist_tools_run_concurrently_in_call_order(self):
+        self.create_task("parallel-research", "Research periodontal therapy")
+        calls = [
+            SimpleNamespace(
+                id="academic-call",
+                type="function",
+                function=SimpleNamespace(
+                    name="academic_search",
+                    arguments=json.dumps({"query": "periodontal therapy"}),
+                ),
+            ),
+            SimpleNamespace(
+                id="specialist-one",
+                type="function",
+                function=SimpleNamespace(
+                    name="delegate_to_specialist",
+                    arguments=json.dumps({
+                        "task": "Review clinical evidence",
+                        "role": "research",
+                        "read_only_tools": True,
+                    }),
+                ),
+            ),
+            SimpleNamespace(
+                id="specialist-two",
+                type="function",
+                function=SimpleNamespace(
+                    name="delegate_to_specialist",
+                    arguments=json.dumps({
+                        "task": "Check methodology",
+                        "role": "research",
+                        "read_only_tools": True,
+                    }),
+                ),
+            ),
+            SimpleNamespace(
+                id="pubmed-call",
+                type="function",
+                function=SimpleNamespace(
+                    name="pubmed_search",
+                    arguments=json.dumps({"query": "periodontal therapy"}),
+                ),
+            ),
+        ]
+        create = AsyncMock(side_effect=[
+            completion(None, calls),
+            completion("I compared both literature databases."),
+        ])
+        client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+        active = 0
+        peak_active = 0
+        all_started = asyncio.Event()
+
+        async def run_search(name, arguments, *_args):
+            nonlocal active, peak_active
+            active += 1
+            peak_active = max(peak_active, active)
+            if active == 2:
+                all_started.set()
+            try:
+                await asyncio.wait_for(all_started.wait(), timeout=1)
+            finally:
+                active -= 1
+            return json.dumps({"source": name, "query": arguments.get("query", arguments.get("task"))})
+
+        with patch.object(main, "create_llm_client", return_value=client), \
+                patch.object(main, "execute_tool", new=AsyncMock(side_effect=run_search)):
+            await main.run_agent_task("parallel-research", [])
+
+        self.assertEqual(peak_active, 4)
+        followup_messages = create.await_args_list[1].kwargs["messages"]
+        tool_results = [message for message in followup_messages if message.get("role") == "tool"]
+        self.assertEqual(
+            [item["tool_call_id"] for item in tool_results],
+            ["academic-call", "specialist-one", "specialist-two", "pubmed-call"],
+        )
+        self.assertEqual(
+            [json.loads(item["content"])["source"] for item in tool_results],
+            ["academic_search", "delegate_to_specialist", "delegate_to_specialist", "pubmed_search"],
+        )
 
     async def test_supportive_persona_is_default_for_claude_and_gemini(self):
         for provider in ("anthropic", "gemini"):

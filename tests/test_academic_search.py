@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, patch
 import httpx
 
 import main
-from tools.academic_search import academic_search, reconstruct_abstract
+from tools.academic_search import academic_search, pubmed_search, reconstruct_abstract
 from tools.web_search import SearchError, routed_search
 
 
@@ -151,6 +151,91 @@ class AcademicSearchTests(unittest.IsolatedAsyncioTestCase):
             output = await main.execute_tool("academic_search", {"query": "trial"}, "gemini",
                                              {"model": "test"}, "", "test")
         search.assert_awaited_once_with("trial", 2016, 15)
+        self.assertEqual(json.loads(output), result)
+
+    async def test_pubmed_esearch_efetch_records_and_citations(self):
+        esearch = """<eSearchResult><Count>1</Count><IdList><Id>123456</Id></IdList></eSearchResult>"""
+        efetch = """<PubmedArticleSet><PubmedArticle><MedlineCitation><PMID>123456</PMID><Article>
+          <ArticleTitle>Dental &amp; clinical trial</ArticleTitle>
+          <Journal><ISSN>1234-5678</ISSN><JournalIssue><Volume>50</Volume><Issue>3</Issue>
+          <PubDate><Year>2024</Year></PubDate></JournalIssue><Title>Journal of Dental Research</Title>
+          <ISOAbbreviation>J Dent Res</ISOAbbreviation></Journal>
+          <AuthorList><Author><LastName>Smith</LastName><ForeName>Alice B</ForeName><Initials>AB</Initials></Author>
+          <Author><CollectiveName>Dental Research Group</CollectiveName></Author></AuthorList>
+          <Abstract><AbstractText Label="BACKGROUND">Clinical evidence.</AbstractText>
+          <AbstractText Label="RESULTS">Improvement was observed.</AbstractText></Abstract>
+          <ELocationID EIdType="doi">10.1000/dental</ELocationID></Article>
+          <MeshHeadingList><MeshHeading><DescriptorName>Dental Research</DescriptorName></MeshHeading></MeshHeadingList>
+          </MedlineCitation><PubmedData><ArticleIdList><ArticleId IdType="pubmed">123456</ArticleId>
+          <ArticleId IdType="pmc">PMC9876</ArticleId><ArticleId IdType="doi">10.1000/dental</ArticleId>
+          </ArticleIdList></PubmedData></PubmedArticle></PubmedArticleSet>"""
+        requests = []
+
+        async def handler(request):
+            requests.append(request)
+            self.assertEqual(request.headers["User-Agent"], "Forge-PubMedSearch/1.0 (personal academic literature discovery)")
+            self.assertEqual(request.url.host, "eutils.ncbi.nlm.nih.gov")
+            if request.url.path.endswith("/esearch.fcgi"):
+                self.assertEqual(request.url.params["db"], "pubmed")
+                self.assertEqual(request.url.params["term"], "dental trial")
+                self.assertEqual(request.url.params["mindate"], "2016")
+                self.assertEqual(request.url.params["maxdate"], str(main.datetime.now(main.timezone.utc).year))
+                self.assertEqual(request.url.params["retmax"], "15")
+                return httpx.Response(200, text=esearch)
+            self.assertEqual(request.url.path.endswith("/efetch.fcgi"), True)
+            self.assertEqual(request.url.params["id"], "123456")
+            self.assertEqual(request.url.params["retmode"], "xml")
+            return httpx.Response(200, text=efetch)
+
+        client = httpx.AsyncClient(
+            transport=httpx.MockTransport(handler),
+            headers={"User-Agent": "Forge-PubMedSearch/1.0 (personal academic literature discovery)"},
+        )
+        with patch("tools.academic_search.httpx.AsyncClient", return_value=client):
+            result = await pubmed_search("dental trial")
+
+        self.assertEqual(len(requests), 2)
+        self.assertEqual(result["total_available"], 1)
+        record = result["results"][0]
+        self.assertEqual(record["pmid"], "123456")
+        self.assertEqual(record["pmcid"], "PMC9876")
+        self.assertEqual(record["year"], 2024)
+        self.assertEqual(record["authors"], ["Smith AB", "Dental Research Group"])
+        self.assertEqual(record["mesh_terms"], ["Dental Research"])
+        self.assertIn("BACKGROUND: Clinical evidence.", record["abstract"])
+        self.assertIn("J Dent Res. 2024;50(3)", record["vancouver_citation"])
+        self.assertIn("PMID:123456", record["vancouver_citation"])
+        self.assertIn("@article{Smith2024123456", record["bibtex"])
+        self.assertIn(r"Dental \& clinical trial", record["bibtex"])
+
+    async def test_pubmed_empty_and_invalid_queries_are_handled(self):
+        client = httpx.AsyncClient(
+            transport=httpx.MockTransport(
+                lambda _request: httpx.Response(
+                    200,
+                    text="<eSearchResult><Count>0</Count><IdList /></eSearchResult>",
+                )
+            ),
+            headers={"User-Agent": "Forge-PubMedSearch/1.0 (personal academic literature discovery)"},
+        )
+        with patch("tools.academic_search.httpx.AsyncClient", return_value=client):
+            empty = await pubmed_search("rare dental disease")
+        self.assertEqual(empty["results"], [])
+        self.assertEqual(empty["sources"]["pubmed"]["status"], "empty")
+        for kwargs in ({"query": ""}, {"query": "x", "max_results": 0},
+                       {"query": "x", "year_from": 9999}, {"query": "x", "max_results": True}):
+            with self.assertRaises(ValueError):
+                await pubmed_search(**kwargs)
+
+    async def test_pubmed_tool_is_registered_and_dispatches(self):
+        self.assertIn("pubmed_search", {tool["function"]["name"] for tool in main.TOOLS})
+        result = {"engine": "pubmed", "results": []}
+        with patch.object(main, "pubmed_search", new=AsyncMock(return_value=result)) as search:
+            output = await main.execute_tool(
+                "pubmed_search", {"query": "clinical trial"}, "gemini",
+                {"model": "gemini-3.8-flash"}, "", "pubmed-tool-test",
+            )
+        search.assert_awaited_once_with("clinical trial", 2016, 15)
         self.assertEqual(json.loads(output), result)
 
     async def test_targeted_domains_and_existing_site_operators_reach_search(self):

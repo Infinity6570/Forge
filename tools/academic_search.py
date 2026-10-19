@@ -202,9 +202,7 @@ def _pubmed_article(article: ET.Element) -> dict[str, Any]:
     if article_data is None:
         return {}
 
-    pmid = _xml_text(medline.find("./ PMID")) if medline is not None else ""
-    if not pmid and medline is not None:
-        pmid = _xml_text(medline.find("./PMID"))
+    pmid = _xml_text(medline.find("./PMID")) if medline is not None else ""
     title = _xml_text(article_data.find("./ArticleTitle"))
     journal_data = article_data.find("./Journal")
     journal = _xml_text(journal_data.find("./Title")) if journal_data is not None else ""

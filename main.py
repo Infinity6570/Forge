@@ -1857,7 +1857,8 @@ async def run_specialist_worker(
                     if not calls:
                         output = content.strip() if isinstance(content, str) else ""
                         break
-                    for call in calls:
+
+                    async def run_specialist_call(call: dict[str, Any]) -> tuple[str, str]:
                         call_id = str(call.get("id") or "")
                         function = call.get("function") or {}
                         name = str(function.get("name") or "")
@@ -1868,7 +1869,11 @@ async def run_specialist_worker(
                         except (json.JSONDecodeError, TypeError, ValueError):
                             tool_output = json.dumps({"error": "The specialist tool inputs were invalid."})
                         else:
-                            if not read_only_tools or name not in SPECIALIST_READ_ONLY_TOOLS:
+                            if (
+                                not read_only_tools
+                                or name not in SPECIALIST_READ_ONLY_TOOLS
+                                or name not in PARALLEL_SAFE_TOOLS
+                            ):
                                 tool_output = json.dumps({"error": "This tool is not available to the specialist."})
                             else:
                                 try:
@@ -1885,10 +1890,16 @@ async def run_specialist_worker(
                                         {"error": redact_provider_keys(str(error))[:1000]},
                                         ensure_ascii=False,
                                     )
+                        return call_id, tool_output[:16_000]
+
+                    specialist_outputs = await asyncio.gather(
+                        *(run_specialist_call(call) for call in calls)
+                    )
+                    for call_id, tool_output in specialist_outputs:
                         messages.append({
                             "role": "tool",
                             "tool_call_id": call_id,
-                            "content": tool_output[:16_000],
+                            "content": tool_output,
                         })
                 failure_reason = specialist_result_failure(output)
             except Exception as error:
@@ -3679,25 +3690,26 @@ async def run_agent_task(
                     details,
                 )
                 return
-            for call in tool_calls:
+            async def run_tool_call(call: Any) -> dict[str, Any]:
+                name = call.function.name
                 args: dict[str, Any] = {}
                 tool_log_id = None
-                tool_failed = False
+                failed = False
                 try:
                     parsed_args = json.loads(call.function.arguments or "{}")
                     if not isinstance(parsed_args, dict):
                         raise ValueError("Tool inputs must be a JSON object.")
                     args = parsed_args
-                    tool_log_id = log_task(task_id, tool_activity_summary(call.function.name, args), "tool")
+                    tool_log_id = log_task(task_id, tool_activity_summary(name, args), "tool")
                     output = await execute_tool(
-                        call.function.name, args, provider, model_state, fallback_model, task_id
+                        name, args, provider, model_state, fallback_model, task_id
                     )
                 except Exception as tool_error:
-                    tool_failed = True
+                    failed = True
                     output = json.dumps({"error": redact_provider_keys(str(tool_error))[:1000]})
                     if not tool_log_id:
-                        tool_log_id = log_task(task_id, f"Tool error: {call.function.name}", "error")
-                    if call.function.name == "delegate_to_specialist":
+                        tool_log_id = log_task(task_id, f"Tool error: {name}", "error")
+                    if name == "delegate_to_specialist":
                         save_fallback_recommendation(
                             task_id,
                             str(args.get("task", "")),
@@ -3705,16 +3717,62 @@ async def run_agent_task(
                             model_state["model"],
                             redact_provider_keys(str(tool_error)),
                         )
+                return {
+                    "call": call,
+                    "name": name,
+                    "args": args,
+                    "log_id": tool_log_id,
+                    "output": output,
+                    "failed": failed,
+                }
+
+            # Preserve provider call/result order, but run adjacent independent
+            # read/search/specialist calls concurrently. Mutating tools remain
+            # sequential, and every tool result is still paired by its call ID.
+            tool_results: list[dict[str, Any]] = []
+            call_index = 0
+            while call_index < len(tool_calls):
+                call = tool_calls[call_index]
+                if call.function.name in PARALLEL_SAFE_TOOLS:
+                    batch: list[Any] = []
+                    while (
+                        call_index < len(tool_calls)
+                        and len(batch) < MAX_PARALLEL_TOOL_CALLS
+                        and tool_calls[call_index].function.name in PARALLEL_SAFE_TOOLS
+                    ):
+                        batch.append(tool_calls[call_index])
+                        call_index += 1
+                    if len(batch) > 1:
+                        log_task(
+                            task_id,
+                            f"Running {len(batch)} independent read/search tools in parallel.",
+                            "info",
+                            update_step=False,
+                        )
+                    tool_results.extend(await asyncio.gather(*(run_tool_call(item) for item in batch)))
+                else:
+                    tool_results.append(await run_tool_call(call))
+                    call_index += 1
+
+            for result in tool_results:
+                call = result["call"]
+                name = result["name"]
+                args = result["args"]
+                output = result["output"]
                 try:
-                    tool_result = json.loads(output)
-                    tool_failed = tool_failed or (isinstance(tool_result, dict) and bool(tool_result.get("error")))
+                    parsed_output = json.loads(output)
+                    result["failed"] = result["failed"] or (
+                        isinstance(parsed_output, dict) and bool(parsed_output.get("error"))
+                    )
                 except (json.JSONDecodeError, TypeError):
                     pass
-                finish_tool_activity(task_id, tool_log_id, call.function.name, args, output, tool_failed)
-                saved_path = successful_workspace_write_path(call.function.name, output)
+                finish_tool_activity(
+                    task_id, result["log_id"], name, args, output, result["failed"]
+                )
+                saved_path = successful_workspace_write_path(name, output)
                 if saved_path:
                     successful_workspace_write_paths.add(saved_path)
-                if call.function.name == "delegate_to_specialist" and persistent_specialist_failure(output):
+                if name == "delegate_to_specialist" and persistent_specialist_failure(output):
                     save_fallback_recommendation(
                         task_id,
                         str(args.get("task", "")),
@@ -3722,9 +3780,13 @@ async def run_agent_task(
                         model_state["model"],
                         output,
                     )
-                # Grounding metadata is structured JSON: truncation would corrupt
-                # citations/search suggestions and the persisted historical view.
-                messages.append({"role": "tool", "tool_call_id": call.id, "content": output if call.function.name in {"web_search", "academic_search"} else output[:16_000]})
+                # Grounding and literature metadata are structured JSON:
+                # truncation would corrupt citations and source status.
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": call.id,
+                    "content": output if name in {"web_search", "academic_search", "pubmed_search"} else output[:16_000],
+                })
             THREADS.checkpoint(task_id, messages, history_start)
         if not final_result:
             if requires_workspace_write and not successful_workspace_write_paths:

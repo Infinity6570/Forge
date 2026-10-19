@@ -116,7 +116,7 @@ class ConversationTests(unittest.IsolatedAsyncioTestCase):
             id="remember-memory",
             type="function",
             function=SimpleNamespace(
-                name="remember_project_memory",
+                name="remember_fact",
                 arguments=json.dumps({
                     "title": "Database persistence",
                     "content": "Forge stores durable project state in SQLite.",
@@ -137,7 +137,7 @@ class ConversationTests(unittest.IsolatedAsyncioTestCase):
             # Reinitializing simulates a process restart while using the same SQLite database.
             main.init_db()
             recalled = json.loads(await main.execute_tool(
-                "recall_project_memories",
+                "recall_memory",
                 {"query": "SQLite database storage"},
                 "gemini",
                 {"model": "gemini-3.5-flash-lite"},
@@ -145,6 +145,18 @@ class ConversationTests(unittest.IsolatedAsyncioTestCase):
                 "recall-task",
             ))
             self.assertEqual(recalled["memories"][0]["title"], "Database persistence")
+            legacy_recall = json.loads(await main.execute_tool(
+                "recall_project_memories",
+                {"query": "SQLite database storage"},
+                "gemini",
+                {"model": "gemini-3.5-flash-lite"},
+                "",
+                "legacy-recall-task",
+            ))
+            self.assertEqual(legacy_recall["memories"][0]["id"], recalled["memories"][0]["id"])
+            registered = {tool["function"]["name"] for tool in main.TOOLS}
+            self.assertIn("remember_fact", registered)
+            self.assertIn("recall_memory", registered)
 
             other_thread = (await self.client.post(
                 "/api/assistant/threads", json={"title": "Memory lookup chat"}
