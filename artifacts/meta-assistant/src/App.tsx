@@ -7,7 +7,7 @@ import {
   newestThreadModel,
   saveChatModelPreference,
 } from '@/lib/chat-model-preference';
-import type { CSSProperties, FormEvent, ReactNode } from 'react';
+import type { CSSProperties, DragEvent, FormEvent, ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
 import { Link, Route, Router as WouterRouter, Switch, useLocation } from 'wouter';
@@ -519,6 +519,7 @@ function Dashboard() {
   const [attachments, setAttachments] = useState<AssistantFile[]>([]);
   const [uploadingAttachment, setUploadingAttachment] = useState(false);
   const [attachmentError, setAttachmentError] = useState('');
+  const [draggingFiles, setDraggingFiles] = useState(false);
   const [modelMode, setModelMode] = useState('configured');
   const [cyberFxActive, setCyberFxActive] = useState(() => {
     const root = document.documentElement;
@@ -801,21 +802,29 @@ function Dashboard() {
       },
     });
   };
-  const attachFile = async (file?: File) => {
-    if (!file) return;
+  const attachFiles = async (files: File[]) => {
+    if (!files.length) return;
     setUploadingAttachment(true);
     setAttachmentError('');
+    let uploadedCount = 0;
     try {
-      const body = new FormData();
-      body.append('file', file);
-      const response = await fetch('/api/assistant/files', { method: 'POST', body, credentials: 'include' });
-      if (!response.ok) throw new Error('Upload failed');
-      const uploaded = await response.json() as AssistantFile;
-      setAttachments((current) => [...current, uploaded]);
-      await qc.invalidateQueries({ queryKey: getListAssistantFilesQueryKey() });
-      await qc.invalidateQueries({ queryKey: getGetAssistantDashboardQueryKey() });
-    } catch {
-      setAttachmentError('The attachment could not be uploaded. Try again from Workspace Files.');
+      for (const file of files) {
+        try {
+          const body = new FormData();
+          body.append('file', file);
+          const response = await fetch('/api/assistant/files', { method: 'POST', body, credentials: 'include' });
+          if (!response.ok) throw new Error('Upload failed');
+          const uploaded = await response.json() as AssistantFile;
+          setAttachments((current) => [...current, uploaded]);
+          uploadedCount += 1;
+        } catch {
+          setAttachmentError('One or more attachments could not be uploaded. Try again from Workspace Files.');
+        }
+      }
+      if (uploadedCount) {
+        await qc.invalidateQueries({ queryKey: getListAssistantFilesQueryKey() });
+        await qc.invalidateQueries({ queryKey: getGetAssistantDashboardQueryKey() });
+      }
     } finally {
       setUploadingAttachment(false);
       if (attachmentInput.current) attachmentInput.current.value = '';
@@ -841,16 +850,46 @@ function Dashboard() {
       {threadId && threadDetail.isError && !threadStale && !threadDetail.data ? <QueryProblem retry={() => threadDetail.refetch()} message="This chat could not be loaded." /> : <ActivityStream key={threadId ?? 'new'} tasks={tasks} messages={threadMessages} liveText={liveText} onUserScrollUp={flushLiveText} loading={!!threadId && threadDetail.isLoading} onOpen={(task) => setSelectedTaskId(task.id)} hasEarlier={threadDetail.hasNextPage} loadingEarlier={threadDetail.isFetchingNextPage} earlierError={threadDetail.isFetchNextPageError} onLoadEarlier={() => threadDetail.fetchNextPage()} />}
     </section>
     <TaskActionDock task={actionTask.data} />
-    <section className="composer-panel command-composer">
+    <section
+      className={`composer-panel command-composer${draggingFiles ? ' is-drop-target' : ''}`}
+      onDragEnter={(event: DragEvent<HTMLElement>) => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (Array.from(event.dataTransfer.types).includes('Files')) setDraggingFiles(true);
+      }}
+      onDragOver={(event: DragEvent<HTMLElement>) => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (Array.from(event.dataTransfer.types).includes('Files')) {
+          event.dataTransfer.dropEffect = 'copy';
+          setDraggingFiles(true);
+        }
+      }}
+      onDragLeave={(event: DragEvent<HTMLElement>) => {
+        event.preventDefault();
+        event.stopPropagation();
+        const nextTarget = event.relatedTarget;
+        if (!(nextTarget instanceof Node) || !event.currentTarget.contains(nextTarget)) {
+          setDraggingFiles(false);
+        }
+      }}
+      onDrop={(event: DragEvent<HTMLElement>) => {
+        event.preventDefault();
+        event.stopPropagation();
+        setDraggingFiles(false);
+        void attachFiles(Array.from(event.dataTransfer.files));
+      }}
+    >
+      {draggingFiles && <div className="composer-drop-overlay" aria-live="polite" data-testid="composer-drop-overlay"><Upload size={20} /><span>Drop files here to attach</span></div>}
       <div className="composer-heading"><span className="composer-icon"><Sparkles size={15} /></span><div><strong>Give Forge a task</strong><span>Specific requests produce better work.</span></div></div>
-      <form onSubmit={submit}><div className="terminal-input-row"><span className="terminal-prompt" aria-hidden="true">USR@FORGE-6570:~$</span><textarea ref={objectiveInput} value={objective} onChange={(event) => setObjective(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); if (!event.repeat) event.currentTarget.form?.requestSubmit(); } }} placeholder="Describe what you want done…" maxLength={12000} rows={1} data-testid="input-objective" aria-label="Task objective" aria-keyshortcuts="Enter Shift+Enter" /></div>
+      <form onSubmit={submit}><div className="terminal-input-row"><span className="terminal-prompt" aria-hidden="true">USR@FORGE-6570:~$</span><textarea ref={objectiveInput} value={objective} onChange={(event) => setObjective(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); if (!event.repeat) event.currentTarget.form?.requestSubmit(); } }} placeholder="Describe what you want done…" maxLength={12000} rows={1} spellCheck={true} autoCorrect="on" autoCapitalize="sentences" data-testid="input-objective" aria-label="Task objective" aria-keyshortcuts="Enter Shift+Enter" /></div>
         {attachments.length > 0 && <div className="task-attachments">{attachments.map((file) => <span className="attachment-chip" key={file.id}><FileText size={13} />{file.name}<button type="button" onClick={() => setAttachments((current) => current.filter((item) => item.id !== file.id))} aria-label={`Remove ${file.name}`} data-testid={`button-remove-attachment-${file.id}`}><X size={13} /></button></span>)}</div>}
         {attachmentError && <p className="field-error" role="alert">{attachmentError}</p>}
         {submitError && <p className="field-error" role="alert">{submitError}</p>}
         <div className="composer-bottom"><div className="composer-actions">
           <span className="composer-counter" data-testid="text-prompt-counter">{objective.length.toLocaleString()} / 12,000</span>
           <ChatModelPicker value={displayModelMode} onChange={changeModelMode} configuredLabel={settingsQuery.data ? modelDisplayName(settingsQuery.data.provider, settingsQuery.data.modelId) : 'Loading model…'} lastUsedLabel={lastUsedModel?.provider && lastUsedModel.modelId ? modelDisplayName(lastUsedModel.provider, lastUsedModel.modelId) : null} currentSessionLabel={selectedModelForDisplay ? modelDisplayName(selectedModelForDisplay.provider, selectedModelForDisplay.model) : undefined} groups={Object.entries(models).filter(([groupProvider]) => groupProvider !== 'ollama' || settingsQuery.data?.localSetupAllowed).map(([groupProvider, items]) => ({ id: groupProvider, label: groupProvider === 'gemini' ? 'Google Gemini' : groupProvider === 'anthropic' ? 'Anthropic Claude' : groupProvider === 'openrouter' ? 'OpenRouter' : groupProvider === 'ollama' ? 'Local · Ollama' : groupProvider === 'openai' ? 'OpenAI' : 'DeepSeek', items }))} />
-          <input ref={attachmentInput} type="file" hidden onChange={(event) => { void attachFile(event.currentTarget.files?.[0]); }} data-testid="input-task-attachment" />
+          <input ref={attachmentInput} type="file" hidden multiple onChange={(event) => { void attachFiles(Array.from(event.currentTarget.files ?? [])); }} data-testid="input-task-attachment" />
           <button type="button" className="button button-quiet submit-button composer-attach" title="Attach a file" aria-label={uploadingAttachment ? 'Uploading attachment' : 'Attach a file'} onClick={() => attachmentInput.current?.click()} disabled={uploadingAttachment} data-testid="button-attach-task-file">{uploadingAttachment ? <LoaderCircle className="spin" size={12} /> : <Upload size={12} />}</button>
           {stopTargetId ? <button type="button" className="button submit-button button-stop-task" disabled={abort.isPending || stopRequestedTaskId === stopTargetId} title="Stop the active task (Escape)" aria-label="Stop active task" aria-keyshortcuts="Escape" onClick={() => requestStop(stopTargetId)} data-testid="button-stop-task"><StopCircle size={12} />{stopRequestedTaskId === stopTargetId ? 'Stopping…' : 'Stop task'}<kbd>Esc</kbd></button>
             : <button className="button button-primary submit-button" disabled={!objective.trim() || isPending || uploadingAttachment || threadBusy} title={threadBusy ? 'Wait for this chat to finish its current task, or stop it here.' : 'Send task'} data-testid="button-submit-task">{isPending ? <LoaderCircle className="spin" size={12} /> : <Send size={12} />}{isPending ? 'Sending…' : threadBusy ? 'Working' : 'Send'}</button>}

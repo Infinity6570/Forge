@@ -3,21 +3,31 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1" />
-    <title>Universal Meta-Agent Assistant</title>
-    <meta name="description" content="Universal Meta-Agent Assistant — built on Replit. Update this description to reflect the app." />
+    <title>Forge — Local Operations Command Center</title>
+    <meta name="description" content="Forge is a local operations cockpit for coordinating assistant tasks, approvals, workspace files, previews and reminders." />
     <meta name="robots" content="index, follow" />
-    <meta property="og:title" content="Universal Meta-Agent Assistant" />
-    <meta property="og:description" content="Universal Meta-Agent Assistant — built on Replit. Update this description to reflect the app." />
+    <meta property="og:title" content="Forge — Local Operations Command Center" />
+    <meta property="og:description" content="A local operations cockpit for coordinating assistant tasks, approvals, workspace files, previews and reminders." />
     <meta property="og:type" content="website" />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="Universal Meta-Agent Assistant" />
-    <meta name="twitter:description" content="Universal Meta-Agent Assistant — built on Replit. Update this description to reflect the app." />
+    <meta name="twitter:title" content="Forge — Local Operations Command Center" />
+    <meta name="twitter:description" content="A local operations cockpit for coordinating assistant tasks, approvals, workspace files, previews and reminders." />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <script type="module" crossorigin src="/assets/index-BfSX9E0S.js"></script>
-    <link rel="stylesheet" crossorigin href="/assets/index-CO3votOU.css">
+    <script>
+      try {
+        var t = localStorage.getItem('morrow-theme');
+        document.documentElement.dataset.theme = t === 'dark' || t === 'light' ? t : 'scifi';
+      } catch (_) {
+        document.documentElement.dataset.theme = 'scifi';
+      }
+      try {
+        document.documentElement.dataset.cyberFx = localStorage.getItem('forge-cyber-fx') === 'off' ? 'off' : 'on';
+      } catch (_) { document.documentElement.dataset.cyberFx = 'on'; }
+    </script>
+    <script type="module" crossorigin src="/assets/index-Ri2MtTnM.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-COHw_XX-.css">
   </head>
   <body>
     <div id="root"></div>

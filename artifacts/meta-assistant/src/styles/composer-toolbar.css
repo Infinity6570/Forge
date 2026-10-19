@@ -1,4 +1,20 @@
 /* One prompt surface and a compact bottom-right action cluster. */
+html[data-theme] .command-composer { position:relative; }
+html[data-theme] .command-composer.is-drop-target {
+  border-color:var(--accent);
+  box-shadow:0 0 0 1px color-mix(in srgb,var(--accent) 28%,transparent),0 0 20px color-mix(in srgb,var(--accent) 16%,transparent);
+}
+html[data-theme] .command-composer .composer-drop-overlay {
+  position:absolute; inset:0; z-index:30; display:flex; align-items:center; justify-content:center;
+  gap:10px; border:2px dashed var(--accent); border-radius:inherit;
+  background:color-mix(in srgb,var(--bg-panel) 78%,transparent);
+  color:var(--accent); font:600 13px/1.4 var(--font-mono); letter-spacing:.04em;
+  pointer-events:none; backdrop-filter:blur(3px);
+}
+html[data-theme="scifi"] .command-composer .composer-drop-overlay {
+  border-color:rgba(0,240,255,.78); background:rgba(3,7,18,.82);
+  color:#00f0ff; box-shadow:inset 0 0 28px rgba(0,240,255,.08);
+}
 html[data-theme] .command-composer form {
   display:grid!important; grid-template-columns:minmax(0,1fr)!important;
   gap:8px!important; padding:12px!important;
