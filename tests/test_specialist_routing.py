@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import tempfile
@@ -205,6 +206,60 @@ class SpecialistRoutingTests(unittest.IsolatedAsyncioTestCase):
             {"path": "notes.md"},
             "openai",
         ))
+
+    async def test_background_specialists_run_concurrently_and_return_structured_reports(self):
+        release_workers = asyncio.Event()
+
+        async def specialist_result(
+            task: str,
+            provider: str,
+            task_id: str,
+            *,
+            result_metadata=None,
+            **kwargs,
+        ):
+            await release_workers.wait()
+            if result_metadata is not None:
+                result_metadata.update({"provider": provider, "model": "gpt-4.1", "tier": "balanced"})
+            return f"Report for {task}"
+
+        with patch.object(main, "run_specialist_worker", new=AsyncMock(side_effect=specialist_result)):
+            first = main.start_specialist_background_job(
+                "Compare recent studies",
+                "openai",
+                "specialist-test",
+                role="research",
+                starting_tier="balanced",
+                read_only_tools=True,
+            )
+            second = main.start_specialist_background_job(
+                "Check the implementation",
+                "openai",
+                "specialist-test",
+                role="coding",
+                starting_tier="balanced",
+                read_only_tools=True,
+            )
+            await asyncio.sleep(0)
+
+            self.assertEqual(first["status"], "running")
+            self.assertEqual(second["status"], "running")
+            self.assertEqual(
+                sum(
+                    job["status"] == "running"
+                    for job in main.SPECIALIST_BACKGROUND_JOBS.values()
+                    if job["task_id"] == "specialist-test"
+                ),
+                2,
+            )
+            release_workers.set()
+            reports = await main.collect_pending_specialist_artifacts("specialist-test")
+
+        self.assertEqual(len(reports), 2)
+        self.assertEqual({report["status"] for report in reports}, {"completed"})
+        self.assertTrue(all(report["artifacts"][0]["type"] == "specialist-report" for report in reports))
+        self.assertEqual({report["model"] for report in reports}, {"gpt-4.1"})
+        await main.cleanup_specialist_background_jobs("specialist-test")
 
 
 if __name__ == "__main__":

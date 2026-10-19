@@ -59,6 +59,7 @@
     "framer-motion": "catalog:",
     "input-otp": "^1.4.2",
     "lucide-react": "catalog:",
+    "mermaid": "^12.2.0",
     "next-themes": "^0.4.6",
     "react": "catalog:",
     "react-day-picker": "^9.11.1",
@@ -77,7 +78,6 @@
     "zod": "catalog:"
   },
   "dependencies": {
-    "mermaid": "^12.2.0",
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1"
   }

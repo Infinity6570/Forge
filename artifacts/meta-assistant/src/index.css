@@ -2454,3 +2454,55 @@ html[data-theme="scifi"] .system-prompt-editor {
 html[data-theme="scifi"] .system-prompt-editor:focus-visible {
   box-shadow:0 0 0 2px rgba(0,240,255,.16),0 0 18px rgba(0,240,255,.12),inset 0 0 24px rgba(0,240,255,.045);
 }
+
+/* Keep the canvas readable when the user switches away from the cyberdeck palette. */
+html[data-theme="dark"] .workspace-canvas {
+  --canvas-ink:#f4f4f5;
+  --canvas-muted:#a1a1aa;
+  color-scheme:dark;
+  background:#09090b;
+}
+html[data-theme="dark"] :is(.canvas-header,.canvas-stage-topline) {
+  background:#111113;
+  border-color:#27272a;
+}
+html[data-theme="dark"] .canvas-rail { background:#111113; border-color:#27272a; }
+html[data-theme="dark"] :is(.canvas-stage,.canvas-source,.canvas-markdown,.canvas-diagram-panel) {
+  background:#09090b;
+  color:#f4f4f5;
+}
+html[data-theme="dark"] :is(.canvas-heading strong,.canvas-stage-path,.canvas-source code,.canvas-markdown) { color:#f4f4f5; }
+html[data-theme="dark"] :is(.canvas-heading>span,.canvas-live-state,.canvas-stage-kind,.canvas-modified,.canvas-file-label small,.canvas-app-select small,.canvas-footer) { color:#a1a1aa; }
+html[data-theme="dark"] :is(.canvas-file-row,.canvas-app-select,.canvas-icon-action) { color:#d4d4d8; }
+html[data-theme="dark"] .canvas-file-row.selected { border-color:rgba(96,165,250,.35); background:rgba(59,130,246,.1); color:#93c5fd; }
+html[data-theme="dark"] .canvas-file-icon { background:#202024; color:#93c5fd; }
+html[data-theme="dark"] :is(.canvas-running-label,.canvas-line-numbers,.canvas-file-row,.canvas-app-row) { border-color:#27272a; }
+html[data-theme="dark"] :is(.canvas-markdown a,.canvas-diagram) { color:#60a5fa; }
+
+html[data-theme="light"] .workspace-canvas {
+  --canvas-ink:#111827;
+  --canvas-muted:#64748b;
+  color-scheme:light;
+  background:#f8fafc;
+  color:#111827;
+}
+html[data-theme="light"] :is(.canvas-header,.canvas-stage-topline) {
+  background:#ffffff;
+  border-color:#e2e8f0;
+}
+html[data-theme="light"] .canvas-rail { background:#f1f5f9; border-color:#e2e8f0; }
+html[data-theme="light"] :is(.canvas-stage,.canvas-source,.canvas-markdown,.canvas-diagram-panel) {
+  background:#ffffff;
+  color:#1e293b;
+}
+html[data-theme="light"] :is(.canvas-heading strong,.canvas-stage-path,.canvas-source code,.canvas-markdown) { color:#111827; }
+html[data-theme="light"] :is(.canvas-heading>span,.canvas-live-state,.canvas-stage-kind,.canvas-modified,.canvas-file-label small,.canvas-app-select small,.canvas-footer) { color:#64748b; }
+html[data-theme="light"] :is(.canvas-file-row,.canvas-app-select,.canvas-icon-action) { color:#334155; }
+html[data-theme="light"] .canvas-file-row:hover { background:#eaf2fb; color:#0f172a; }
+html[data-theme="light"] .canvas-file-row.selected { border-color:rgba(37,99,235,.3); background:rgba(37,99,235,.08); color:#1d4ed8; }
+html[data-theme="light"] .canvas-file-icon { background:#e2e8f0; color:#2563eb; }
+html[data-theme="light"] .canvas-file-row.selected .canvas-file-icon { background:#dbeafe; color:#1d4ed8; }
+html[data-theme="light"] :is(.canvas-running-label,.canvas-line-numbers,.canvas-file-row,.canvas-app-row) { border-color:#e2e8f0; }
+html[data-theme="light"] .canvas-line-numbers { color:#94a3b8; }
+html[data-theme="light"] :is(.canvas-markdown a,.canvas-diagram) { color:#2563eb; }
+html[data-theme="light"] .canvas-footer { border-color:#e2e8f0; }

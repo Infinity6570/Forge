@@ -3877,6 +3877,8 @@ async def run_agent_task(
                     continue
                 specialist_artifacts = await collect_pending_specialist_artifacts(task_id)
                 if specialist_artifacts:
+                    if content.strip():
+                        messages.append(assistant_turn(message, provider))
                     messages.append({
                         "role": "user",
                         "content": (
@@ -3960,7 +3962,7 @@ async def run_agent_task(
                     output = json.dumps({"error": redact_provider_keys(str(tool_error))[:1000]})
                     if not tool_log_id:
                         tool_log_id = log_task(task_id, f"Tool error: {name}", "error")
-                    if name == "delegate_to_specialist":
+                    if name in {"delegate_to_specialist", "get_specialist_worker_result"}:
                         save_fallback_recommendation(
                             task_id,
                             str(args.get("task", "")),
@@ -4023,7 +4025,7 @@ async def run_agent_task(
                 saved_path = successful_workspace_write_path(name, output)
                 if saved_path:
                     successful_workspace_write_paths.add(saved_path)
-                if name == "delegate_to_specialist" and persistent_specialist_failure(output):
+                if name in {"delegate_to_specialist", "get_specialist_worker_result"} and persistent_specialist_failure(output):
                     save_fallback_recommendation(
                         task_id,
                         str(args.get("task", "")),
@@ -4293,7 +4295,7 @@ def _workspace_canvas_kind(path: Path) -> str:
         return "mermaid"
     if extension in {".pdf"}:
         return "pdf"
-    if extension in {".png", ".jpg", ".jpeg", ".webp", ".gif"}:
+    if extension in {".svg", ".png", ".jpg", ".jpeg", ".webp", ".gif"}:
         return "image"
     if extension in {".txt", ".csv"}:
         return "text"
@@ -4312,7 +4314,9 @@ def _workspace_canvas_path(relative_path: str) -> Path:
         or candidate.name.casefold() in {".env", ".env.local", "assistant.db"}
     ):
         raise PermissionError("This path is not available in the workspace canvas.")
-    resolved = resolve_workspace_asset(WORKSPACE, normalized)
+    resolved = resolve_workspace_path(WORKSPACE, normalized)
+    if not resolved.is_file():
+        raise FileNotFoundError("Workspace file does not exist.")
     if resolved.suffix.casefold() not in WORKSPACE_CANVAS_EXTENSIONS:
         raise FileNotFoundError("This file type is not available in the workspace canvas.")
     return resolved
@@ -4364,7 +4368,9 @@ async def get_workspace_canvas_file(path: str) -> dict[str, Any]:
     except OSError as error:
         raise HTTPException(status_code=404, detail="Workspace file could not be read.") from error
     truncated = len(content_bytes) > WORKSPACE_CANVAS_MAX_TEXT_BYTES
-    content = content_bytes[:WORKSPACE_CANVAS_MAX_TEXT_BYTES].decode("utf-8", errors="replace")
+    content = redact_sensitive_output(
+        content_bytes[:WORKSPACE_CANVAS_MAX_TEXT_BYTES].decode("utf-8", errors="replace")
+    )
     return {
         "path": resolved.relative_to(WORKSPACE).as_posix(),
         "content": content,

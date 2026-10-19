@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import mermaid from 'mermaid';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   getGetWorkspaceCanvasFileQueryKey,
@@ -44,11 +43,30 @@ function formatBytes(bytes: number) {
 function MermaidDiagram({ source }: { source: string }) {
   const ref = useRef<HTMLDivElement>(null);
   const [error, setError] = useState(false);
+  const [theme, setTheme] = useState(() => document.documentElement.dataset.theme ?? 'scifi');
+  useEffect(() => {
+    const syncTheme = () => setTheme(document.documentElement.dataset.theme ?? 'scifi');
+    window.addEventListener('morrow:theme', syncTheme);
+    return () => window.removeEventListener('morrow:theme', syncTheme);
+  }, []);
   useEffect(() => {
     let active = true;
-    mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', theme: 'dark', themeVariables: { darkMode: true, background: '#07111d', primaryColor: '#102535', primaryTextColor: '#dffaff', primaryBorderColor: '#00d9ea', lineColor: '#57a9bd', secondaryColor: '#0b1b2b', tertiaryColor: '#142031' } });
+    const light = theme === 'light';
+    const dark = theme === 'dark';
     const render = async () => {
       try {
+        const { default: mermaid } = await import('mermaid');
+        if (!active) return;
+        mermaid.initialize({
+          startOnLoad: false,
+          securityLevel: 'strict',
+          theme: light ? 'default' : 'dark',
+          themeVariables: light
+            ? { darkMode: false, background: '#ffffff', primaryColor: '#eff6ff', primaryTextColor: '#111827', primaryBorderColor: '#2563eb', lineColor: '#64748b', secondaryColor: '#e2e8f0', tertiaryColor: '#f8fafc' }
+            : dark
+              ? { darkMode: true, background: '#09090b', primaryColor: '#18181b', primaryTextColor: '#f4f4f5', primaryBorderColor: '#3b82f6', lineColor: '#71717a', secondaryColor: '#27272a', tertiaryColor: '#111113' }
+              : { darkMode: true, background: '#07111d', primaryColor: '#102535', primaryTextColor: '#dffaff', primaryBorderColor: '#00d9ea', lineColor: '#57a9bd', secondaryColor: '#0b1b2b', tertiaryColor: '#142031' },
+        });
         const id = `forge-diagram-${Math.random().toString(36).slice(2)}`;
         const { svg } = await mermaid.render(id, source);
         if (active && ref.current) { ref.current.innerHTML = svg; setError(false); }
@@ -56,7 +74,7 @@ function MermaidDiagram({ source }: { source: string }) {
     };
     void render();
     return () => { active = false; };
-  }, [source]);
+  }, [source, theme]);
   return error ? <div className="canvas-diagram-error" role="status" data-testid="status-canvas-diagram-error"><AlertCircle size={15} /> Diagram syntax could not be rendered.</div> : <div ref={ref} className="canvas-diagram" data-testid="canvas-mermaid-diagram" />;
 }
 

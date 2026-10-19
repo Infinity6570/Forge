@@ -20,10 +20,10 @@ from urllib.parse import quote, unquote
 
 STATIC_SUFFIXES = {
     ".html", ".htm", ".css", ".js", ".mjs", ".json", ".webmanifest",
-    ".svg", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico",
+    ".svg", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico", ".pdf",
     ".woff", ".woff2", ".ttf", ".otf",
 }
-WRITABLE_SUFFIXES = STATIC_SUFFIXES
+WRITABLE_SUFFIXES = STATIC_SUFFIXES - {".pdf"}
 SOURCE_SUFFIXES = STATIC_SUFFIXES | {
     ".py", ".pyi", ".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs",
     ".vue", ".svelte", ".astro", ".scss", ".sass", ".less", ".jsonc",
