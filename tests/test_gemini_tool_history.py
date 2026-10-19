@@ -184,16 +184,20 @@ class GeminiToolHistoryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(task["result"], "Hello world")
         self.assertNotIn("The model returned no final text.", task["logs_json"])
 
-    async def test_tenth_tool_round_is_followed_by_synthesis_before_completion(self):
-        create = AsyncMock(side_effect=[self.signed_stream() for _ in range(10)] + [self.text_stream()])
+    async def test_configured_tool_round_limit_is_followed_by_synthesis_before_completion(self):
+        create = AsyncMock(
+            side_effect=[
+                self.signed_stream() for _ in range(main.MAX_TOOL_ROUNDS)
+            ] + [self.text_stream()]
+        )
         client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
         with patch.object(main, "create_llm_client", return_value=client), patch.object(
             main, "execute_tool", new=AsyncMock(return_value='{"step":"done"}')
         ) as execute:
             await main.run_agent_task("signed", [])
 
-        self.assertEqual(create.await_count, 11)
-        self.assertEqual(execute.await_count, 10)
+        self.assertEqual(create.await_count, main.MAX_TOOL_ROUNDS + 1)
+        self.assertEqual(execute.await_count, main.MAX_TOOL_ROUNDS)
         final_request = create.call_args.kwargs
         self.assertNotIn("tools", final_request)
         self.assertIn("All actions have completed", final_request["messages"][-1]["content"])

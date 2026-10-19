@@ -21,6 +21,9 @@ class ExecutionActivityTests(unittest.TestCase):
             "logs_json": json.dumps([{"id": "log", "kind": "info", "message": "Started", "timestamp": timestamp}]),
             "provider": "gemini",
             "model_id": "gemini-3.5-flash-lite",
+            "routing_mode": None,
+            "routing_intent": None,
+            "routing_reason": None,
             "recommendation_kind": None,
             "recommendation_reason": None,
             "recommended_provider": None,
@@ -81,11 +84,14 @@ class ExecutionActivityTests(unittest.TestCase):
             )
 
         saved = json.loads(write.call_args.args[1][0])[0]["message"]
-        self.assertIn("I" * main.MAX_TOOL_LOG_SECTION_CHARS, saved)
-        self.assertNotIn("I" * (main.MAX_TOOL_LOG_SECTION_CHARS + 1), saved)
-        self.assertIn("O" * main.MAX_TOOL_LOG_SECTION_CHARS, saved)
-        self.assertNotIn("O" * (main.MAX_TOOL_LOG_SECTION_CHARS + 1), saved)
-        self.assertIn("… [truncated]", saved)
+        input_section = saved.split("Inputs:\n", 1)[1].split("\nOutput:\n", 1)[0]
+        output_section = saved.split("\nOutput:\n", 1)[1]
+        input_prefix = input_section.split(" … [truncated]", 1)[0]
+        output_prefix = output_section.split(" … [truncated]", 1)[0]
+        self.assertEqual(len(input_prefix), main.MAX_TOOL_LOG_SECTION_CHARS)
+        self.assertEqual(len(output_prefix), main.MAX_TOOL_LOG_SECTION_CHARS)
+        self.assertIn("… [truncated]", input_section)
+        self.assertIn("… [truncated]", output_section)
 
     def test_failed_tool_does_not_claim_success(self) -> None:
         logs = [{"id": "stable", "kind": "tool", "message": "Editing file", "timestamp": "2026-10-11T00:00:00Z"}]
