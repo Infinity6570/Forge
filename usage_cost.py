@@ -44,6 +44,11 @@ RATE_TABLE: dict[str, dict[str, TokenRates]] = {
         "gemini-3.8-flash": TokenRates(0.75, 3.75, 0.75, 0.075),
         "gemini-3.5-flash-lite": TokenRates(0.30, 2.50, 0.30, 0.03),
         "gemini-2.5-flash-lite": TokenRates(0.10, 0.40, 0.10, 0.01),
+        # Sourced from BenchLM's pricing table (price checked 2026-10-19).
+        "gemini-3.6-flash": TokenRates(0.75, 3.75, 0.75, 0.07),
+        "gemini-3.1-flash-lite": TokenRates(0.25, 1.50, 0.25, 0.03),
+        "gemini-3-flash-preview": TokenRates(0.50, 3.00, 0.50, 0.05),
+        "gemini-4-argon": TokenRates(2.00, 10.00, 2.00, 0.10),
     },
     # These legacy model IDs use their published V3/R1 API rates. DeepSeek's
     # newer V4 IDs have different rates and should be added as separate IDs.
