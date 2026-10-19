@@ -1,0 +1,44 @@
+### Objective: Implement Multi-Model Cost Arbitrage, Universal Cost Ledger, and Intelligent Sub-Agent Routing in Forge
+
+Please implement a major cost-optimization and multi-model routing upgrade for Forge across `usage_cost.py`, `main.py`, and the specialist worker pipeline. Sub-agents must not be locked into a single expensive model; they should automatically choose the most cost-effective provider and model available for each subtask.
+
+---
+
+### Key Requirements & File Modifications
+
+#### 1. Universal Multi-Provider Cost Ledger (`usage_cost.py`)
+- Expand `usage_cost.py` beyond Anthropic to support rates (USD per million tokens: input, output, cache write, cache read) for:
+  - **Anthropic**: `claude-opus-5-5`, `claude-sonnet-5-5`, `claude-haiku-5-5`
+  - **Gemini**: `gemini-3.1-pro-preview`, `gemini-3.8-flash`, `gemini-3.5-flash-lite`, `gemini-2.5-flash-lite`
+  - **DeepSeek**: `deepseek-chat`, `deepseek-reasoner`
+  - **OpenAI**: `gpt-4o`, `gpt-4o-mini`, `o3-mini`
+  - **Ollama**: (All models free / $0.0000)
+- Add a unified utility function `calculate_usage_cost(provider: str, model: str, usage: dict[str, Any]) -> dict[str, Any]` returning exact USD cost and a formatted summary string.
+
+#### 2. Cross-Provider Cost Arbitrage for Specialists (`main.py`)
+- Currently, `specialist_model_chain` restricts specialists to the parent task's provider.
+- Update the specialist selection logic to support **Cost Arbitrage Mode**:
+  - Detect configured API keys in the environment (`GEMINI_API_KEY`, `DEEPSEEK_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, local `Ollama`).
+  - Automatically route lightweight sub-tasks (search, document extraction, summarization) to the cheapest available provider (e.g., `gemini-3.5-flash-lite`, `deepseek-chat`, or `ollama/qwen2.5-coder`).
+  - Reserve reasoning/balanced models (`deepseek-reasoner`, `claude-sonnet-5-5`, `gemini-3.1-pro-preview`) strictly for complex logic, multi-criteria analysis, or escalation upon failure.
+  - Maintain a graceful fallback hierarchy: if the cheapest provider fails or is unconfigured, fall back to the parent provider's chain.
+
+#### 3. Task-to-Model Decomposition Matrix (`main.py`)
+- Enhance `run_specialist_worker` and `start_specialist_worker`:
+  - When delegating, inspect `role` and task heuristics:
+    - `research` / `general` (search/extraction): Start at `fast` tier with the lowest-cost active provider.
+    - `coding` (syntax check, unit tests, script generation): Route to fast code models (e.g. `deepseek-chat` or `qwen2.5-coder`).
+    - `analysis` or multi-step reasoning: Use `balanced` or `reasoning` tier.
+  - Upon an empty, malformed, or failed specialist response, escalate upward through the tier chain within the best suited provider.
+
+#### 4. Sub-Agent Context Slimming & Cache Optimization
+- In `run_specialist_worker`, avoid passing bulky supervisor history or redundant system prompts.
+- Keep the sub-agent prompt minimal (role instructions + specific task prompt + minimal untrusted data boundary).
+- Pass ephemeral cache-control headers where supported (Anthropic and Gemini) so repetitive tool turns hit cache-read pricing.
+
+#### 5. Safety Boundaries & Compatibility
+- Preserve existing safety boundaries:
+  - Specialists must only receive approved read-only tools (`SPECIALIST_READ_ONLY_TOOLS`). They must never have write or terminal execution tools.
+  - Do not expose raw API keys or redact them if logged.
+- Update `.agents/memory/specialist-routing-boundary.md` to document the new cross-provider cost arbitrage rules.
+- Run all existing test suites (`pytest tests/`) and ensure new tests in `tests/test_deepseek_model_routing.py` or new specialist tests pass without regressions.
