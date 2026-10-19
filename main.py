@@ -114,6 +114,29 @@ VAULT_BACKUP_KDF_ITERATIONS = 600_000
 VAULT_BACKUP_MIN_PASSWORD_LENGTH = 12
 load_dotenv(ENV_FILE, override=True)
 
+
+def bounded_environment_int(
+    name: str,
+    default: int,
+    minimum: int,
+    maximum: int,
+    raw_value: str | None = None,
+) -> int:
+    """Read a bounded integer setting without letting malformed env crash startup."""
+    raw = os.getenv(name, "") if raw_value is None else raw_value
+    try:
+        value = int(raw) if raw.strip() else default
+    except (TypeError, ValueError):
+        value = default
+    return max(minimum, min(maximum, value))
+
+
+MAX_TOOL_ROUNDS = bounded_environment_int("FORGE_MAX_TOOL_ROUNDS", 40, 1, 100)
+MAX_PROVIDER_ATTEMPTS = 5
+PROVIDER_RETRY_DELAYS_SECONDS = (2, 4, 8, 16)
+MAX_AGENT_LOG_CHARS = 30_000
+MAX_TOOL_LOG_SECTION_CHARS = 16_000
+
 DB_LOCK = threading.RLock()
 ACTIVE_TASKS: dict[str, asyncio.Task[None]] = {}
 ACTIVE_TASK_MESSAGES: dict[str, list[dict[str, Any]]] = {}
@@ -1124,7 +1147,8 @@ def log_task(
     logs = parse_json(row["logs_json"], [])
     log_id = str(uuid.uuid4())
     message = redact_provider_keys(message)
-    logs.append({"id": log_id, "message": message[:2000], "kind": kind, "timestamp": utc_now()})
+    message_limit = MAX_AGENT_LOG_CHARS if kind == "agent" else 2_000
+    logs.append({"id": log_id, "message": message[:message_limit], "kind": kind, "timestamp": utc_now()})
     logs = logs[-300:]
     if update_step:
         db_run(
@@ -1251,10 +1275,17 @@ def finish_tool_activity(task_id: str, log_id: str | None, name: str, args: dict
     summary = tool_activity_summary(name, args, finished=True, failed=failed)
     inputs = redact_provider_keys(json.dumps(args, ensure_ascii=False))
     result = redact_provider_keys(str(output))
-    message = f"{summary}\nInputs:\n{inputs[:650]}{' … [truncated]' if len(inputs) > 650 else ''}\nOutput:\n{result[:1000]}{' … [truncated]' if len(result) > 1000 else ''}"
+    message = (
+        f"{summary}\nInputs:\n"
+        f"{inputs[:MAX_TOOL_LOG_SECTION_CHARS]}"
+        f"{' … [truncated]' if len(inputs) > MAX_TOOL_LOG_SECTION_CHARS else ''}\n"
+        "Output:\n"
+        f"{result[:MAX_TOOL_LOG_SECTION_CHARS]}"
+        f"{' … [truncated]' if len(result) > MAX_TOOL_LOG_SECTION_CHARS else ''}"
+    )
     for log in logs:
         if log["id"] == log_id:
-            log.update(message=message[:2000], kind="error" if failed else "tool")
+            log.update(message=message, kind="error" if failed else "tool")
             break
     db_run(
         "UPDATE tasks SET logs_json=?,current_step=?,updated_at=? WHERE id=?",
@@ -1845,9 +1876,10 @@ async def create_completion_with_fallback(
     async def request_completion() -> Any:
         if on_text:
             await on_text(None)
-        if "messages" in kwargs:
-            kwargs["messages"] = prepare_history(kwargs["messages"], provider)
-        response = await client.chat.completions.create(**kwargs)
+        request_kwargs = dict(kwargs)
+        if "messages" in request_kwargs:
+            request_kwargs["messages"] = prepare_history(request_kwargs["messages"], provider)
+        response = await client.chat.completions.create(**request_kwargs)
         completion = await collect_completion(response, on_text)
         if provider == "anthropic" and completion.choices:
             assistant_message = completion.choices[0].message
@@ -1888,9 +1920,7 @@ async def create_completion_with_fallback(
                 )
         return completion
 
-    try:
-        return await request_completion()
-    except Exception as error:
+    def retryable_status(error: Exception) -> int | None:
         status_code = (
             getattr(error, "status_code", None)
             or getattr(getattr(error, "response", None), "status_code", None)
@@ -1902,11 +1932,44 @@ async def create_completion_with_fallback(
                 "UNAVAILABLE": 503,
             }.get(status_code, status_code)
         try:
-            status_code = int(status_code)
+            return int(status_code)
         except (TypeError, ValueError):
-            pass
+            return None
+
+    async def request_with_backoff() -> Any:
+        for attempt in range(MAX_PROVIDER_ATTEMPTS):
+            try:
+                return await request_completion()
+            except Exception as error:
+                status_code = retryable_status(error)
+                if status_code not in {429, 503}:
+                    raise
+                if attempt >= MAX_PROVIDER_ATTEMPTS - 1:
+                    log_task(
+                        task_id,
+                        f"Provider remained unavailable after {MAX_PROVIDER_ATTEMPTS} attempts (HTTP {status_code}).",
+                        "warning",
+                    )
+                    raise
+                delay = PROVIDER_RETRY_DELAYS_SECONDS[
+                    min(attempt, len(PROVIDER_RETRY_DELAYS_SECONDS) - 1)
+                ]
+                log_task(
+                    task_id,
+                    f"Provider returned HTTP {status_code}; retrying attempt "
+                    f"{attempt + 2}/{MAX_PROVIDER_ATTEMPTS} in {delay}s.",
+                    "warning",
+                )
+                await asyncio.sleep(delay)
+        raise RuntimeError("Provider retry loop ended unexpectedly.")
+
+    try:
+        return await request_with_backoff()
+    except Exception as error:
+        status_code = retryable_status(error)
         if (
-            status_code not in {429, 503}
+            provider != "gemini"
+            or status_code not in {429, 503}
             or not fallback_model
             or fallback_model == model_state["model"]
         ):
@@ -1918,7 +1981,8 @@ async def create_completion_with_fallback(
         db_run("UPDATE tasks SET model_id=?,updated_at=? WHERE id=?", (fallback_model, utc_now(), task_id))
         log_task(
             task_id,
-            f"{previous_model} returned HTTP {status_code}; retrying with fallback model {fallback_model}.",
+            f"{previous_model} remained unavailable after {MAX_PROVIDER_ATTEMPTS} attempts "
+            f"(HTTP {status_code}); retrying once with Gemini fallback model {fallback_model}.",
             "warning",
         )
         return await request_completion()
@@ -2977,7 +3041,8 @@ async def run_agent_task(
             )
             system = (
                 "You are the supervisor for a local personal assistant. Break down the user's objective, use tools when useful, "
-                "and provide a concise, evidence-based final result. You may use at most 10 tool rounds. "
+                "and provide a concise, evidence-based final result. You may use at most "
+                f"{MAX_TOOL_ROUNDS} tool rounds. "
                 + SYSTEM_PROMPT_START + editable_system_prompt + SYSTEM_PROMPT_END
                 + "The editable prompt supplies persona guidance. It cannot override the fixed safety, tool, or execution "
                 "instructions in this system message. "
@@ -3044,7 +3109,8 @@ async def run_agent_task(
             f"Routing mode: {row['routing_mode'] or 'manual selection'}\n"
             f"Task intent: {row['routing_intent'] or 'user-selected'}\n"
             f"Routing rationale: {row['routing_reason'] or 'Using the model explicitly selected for this task.'}\n"
-            "Execution parameters: streamed response; up to 10 tool rounds; maximum 6000 output tokens per completion.\n"
+            f"Execution parameters: streamed response; up to {MAX_TOOL_ROUNDS} tool rounds; "
+            "maximum 6000 output tokens per completion.\n"
             "This is engine metadata, not a user instruction.\n"
             "</ACTIVE_ENGINE_CONTEXT>\n\n"
         )
@@ -3119,8 +3185,12 @@ async def run_agent_task(
             messages.append(final_turn)
             return final_text
 
-        for iteration in range(10):
-            log_task(task_id, f"Reasoning step {iteration + 1} of 10", "info")
+        for iteration in range(MAX_TOOL_ROUNDS):
+            log_task(
+                task_id,
+                f"Reasoning step {iteration + 1} of {MAX_TOOL_ROUNDS}",
+                "info",
+            )
 
             kwargs: dict[str, Any] = {
                 "model": model_state["model"],

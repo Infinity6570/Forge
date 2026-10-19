@@ -59,6 +59,34 @@ class ExecutionActivityTests(unittest.TestCase):
         self.assertIn("Output:", saved[0]["message"])
         self.assertNotIn("synthetic-key-only", saved[0]["message"])
 
+    def test_agent_logs_allow_reasonable_reasoning_summaries(self) -> None:
+        with patch.object(main, "db_one", return_value={"logs_json": "[]"}), \
+                patch.object(main, "db_run") as write:
+            main.log_task("task", "R" * (main.MAX_AGENT_LOG_CHARS + 100), "agent")
+
+        saved = json.loads(write.call_args.args[1][0])
+        self.assertEqual(len(saved[0]["message"]), main.MAX_AGENT_LOG_CHARS)
+
+    def test_tool_input_and_output_logs_keep_up_to_sixteen_thousand_characters_each(self) -> None:
+        logs = [{"id": "stable", "kind": "tool", "message": "Running command", "timestamp": "now"}]
+        with patch.object(main, "db_one", return_value={"logs_json": json.dumps(logs)}), \
+                patch.object(main, "db_run") as write:
+            main.finish_tool_activity(
+                "task",
+                "stable",
+                "run_command",
+                {"payload": "I" * (main.MAX_TOOL_LOG_SECTION_CHARS + 20)},
+                "O" * (main.MAX_TOOL_LOG_SECTION_CHARS + 20),
+                False,
+            )
+
+        saved = json.loads(write.call_args.args[1][0])[0]["message"]
+        self.assertIn("I" * main.MAX_TOOL_LOG_SECTION_CHARS, saved)
+        self.assertNotIn("I" * (main.MAX_TOOL_LOG_SECTION_CHARS + 1), saved)
+        self.assertIn("O" * main.MAX_TOOL_LOG_SECTION_CHARS, saved)
+        self.assertNotIn("O" * (main.MAX_TOOL_LOG_SECTION_CHARS + 1), saved)
+        self.assertIn("… [truncated]", saved)
+
     def test_failed_tool_does_not_claim_success(self) -> None:
         logs = [{"id": "stable", "kind": "tool", "message": "Editing file", "timestamp": "2026-10-11T00:00:00Z"}]
         with patch.object(main, "db_one", return_value={"logs_json": json.dumps(logs)}), patch.object(main, "db_run") as write:

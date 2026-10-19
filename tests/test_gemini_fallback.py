@@ -49,12 +49,17 @@ class GeminiFallbackTests(unittest.IsolatedAsyncioTestCase):
 
         main.init_db()
 
-    def create_task(self, task_id: str, model: str = "gemini-primary-test") -> None:
+    def create_task(
+        self,
+        task_id: str,
+        model: str = "gemini-primary-test",
+        provider: str = "gemini",
+    ) -> None:
         now = main.utc_now()
         main.db_run(
             "INSERT INTO tasks(id,objective,status,current_step,logs_json,provider,model_id,"
-            "file_ids_json,created_at,updated_at) VALUES(?,?,'queued','Queued','[]','gemini',?,'[]',?,?)",
-            (task_id, "Complete the test task", model, now, now),
+            "file_ids_json,created_at,updated_at) VALUES(?,?,'queued','Queued','[]',?,?, '[]',?,?)",
+            (task_id, "Complete the test task", provider, model, now, now),
         )
 
     def status_error(self, status_code: int, message: str) -> APIStatusError:
@@ -67,7 +72,7 @@ class GeminiFallbackTests(unittest.IsolatedAsyncioTestCase):
         assert row is not None
         return json.dumps(main.task_dict(row))
 
-    async def test_overload_statuses_retry_once_and_record_fallback_model(self) -> None:
+    async def test_overload_statuses_retry_with_backoff_then_record_fallback_model(self) -> None:
         completion = SimpleNamespace(
             choices=[SimpleNamespace(message=SimpleNamespace(content="Task result", tool_calls=None))]
         )
@@ -77,7 +82,10 @@ class GeminiFallbackTests(unittest.IsolatedAsyncioTestCase):
                 self.create_task(task_id)
                 create = AsyncMock(
                     side_effect=[
-                        self.status_error(status_code, "temporary overload"),
+                        *[
+                            self.status_error(status_code, "temporary overload")
+                            for _ in range(main.MAX_PROVIDER_ATTEMPTS)
+                        ],
                         completion,
                     ]
                 )
@@ -85,19 +93,53 @@ class GeminiFallbackTests(unittest.IsolatedAsyncioTestCase):
                     chat=SimpleNamespace(completions=SimpleNamespace(create=create))
                 )
 
-                with patch.object(main, "create_llm_client", return_value=client):
+                sleep = AsyncMock()
+                with patch.object(main, "create_llm_client", return_value=client), \
+                        patch.object(main.asyncio, "sleep", sleep):
                     await main.run_agent_task(task_id, [])
 
-                self.assertEqual(create.await_count, 2)
+                self.assertEqual(create.await_count, main.MAX_PROVIDER_ATTEMPTS + 1)
+                self.assertEqual(
+                    [call.args[0] for call in sleep.await_args_list],
+                    list(main.PROVIDER_RETRY_DELAYS_SECONDS),
+                )
                 self.assertEqual(
                     [call.kwargs["model"] for call in create.await_args_list],
-                    ["gemini-primary-test", "gemini-fallback-test"],
+                    ["gemini-primary-test"] * main.MAX_PROVIDER_ATTEMPTS
+                    + ["gemini-fallback-test"],
                 )
                 row = main.db_one("SELECT status,model_id FROM tasks WHERE id=?", (task_id,))
                 self.assertIsNotNone(row)
                 self.assertEqual(row["status"], "completed")
                 self.assertEqual(row["model_id"], "gemini-fallback-test")
                 self.assertNotIn("test-gemini-provider-secret", self.task_history_json(task_id))
+
+    async def test_non_gemini_overload_keeps_selected_model_after_retries(self) -> None:
+        task_id = "anthropic-overload"
+        selected_model = "claude-sonnet-5-5"
+        self.create_task(task_id, model=selected_model, provider="anthropic")
+        create = AsyncMock(
+            side_effect=[
+                self.status_error(503, "temporary overload")
+                for _ in range(main.MAX_PROVIDER_ATTEMPTS)
+            ]
+        )
+        client = SimpleNamespace(
+            chat=SimpleNamespace(completions=SimpleNamespace(create=create))
+        )
+
+        with patch.object(main, "create_llm_client", return_value=client), \
+                patch.object(main.asyncio, "sleep", AsyncMock()):
+            await main.run_agent_task(task_id, [])
+
+        row = main.db_one("SELECT status,model_id FROM tasks WHERE id=?", (task_id,))
+        self.assertEqual(create.await_count, main.MAX_PROVIDER_ATTEMPTS)
+        self.assertEqual(
+            [call.kwargs["model"] for call in create.await_args_list],
+            [selected_model] * main.MAX_PROVIDER_ATTEMPTS,
+        )
+        self.assertEqual(row["status"], "failed")
+        self.assertEqual(row["model_id"], selected_model)
 
     async def test_authentication_and_invalid_model_errors_do_not_retry_or_change_history_model(
         self,
