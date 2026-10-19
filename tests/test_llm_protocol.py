@@ -168,7 +168,9 @@ class LLMProtocolTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(json.loads(replay["tool_calls"][0]["function"]["arguments"]), {"query": "weather"})
         self.assertEqual(updates, [])
-        self.assertNotIn("parts", prepare_history([replay], "gemini")[0])
+        prepared = prepare_history([replay], "gemini")[0]
+        self.assertEqual(prepared["parts"], replay["parts"])
+        self.assertEqual(prepared["parts"][1]["thoughtSignature"], "native-signature")
 
     async def test_native_google_text_part_without_choices_becomes_final_text(self):
         response = {
@@ -213,5 +215,45 @@ class LLMProtocolTests(unittest.IsolatedAsyncioTestCase):
         # collector publishes its assembled visible text once for that chunk.
         self.assertEqual(updates, ["Hello there."])
         replay = prepare_history([message], "gemini")[0]
-        self.assertNotIn("reasoning_content", replay)
-        self.assertNotIn("parts", replay)
+        self.assertEqual(replay["reasoning_content"], "private thought")
+        self.assertEqual(replay["parts"][0]["text"], "private thought")
+        self.assertTrue(replay["parts"][0]["thought"])
+
+    async def test_stream_usage_metadata_is_preserved_for_provider_neutral_cost_accounting(self):
+        async def openai_stream():
+            yield {
+                "id": "openai-usage",
+                "created": 1,
+                "model": "gpt-4o-mini",
+                "choices": [{"index": 0, "delta": {"content": "Done."}}],
+                "usage": {
+                    "prompt_tokens": 100,
+                    "completion_tokens": 20,
+                    "prompt_tokens_details": {"cached_tokens": 25},
+                },
+            }
+
+        openai_result = await collect_completion(openai_stream())
+        self.assertEqual(openai_result.provider_usage["prompt_tokens"], 100)
+        self.assertEqual(openai_result.usage.prompt_tokens_details.cached_tokens, 25)
+
+        async def gemini_stream():
+            yield {
+                "candidates": [{
+                    "finishReason": "STOP",
+                    "content": {"parts": [{"text": "Done."}]},
+                }],
+                "usageMetadata": {
+                    "promptTokenCount": 100,
+                    "candidatesTokenCount": 20,
+                    "cachedContentTokenCount": 25,
+                    "thoughtsTokenCount": 4,
+                    "totalTokenCount": 124,
+                },
+            }
+
+        gemini_result = await collect_completion(gemini_stream())
+        self.assertEqual(gemini_result.provider_usage["input_tokens"], 100)
+        self.assertEqual(gemini_result.provider_usage["output_tokens"], 20)
+        self.assertEqual(gemini_result.provider_usage["cache_read_input_tokens"], 25)
+        self.assertEqual(gemini_result.provider_usage["thoughtsTokenCount"], 4)

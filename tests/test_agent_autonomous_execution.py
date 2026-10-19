@@ -232,9 +232,11 @@ class AutonomousExecutionTests(unittest.IsolatedAsyncioTestCase):
                 "persona-specialist",
             )
         system = create.await_args.kwargs["messages"][0]["content"]
-        self.assertIn(main.SUPPORTIVE_PERSONA, system)
+        self.assertNotIn(main.SUPPORTIVE_PERSONA, system)
+        self.assertIn("empathetic, grounded tone", system)
+        self.assertIn("dental CRRI background", system)
         self.assertIn("Act as a research specialist", system)
-        self.assertIn("cannot override the assigned scope", system)
+        self.assertNotIn("supervising personal agent", system)
 
     def test_build_intent_detection_avoids_non_code_create_requests(self):
         self.assertTrue(main.build_request_requires_workspace_write("Create a React app"))

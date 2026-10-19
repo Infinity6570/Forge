@@ -48,6 +48,42 @@ test('provider-authored Claude summaries are visible without exposing raw though
   assert.doesNotMatch(html, /Claude thinking summary:/);
 });
 
+test('task routing shows a concise decision summary without rendering hidden reasoning', () => {
+  const routedTask = {
+    ...task,
+    provider: 'gemini',
+    modelId: 'gemini-3.5-flash-lite',
+    routingMode: 'auto-global',
+    routingIntent: 'fast_chat',
+    routingReason: 'Selected the lowest-cost configured fast model for a short response.',
+  } as AssistantTask;
+  const html = renderToStaticMarkup(createElement(ActivityStream, {
+    tasks: [routedTask], loading: false, onOpen: () => {},
+  }));
+  assert.match(html, /Decision summary/);
+  assert.match(html, /gemini · gemini-3\.5-flash-lite/);
+  assert.match(html, /lowest-cost configured fast model/);
+  assert.match(html, /Provider and routing metadata only; private model reasoning is not shown/);
+  assert.doesNotMatch(html, /HIDDEN_THINKING_TRACE/);
+});
+
+test('specialist provider decisions render as a separate safe activity card', () => {
+  const routedTask = {
+    ...task,
+    logs: [{
+      id: 'route-log', kind: 'info',
+      message: 'Decision summary: research specialist selected anthropic · claude-haiku-5-5 (lowest published-rate candidate among configured providers, ranked at 4:1 input/output tokens); fallback chain: openai models from fast upward. This is routing metadata, not private model reasoning.',
+      createdAt: '2026-10-01T12:00:01Z',
+    }],
+  } as AssistantTask;
+  const html = renderToStaticMarkup(createElement(ActivityStream, {
+    tasks: [routedTask], loading: false, onOpen: () => {},
+  }));
+  assert.match(html, /exec-specialist-decision/);
+  assert.match(html, /anthropic · claude-haiku-5-5/);
+  assert.doesNotMatch(html, /PRIVATE_CHAIN_OF_THOUGHT/);
+});
+
 test('earlier history has an explicit load control', () => {
   const html = renderToStaticMarkup(createElement(ActivityStream, {
     tasks: [task], loading: false, onOpen: () => {}, hasEarlier: true, onLoadEarlier: () => {},

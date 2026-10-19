@@ -183,6 +183,11 @@ async def collect_completion(response: Any, on_text: TextCallback | None = None)
                 if choices:
                     content = (choices[0].get("message") or {}).get("content")
                     await on_text(content if isinstance(content, str) else None)
+            if isinstance(raw_response, dict) and isinstance(raw_response.get("usage"), dict):
+                try:
+                    object.__setattr__(response, "provider_usage", deepcopy(raw_response["usage"]))
+                except (AttributeError, TypeError):
+                    pass
             return response
 
         async def single_native_response():
@@ -197,12 +202,16 @@ async def collect_completion(response: Any, on_text: TextCallback | None = None)
     last_text: str | None = None
     native_parts: list[dict[str, Any]] = []
     gemini_cached_tokens: int | None = None
+    provider_usage: dict[str, Any] | None = None
     try:
         async for chunk in response:
             raw = to_wire(chunk)
             response_id = raw.get("id", response_id)
             model = raw.get("model", model)
             created = raw.get("created", created)
+            raw_usage = raw.get("usage")
+            if isinstance(raw_usage, dict):
+                provider_usage = deepcopy(raw_usage)
             usage_metadata = raw.get("usage_metadata") or raw.get("usageMetadata")
             if isinstance(usage_metadata, dict):
                 cached_tokens = (
@@ -216,6 +225,24 @@ async def collect_completion(response: Any, on_text: TextCallback | None = None)
                         gemini_cached_tokens = max(0, int(cached_tokens))
                     except (TypeError, ValueError):
                         pass
+                provider_usage = {
+                    "input_tokens": usage_metadata.get("prompt_token_count")
+                    or usage_metadata.get("promptTokenCount")
+                    or 0,
+                    "output_tokens": usage_metadata.get("candidates_token_count")
+                    or usage_metadata.get("candidatesTokenCount")
+                    or 0,
+                    "cache_read_input_tokens": gemini_cached_tokens or 0,
+                    "cache_creation_input_tokens": usage_metadata.get("cache_creation_token_count")
+                    or usage_metadata.get("cacheCreationTokenCount")
+                    or 0,
+                    "thoughtsTokenCount": usage_metadata.get("thoughts_token_count")
+                    or usage_metadata.get("thoughtsTokenCount")
+                    or 0,
+                    "totalTokenCount": usage_metadata.get("total_token_count")
+                    or usage_metadata.get("totalTokenCount")
+                    or 0,
+                }
             choices = raw.get("choices", [])
             candidates = raw.get("candidates", [])
             if not choices and candidates:
@@ -314,11 +341,21 @@ async def collect_completion(response: Any, on_text: TextCallback | None = None)
     if native_parts:
         message["parts"] = native_parts
     message.setdefault("content", None)
+    completion_usage = None
+    if provider_usage and "prompt_tokens" in provider_usage:
+        completion_usage = deepcopy(provider_usage)
+        completion_usage.setdefault("completion_tokens", 0)
+        completion_usage.setdefault(
+            "total_tokens",
+            int(completion_usage.get("prompt_tokens") or 0)
+            + int(completion_usage.get("completion_tokens") or 0),
+        )
     completion = ChatCompletion.model_validate({
         "id": response_id,
         "object": "chat.completion",
         "created": created,
         "model": model,
+        "usage": completion_usage,
         "choices": [{
             "index": 0,
             "finish_reason": finish_reason or ("tool_calls" if calls else "stop"),
@@ -329,4 +366,6 @@ async def collect_completion(response: Any, on_text: TextCallback | None = None)
         # Keep provider-specific usage out of visible conversation text while
         # making Google's implicit context-cache hits available to telemetry.
         object.__setattr__(completion, "gemini_cached_tokens", gemini_cached_tokens)
+    if provider_usage is not None:
+        object.__setattr__(completion, "provider_usage", provider_usage)
     return completion

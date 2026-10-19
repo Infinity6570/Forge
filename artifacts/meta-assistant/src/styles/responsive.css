@@ -318,6 +318,19 @@ html[data-theme] .telemetry-stats { display:grid; grid-template-columns:repeat(3
 html[data-theme] .telemetry-stats > div { display:grid; gap:4px; min-width:0; padding:7px; border-left:1px solid var(--border); background:color-mix(in srgb,var(--bg-panel) 65%,transparent); }
 html[data-theme] .telemetry-stats span { color:var(--text-muted); font-size:9px; }
 html[data-theme] .telemetry-stats strong { color:var(--accent); font-size:17px; font-weight:500; }
+html[data-theme] .usage-ledger-stats strong { font-size:13px; overflow-wrap:anywhere; }
+html[data-theme] .usage-ledger-providers { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:5px; margin-top:7px; }
+html[data-theme] .usage-ledger-providers > div { display:grid; grid-template-columns:1fr auto; gap:3px 6px; min-width:0; padding:6px; border:1px solid var(--border); background:color-mix(in srgb,var(--bg-panel) 65%,transparent); }
+html[data-theme] .usage-ledger-providers span { overflow:hidden; color:var(--text-primary); font:10px var(--font-mono); text-transform:uppercase; text-overflow:ellipsis; }
+html[data-theme] .usage-ledger-providers strong { color:var(--accent); font:10px var(--font-mono); }
+html[data-theme] .usage-ledger-providers small { grid-column:1/-1; color:var(--text-muted); font-size:9px; }
+html[data-theme] .usage-ledger-entries { display:grid; gap:4px; margin-top:7px; }
+html[data-theme] .usage-ledger-entries > div { display:flex; align-items:center; justify-content:space-between; gap:8px; min-width:0; padding:5px 6px; border-left:1px solid var(--accent); background:color-mix(in srgb,var(--bg-panel) 70%,transparent); }
+html[data-theme] .usage-ledger-entries > div > span { display:grid; gap:2px; min-width:0; }
+html[data-theme] .usage-ledger-entries strong { overflow:hidden; color:var(--text-primary); font:9px var(--font-mono); text-overflow:ellipsis; white-space:nowrap; }
+html[data-theme] .usage-ledger-entries small { color:var(--text-muted); font-size:8px; }
+html[data-theme] .usage-ledger-entries b { flex:none; color:var(--accent); font:10px var(--font-mono); }
+html[data-theme] .telemetry-footnote { margin:7px 0 0; color:var(--text-muted); font-size:9px; line-height:1.45; }
 html[data-theme] .telemetry-model { display:grid; gap:4px; margin-top:9px; padding-top:8px; border-top:1px solid var(--border); }
 html[data-theme] .telemetry-model > strong { overflow-wrap:anywhere; color:var(--text-primary); font-size:13px; font-weight:600; }
 html[data-theme] .telemetry-model-id { overflow-wrap:anywhere; color:var(--text-muted); font-size:9px; }

@@ -9,7 +9,7 @@ import {
 } from '@/lib/chat-model-preference';
 import type { CSSProperties, DragEvent, FormEvent, ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, Route, Router as WouterRouter, Switch, useLocation } from 'wouter';
 import {
   useAbortAssistantTask,
@@ -57,7 +57,7 @@ import {
 } from '@workspace/api-client-react';
 import type { AssistantFile, AssistantNote, AssistantSettings, AssistantSettingsInput, AssistantTask, AssistantTimer, SystemPromptUpdate, VaultKeysInput, VaultKeyStatuses, WorkspacePreviewApp } from '@workspace/api-client-react';
 import {
-  Activity, AlertCircle, ArrowDownToLine, ArrowRight, Bell, BookOpen, Check, CheckCircle2,
+  Activity, AlertCircle, ArrowDownToLine, ArrowRight, Bell, BookOpen, Check, CheckCircle2, CircleDollarSign,
   ChevronDown, ChevronRight, CircleHelp, Clock3, Copy, Cpu, ExternalLink, FileText, FolderOpen, Gauge, HardDrive, Layers3, Moon, Sun,
   KeyRound, LoaderCircle, LockKeyhole, Menu, Plus, RefreshCw, Search,
   Send, Settings2, ShieldCheck, Sparkles, StopCircle, Trash2, Upload, X, Zap, PanelRight, GripVertical, Eye, EyeOff, CandlestickChart,
@@ -80,6 +80,31 @@ import { getRecentFiles, getRecentNotes, getRecentTaskLogs, timeAgo } from '@/li
 
 const queryClient = new QueryClient();
 type Page = 'home' | 'tasks' | 'workspace' | 'alarms' | 'settings';
+type UsageLedgerResponse = {
+  pricingUpdatedAt?: string;
+  totals?: {
+    entries?: number;
+    unknown_entries?: number;
+    published_rate_total_usd?: number | null;
+  };
+  byProvider?: Array<{
+    provider: string;
+    entries: number;
+    unknown_entries: number;
+    published_rate_total_usd?: number | null;
+  }>;
+  entries?: Array<{
+    id: string;
+    provider: string;
+    model_id: string;
+    source: string;
+    input_tokens: number;
+    output_tokens: number;
+    cost_usd?: number | null;
+    cost_known: number | boolean;
+    created_at: string;
+  }>;
+};
 
 const navItems: { href: string; label: string; icon: typeof Activity }[] = [
   { href: '/', label: 'Command center', icon: Gauge },
@@ -1257,6 +1282,15 @@ function SystemTelemetry() {
   const files = useListAssistantFiles();
   const notes = useListAssistantNotes();
   const tasks = useListAssistantTasks({ query: { queryKey: getListAssistantTasksQueryKey(), refetchInterval: 4000 } });
+  const usageLedger = useQuery<UsageLedgerResponse>({
+    queryKey: ['assistant-usage-ledger'],
+    queryFn: async () => {
+      const response = await fetch('/api/assistant/usage-ledger?limit=50', { cache: 'no-store' });
+      if (!response.ok) throw new Error(`Usage ledger request failed (${response.status}).`);
+      return response.json() as Promise<UsageLedgerResponse>;
+    },
+    refetchInterval: 15_000,
+  });
   const { selectedId, currentModel } = useConversations();
   const thread = useThreadHistory(selectedId);
   const messages = thread.data?.messages ?? [];
@@ -1285,6 +1319,9 @@ function SystemTelemetry() {
     { id: 'google', label: 'GOOGLE', configured: settings.data.hasGeminiKey, selected: settings.data.searchMode === 'native' && settings.data.provider === 'gemini' },
     { id: 'brave', label: 'BRAVE', configured: settings.data.hasBraveKey, selected: settings.data.searchMode === 'api' && settings.data.searchApiProvider === 'brave' },
   ] : [];
+  const formatUsd = (value: number | null | undefined) => typeof value === 'number'
+    ? value.toLocaleString(undefined, { style: 'currency', currency: 'USD', minimumFractionDigits: 4, maximumFractionDigits: 6 })
+    : '—';
   return <div className="telemetry-console" data-testid="panel-system-telemetry">
     <section className="telemetry-section system-readout">
       <div className="telemetry-section-head"><span className="telemetry-section-mark"><Cpu size={14} /></span><div><span className="telemetry-kicker">SYSTEM READOUT</span><h3>Runtime overview</h3></div><span className="telemetry-live-tag">LOCAL</span></div>
@@ -1315,6 +1352,38 @@ function SystemTelemetry() {
         {settings.data.searchMode === 'chromium' && <span className={`telemetry-provider-chip ${settings.data.chromiumAvailable ? 'ready' : 'missing'}`} data-testid="telemetry-provider-chromium"><i aria-hidden="true" /><span>CHROMIUM</span><strong>{settings.data.chromiumAvailable ? 'AVAILABLE' : 'UNAVAILABLE'}</strong></span>}
         <p className="telemetry-search-disclaimer">Configuration status only; no live connectivity probe.</p>
       </div>}
+    </section>
+
+    <section className="telemetry-section usage-ledger" data-testid="section-usage-ledger">
+      <div className="telemetry-section-head">
+        <span className="telemetry-section-mark"><CircleDollarSign size={14} /></span>
+        <div><span className="telemetry-kicker">USAGE LEDGER</span><h3>Provider token costs</h3></div>
+        <span className="telemetry-live-tag">USD EST.</span>
+      </div>
+      {usageLedger.isLoading
+        ? <div className="telemetry-skeleton"><i /><i /></div>
+        : usageLedger.isError
+          ? <div className="telemetry-error"><span>Usage ledger unavailable.</span><button type="button" onClick={() => usageLedger.refetch()}>Retry</button></div>
+          : <>
+            <div className="telemetry-stats usage-ledger-stats">
+              <div><span>Recorded calls</span><strong data-testid="text-ledger-entry-count">{usageLedger.data?.totals?.entries ?? 0}</strong></div>
+              <div><span>Published-rate total</span><strong data-testid="text-ledger-cost">{formatUsd(usageLedger.data?.totals?.published_rate_total_usd)}</strong></div>
+              <div><span>Unknown rates</span><strong data-testid="text-ledger-unknown">{usageLedger.data?.totals?.unknown_entries ?? 0}</strong></div>
+            </div>
+            {!!usageLedger.data?.byProvider?.length && <div className="usage-ledger-providers">
+              {usageLedger.data.byProvider.map((entry) => <div key={entry.provider} data-testid={`ledger-provider-${entry.provider}`}>
+                <span>{entry.provider}</span><strong>{formatUsd(entry.published_rate_total_usd)}</strong>
+                <small>{entry.entries} calls{entry.unknown_entries ? ` · ${entry.unknown_entries} unpriced` : ''}</small>
+              </div>)}
+            </div>}
+            {!!usageLedger.data?.entries?.length && <div className="usage-ledger-entries" data-testid="usage-ledger-recent-entries">
+              {usageLedger.data.entries.slice(0, 5).map((entry) => <div key={entry.id}>
+                <span><strong>{entry.provider} · {entry.model_id}</strong><small>{entry.source} · {entry.input_tokens.toLocaleString()} in / {entry.output_tokens.toLocaleString()} out</small></span>
+                <b>{entry.cost_known ? formatUsd(entry.cost_usd) : 'UNKNOWN'}</b>
+              </div>)}
+            </div>}
+          </>}
+      <p className="telemetry-footnote">Published token-rate estimates as of {usageLedger.data?.pricingUpdatedAt ?? 'the current rate table'}. Account credits, free-tier allowances, taxes, request-based tools, and Gemini cache storage are excluded.</p>
     </section>
 
     <section className="telemetry-section context-meter">

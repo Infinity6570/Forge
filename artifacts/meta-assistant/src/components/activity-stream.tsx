@@ -149,17 +149,28 @@ const TaskArticle = memo(function TaskArticle({ task, extras, text, onOpen }: {
 }) {
         const live = isLive(task);
         const stepCount = (task.logs?.length ?? 0) + extras.length;
+        const specialistDecisions = (task.logs ?? []).filter((log) =>
+          log.kind === 'info' && log.message.startsWith('Decision summary: '),
+        );
         const hasProviderSummary = (task.logs ?? []).some((log) =>
           log.kind === 'agent' && log.message.startsWith('Claude thinking summary:\n'),
         );
         const activeModelLabel = [task.provider, task.modelId].filter(Boolean).join(' · ');
+        const routingLabel = task.routingMode
+          ? `Routing mode: ${task.routingMode.replaceAll('_', ' ')}${task.routingIntent ? ` · intent: ${task.routingIntent.replaceAll('_', ' ')}` : ''}.`
+          : task.routingIntent
+            ? `Task intent: ${task.routingIntent.replaceAll('_', ' ')}.`
+            : 'Using the model selected for this task.';
+        const decisionReason = task.routingReason?.trim() || routingLabel;
         const [thinkingOpen, setThinkingOpen] = useState(
           () => hasProviderSummary || (live && stepCount > 0),
         );
         useEffect(() => {
           if (hasProviderSummary || (live && stepCount > 0)) setThinkingOpen(true);
         }, [hasProviderSummary, live, stepCount]);
-        const rows = useMemo(() => thinkingOpen ? rowsFor(task.logs ?? []) : [], [thinkingOpen, task.logs]);
+        const rows = useMemo(() => thinkingOpen ? rowsFor((task.logs ?? []).filter((log) =>
+          !log.message.startsWith('Decision summary: '),
+        )) : [], [thinkingOpen, task.logs]);
         const searchPayloads = useMemo(() => extras.map((m) => parseSearchPayload(m.content)).filter((payload) => payload !== null), [extras]);
         const sources = useMemo(() => {
           const seen = new Set<string>();
@@ -175,6 +186,16 @@ const TaskArticle = memo(function TaskArticle({ task, extras, text, onOpen }: {
             <p className="exec-user-text">{task.objective}</p>
             <div className="exec-user-meta"><span>You</span><time>{clock(task.createdAt)}</time><span className="exec-status">{String(task.status)}</span><button type="button" className="exec-view" onClick={() => onOpen(task)} data-testid={`button-stream-task-${task.id}`}>View Details<ArrowRight size={12} /></button></div>
           </div>
+          {activeModelLabel && <section className="exec-decision-summary" data-testid={`decision-summary-${task.id}`}>
+            <div className="exec-decision-heading"><ListChecks size={13} /><span>Decision summary</span></div>
+            <strong>{activeModelLabel}</strong>
+            <p>{decisionReason}</p>
+            <small>Provider and routing metadata only; private model reasoning is not shown.</small>
+          </section>}
+          {specialistDecisions.map((log) => <section className="exec-decision-summary exec-specialist-decision" key={log.id} data-testid={`decision-log-${log.id}`}>
+            <div className="exec-decision-heading"><ListChecks size={13} /><span>Specialist decision summary</span><time>{clock(log.createdAt)}</time></div>
+            <p>{log.message.slice('Decision summary: '.length).trim()}</p>
+          </section>)}
           {task.status === 'cancelled' && <div className="exec-aborted" role="status" data-testid={`task-aborted-${task.id}`}><StopCircle size={13} aria-hidden="true" /><span>[TASK ABORTED BY USER]</span></div>}
           {(stepCount > 0 || (live && !task.result) || task.error) && <details className="exec-thinking" open={thinkingOpen} onToggle={(e) => setThinkingOpen(e.currentTarget.open)} data-testid={`thinking-${task.id}`}>
             <summary><Brain size={14} /><span>Execution activity ({stepCount} {stepCount === 1 ? 'step' : 'steps'})</span>{activeModelLabel && <span className="exec-model-badge" title={activeModelLabel}>{activeModelLabel}</span>}{live && <span className="exec-working"><span className="exec-dot live" />Working</span>}<ChevronDown size={13} className="exec-chev" /></summary>

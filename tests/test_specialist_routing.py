@@ -88,6 +88,16 @@ class SpecialistRoutingTests(unittest.IsolatedAsyncioTestCase):
             "reported incomplete or failed work",
         )
 
+    def test_task_role_selects_starting_tier_before_price_arbitration(self):
+        self.assertEqual(main.specialist_default_tier("general", "Explain this result."), "fast")
+        self.assertEqual(main.specialist_default_tier("research", "Find recent papers."), "fast")
+        self.assertEqual(main.specialist_default_tier("coding", "Inspect this function."), "fast")
+        self.assertEqual(main.specialist_default_tier("analysis", "Compare these two options."), "balanced")
+        self.assertEqual(
+            main.specialist_default_tier("analysis", "Perform a multi-file architectural refactoring."),
+            "reasoning",
+        )
+
     async def test_empty_result_escalates_and_records_the_same_provider_decision(self):
         create = AsyncMock(side_effect=[completion("  "), completion("Verified answer.")])
         client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
@@ -100,14 +110,14 @@ class SpecialistRoutingTests(unittest.IsolatedAsyncioTestCase):
                 starting_tier="fast",
             )
 
-        self.assertIn("escalated from fast", result)
+        self.assertIn("escalated from openai · fast", result)
         self.assertTrue(result.endswith("Verified answer."))
         self.assertEqual(
             [call.kwargs["model"] for call in create.await_args_list],
-            ["gpt-4.1-mini", "gpt-4.1"],
+            ["gpt-4o-mini", "gpt-4o"],
         )
         logs = main.task_dict(main.db_one("SELECT * FROM tasks WHERE id='specialist-test'"))["logs"]
-        self.assertTrue(any("escalated from fast" in item["message"] for item in logs))
+        self.assertTrue(any("escalated from openai · fast" in item["message"] for item in logs))
         self.assertTrue(all(
             call.kwargs["model"] in main.MODEL_OPTIONS["openai"]
             for call in create.await_args_list
@@ -116,7 +126,11 @@ class SpecialistRoutingTests(unittest.IsolatedAsyncioTestCase):
     async def test_provider_failure_escalates_without_switching_providers(self):
         create = AsyncMock(side_effect=[RuntimeError("temporary provider failure"), completion("Recovered.")])
         client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
-        with patch.object(main, "create_llm_client", return_value=client):
+        with patch.object(
+            main,
+            "credential_for",
+            side_effect=lambda candidate: "test-key" if candidate == "anthropic" else None,
+        ), patch.object(main, "create_llm_client", return_value=client):
             result = await main.run_specialist_worker(
                 "Analyze this implementation.",
                 "anthropic",
@@ -125,7 +139,7 @@ class SpecialistRoutingTests(unittest.IsolatedAsyncioTestCase):
                 starting_tier="fast",
             )
 
-        self.assertIn("escalated from fast", result)
+        self.assertIn("escalated from anthropic · fast", result)
         self.assertEqual(
             [call.kwargs["model"] for call in create.await_args_list],
             ["claude-haiku-5-5", "claude-sonnet-5-5"],
@@ -134,6 +148,107 @@ class SpecialistRoutingTests(unittest.IsolatedAsyncioTestCase):
             call.kwargs["model"] in main.MODEL_OPTIONS["anthropic"]
             for call in create.await_args_list
         ))
+
+    def test_specialist_cost_arbitrage_prefers_cheapest_configured_provider_and_keeps_parent_fallback(self):
+        with patch.object(
+            main,
+            "credential_for",
+            side_effect=lambda candidate: (
+                "configured"
+                if candidate in {"openai", "deepseek", "gemini", "anthropic"}
+                else None
+            ),
+        ):
+            attempts, summary = main.specialist_route_plan(
+                "openai",
+                "research",
+                "fast",
+                "Summarize these papers.",
+            )
+
+        self.assertEqual(attempts[:3], [
+            ("anthropic", "fast", "claude-haiku-5-5"),
+            ("anthropic", "balanced", "claude-sonnet-5-5"),
+            ("anthropic", "reasoning", "claude-opus-5-5"),
+        ])
+        self.assertEqual(attempts[3], ("openai", "fast", "gpt-4o-mini"))
+        self.assertIn("lowest published-rate candidate", summary)
+        self.assertIn("Configured provider estimates", summary)
+        self.assertIn("gemini ", summary)
+        self.assertIn("deepseek ", summary)
+        self.assertIn("anthropic ", summary)
+        self.assertIn("openai ", summary)
+        self.assertIn("fallback chain: openai models from fast upward", summary)
+        self.assertNotIn("private chain-of-thought", summary)
+
+    async def test_failed_cheapest_provider_falls_back_to_parent_provider_chain(self):
+        create = AsyncMock(side_effect=[
+            RuntimeError("Anthropic unavailable"),
+            RuntimeError("Anthropic unavailable"),
+            RuntimeError("Anthropic unavailable"),
+            completion("Recovered by the parent provider."),
+        ])
+        client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+        metadata: dict[str, str] = {}
+        with patch.object(
+            main,
+            "credential_for",
+            side_effect=lambda candidate: (
+                "configured" if candidate in {"anthropic", "openai"} else None
+            ),
+        ), patch.object(main, "create_llm_client", return_value=client):
+            result = await main.run_specialist_worker(
+                "Summarize the source documents.",
+                "openai",
+                "specialist-test",
+                role="research",
+                starting_tier="fast",
+                result_metadata=metadata,
+            )
+
+        self.assertTrue(result.endswith("Recovered by the parent provider."))
+        self.assertEqual(metadata["provider"], "openai")
+        self.assertEqual(metadata["model"], "gpt-4o-mini")
+        self.assertIn("selected anthropic", metadata["decisionSummary"])
+        self.assertEqual(
+            [call.kwargs["model"] for call in create.await_args_list],
+            ["claude-haiku-5-5", "claude-sonnet-5-5", "claude-opus-5-5", "gpt-4o-mini"],
+        )
+        self.assertTrue(all(
+            "write_file" not in {tool["function"]["name"] for tool in call.kwargs.get("tools", [])}
+            for call in create.await_args_list
+        ))
+
+    async def test_usage_ledger_persists_provider_neutral_cost_rows(self):
+        completion_with_usage = SimpleNamespace(
+            choices=[],
+            provider_usage={"prompt_tokens": 1000, "completion_tokens": 250},
+        )
+        record = main.log_usage_ledger_entry(
+            "specialist-test",
+            "openai",
+            "gpt-4o-mini",
+            completion_with_usage,
+            source="specialist",
+            tier="fast",
+        )
+        self.assertIsNotNone(record)
+        self.assertAlmostEqual(record["costUsd"], 0.0003)
+        row = main.db_one(
+            "SELECT provider,model_id,source,tier,input_tokens,output_tokens,cost_usd,cost_known "
+            "FROM usage_ledger WHERE task_id=?",
+            ("specialist-test",),
+        )
+        self.assertEqual(row["provider"], "openai")
+        self.assertEqual(row["model_id"], "gpt-4o-mini")
+        self.assertEqual(row["source"], "specialist")
+        self.assertEqual(row["tier"], "fast")
+        self.assertEqual(row["input_tokens"], 1000)
+        self.assertEqual(row["output_tokens"], 250)
+        self.assertEqual(row["cost_known"], 1)
+        api_result = await main.get_usage_ledger()
+        self.assertEqual(api_result["totals"]["entries"], 1)
+        self.assertEqual(api_result["entries"][0]["model_id"], "gpt-4o-mini")
 
     async def test_empty_reasoning_tier_returns_a_recorded_failure_without_downgrading(self):
         create = AsyncMock(return_value=completion(" "))
