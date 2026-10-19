@@ -83,6 +83,14 @@ class WorkspaceSafetyTests(unittest.IsolatedAsyncioTestCase):
             "run_command",
             {"command": "mkdir -p generated/site", "cwd": "."},
         ))
+        self.assertIsNone(main.workspace_action_requiring_approval(
+            "run_command",
+            {"command": "rm generated/site/index.html", "cwd": "."},
+        ))
+        self.assertIsNone(main.workspace_action_requiring_approval(
+            "run_command",
+            {"command": "echo 'rm generated/site/index.html'", "cwd": "."},
+        ))
         approval = main.workspace_action_requiring_approval(
             "run_command",
             {"command": "rm -rf generated/site", "cwd": "."},
@@ -90,8 +98,18 @@ class WorkspaceSafetyTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNotNone(approval)
         self.assertEqual(approval[0], "critical_shell_command")
         self.assertIn("rm -rf generated/site", approval[1]["command"])
+        protected = main.workspace_action_requiring_approval(
+            "run_command",
+            {"command": "rm main.py", "cwd": "."},
+        )
+        self.assertIsNotNone(protected)
+        outside = main.workspace_action_requiring_approval(
+            "run_command",
+            {"command": "rm ../outside.txt", "cwd": "."},
+        )
+        self.assertIsNotNone(outside)
 
-    async def test_critical_delete_and_protected_file_write_wait_for_approval(self) -> None:
+    async def test_scoped_delete_is_immediate_but_protected_changes_wait_for_approval(self) -> None:
         protected = self.root / "main.py"
         protected.write_text("original()", encoding="utf-8")
         important = self.root / "important.txt"
@@ -105,8 +123,19 @@ class WorkspaceSafetyTests(unittest.IsolatedAsyncioTestCase):
             "",
             "test-task",
         ))
-        self.assertTrue(delete_result["approvalRequired"])
-        self.assertTrue(important.exists())
+        self.assertTrue(delete_result["deleted"])
+        self.assertFalse(important.exists())
+
+        critical_delete_result = json.loads(await main.execute_tool(
+            "delete_file",
+            {"path": "main.py"},
+            "gemini",
+            {"model": "test-model"},
+            "",
+            "test-task",
+        ))
+        self.assertTrue(critical_delete_result["approvalRequired"])
+        self.assertTrue(protected.exists())
 
         write_result = json.loads(await main.execute_tool(
             "write_file",
@@ -129,26 +158,26 @@ class WorkspaceSafetyTests(unittest.IsolatedAsyncioTestCase):
 
         delete_action, delete_payload, _ = main.workspace_action_requiring_approval(
             "delete_file",
-            {"path": "important.txt"},
+            {"path": "main.py"},
         )
-        self.assertTrue(important.exists())
-        important.write_text("changed while waiting", encoding="utf-8")
+        self.assertTrue(protected.exists())
+        protected.write_text("different content after delete approval", encoding="utf-8")
         with self.assertRaisesRegex(PermissionError, "changed while approval"):
             main.apply_approved_workspace_action(delete_action, delete_payload)
-        important.write_text("keep me", encoding="utf-8")
+        protected.write_text("original()", encoding="utf-8")
         delete_action, delete_payload, _ = main.workspace_action_requiring_approval(
             "delete_file",
-            {"path": "important.txt"},
+            {"path": "main.py"},
         )
         deleted = json.loads(main.apply_approved_workspace_action(delete_action, delete_payload))
         self.assertTrue(deleted["deleted"])
-        self.assertFalse(important.exists())
+        self.assertFalse(protected.exists())
 
-    async def test_critical_shell_command_tool_call_only_returns_approval_request(self) -> None:
+    async def test_critical_recursive_shell_command_only_returns_approval_request(self) -> None:
         with patch.object(main, "run_workspace_command") as run_command:
             result = json.loads(await main.execute_tool(
                 "run_command",
-                {"command": "rm sample.txt"},
+                {"command": "rm -rf sample.txt"},
                 "gemini",
                 {"model": "test-model"},
                 "",
@@ -384,15 +413,7 @@ class WorkspaceSafetyTests(unittest.IsolatedAsyncioTestCase):
             "",
             "test-task",
         ), {})
-        self.assertTrue(deleted["approvalRequired"])
-        delete_action, delete_payload, _ = main.workspace_action_requiring_approval(
-            "delete_file",
-            {"path": ".forge-data/nested/config.json"},
-        )
-        self.assertTrue(main.parse_json(
-            main.apply_approved_workspace_action(delete_action, delete_payload),
-            {},
-        )["deleted"])
+        self.assertTrue(deleted["deleted"])
         self.assertFalse((self.root / ".forge-data/nested/config.json").exists())
         with self.assertRaises(PermissionError):
             main.project_path("../outside.py")
@@ -987,7 +1008,7 @@ class WorkspaceSafetyTests(unittest.IsolatedAsyncioTestCase):
         task_id = await self._create_pending_task(
             approval_id,
             "critical_shell_command",
-            {"command": "rm sample.txt", "cwd": "."},
+            {"command": "rm -rf sample.txt", "cwd": "."},
         )
 
         async def fake_worker(*_args: object) -> None:
@@ -1010,7 +1031,7 @@ class WorkspaceSafetyTests(unittest.IsolatedAsyncioTestCase):
                     break
                 await asyncio.sleep(0.01)
 
-        shell_runner.assert_called_once_with("rm sample.txt", ".")
+        shell_runner.assert_called_once_with("rm -rf sample.txt", ".")
         self.assertEqual(pending["status"], "approved")
         self.assertTrue(self.sample.exists())
 

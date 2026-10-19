@@ -3713,18 +3713,17 @@ CRITICAL_PROJECT_FILE_NAMES = frozenset({
     "tools/model_client.py",
 })
 CRITICAL_TERMINAL_PATTERNS = (
-    r"\bformat(?:\.com|\.exe)?\b",
-    r"\bdiskpart(?:\.exe)?\b",
-    r"\breg(?:\.exe)?\s+delete\b",
-    r"\bshutdown(?:\.exe)?\b|\breboot\b|\brestart-computer\b",
-    r"\b(?:sudo|su|pkexec|runas)\b",
-    r"\b(?:mkfs|shred)\b|\bdd\s+if=",
-    r"\bgit\s+(?:clean|reset)\b",
+    r"^\s*format(?:\.com|\.exe)?\b",
+    r"^\s*diskpart(?:\.exe)?\b",
+    r"^\s*reg(?:\.exe)?\s+delete\b",
+    r"^\s*(?:shutdown(?:\.exe)?|reboot|restart-computer)\b",
+    r"^\s*(?:sudo|su|pkexec|runas)\b",
+    r"^\s*(?:mkfs|shred)\b|^\s*dd\s+if=",
+    r"^\s*git\s+(?:clean|reset)\b",
     r"\b(?:drop|truncate)\s+(?:table|database|schema)\b",
     r"\bdelete\s+from\b",
-    r"\btaskkill\b[^\n]*/f\b|\bkill(?:all)?\b[^\n]*(?:-9|--force)",
-    r"\b(?:chmod|chown|icacls|takeown|systemctl|service|launchctl)\b",
-    r"\|\s*(?:sh|bash|zsh|powershell|pwsh)\b",
+    r"^\s*taskkill\b[^\n]*/f\b|^\s*kill(?:all)?\b[^\n]*(?:-9|--force)",
+    r"^\s*(?:chmod|chown|icacls|takeown|systemctl|service|launchctl)\b",
 )
 
 
@@ -3815,33 +3814,38 @@ def critical_project_write_approval(
 def critical_file_removal_reason(command: str, cwd: str = ".") -> str | None:
     """Require approval only for broad, external, or protected-file removals."""
     try:
-        tokens = shlex.split(str(command), posix=True)
+        lexer = shlex.shlex(str(command), posix=True, punctuation_chars=";&|")
+        lexer.whitespace_split = True
+        lexer.commenters = ""
+        tokens = list(lexer)
         base_directory = project_path(cwd)
     except (ValueError, PermissionError, OSError):
-        return "ambiguous or out-of-project file-removal command"
+        if re.search(r"(?i)\b(?:rm|rmdir|del|erase|remove-item)\b", str(command)):
+            return "ambiguous or out-of-project file-removal command"
+        return None
 
     separators = {";", "&&", "||", "|", "&"}
     removal_commands = {"rm", "rmdir", "del", "erase", "remove-item"}
-    recursive_flags = {"-r", "-R", "--recursive", "/s"}
+    recursive_flags = {"-r", "--recursive", "-recurse", "/s"}
+    segments: list[list[str]] = []
+    current: list[str] = []
+    for token in tokens:
+        if token in separators:
+            if current:
+                segments.append(current)
+            current = []
+        else:
+            current.append(token)
+    if current:
+        segments.append(current)
 
-    for index, token in enumerate(tokens):
-        # PowerShell commonly passes its command body as one quoted shell argument.
-        candidate_tokens = tokens[index:]
-        if re.match(r"(?i)^(?:rm|rmdir|del|erase|remove-item)(?:\.exe)?\s+", token):
-            try:
-                candidate_tokens = shlex.split(token, posix=True) + tokens[index + 1:]
-            except ValueError:
-                return "ambiguous file-removal command"
-
-        command_word = candidate_tokens[0].casefold().replace(".exe", "")
+    def inspect_removal(candidate_tokens: list[str]) -> str | None:
+        if not candidate_tokens:
+            return None
+        command_word = Path(candidate_tokens[0]).name.casefold().replace(".exe", "")
         if command_word not in removal_commands:
-            continue
-
-        raw_args: list[str] = []
-        for argument in candidate_tokens[1:]:
-            if argument in separators:
-                break
-            raw_args.append(argument)
+            return None
+        raw_args = candidate_tokens[1:]
         lowered_args = [argument.casefold() for argument in raw_args]
         if any(
             flag in recursive_flags or re.fullmatch(r"-[a-z]*r[a-z]*", flag)
@@ -3866,9 +3870,7 @@ def critical_file_removal_reason(command: str, cwd: str = ".") -> str | None:
             if lowered in {"-path", "-literalpath", "--path"}:
                 skip_next = True
                 continue
-            if lowered.startswith("-") or re.fullmatch(r"/[a-z]+", lowered):
-                continue
-            if lowered == "--":
+            if lowered.startswith("-") or re.fullmatch(r"/[a-z]+", lowered) or lowered == "--":
                 continue
             targets.append(argument)
 
@@ -3892,6 +3894,28 @@ def critical_file_removal_reason(command: str, cwd: str = ".") -> str | None:
                     return "file-removal command targets a protected project file"
             except (PermissionError, OSError, ValueError):
                 return "ambiguous or out-of-project file-removal command"
+        return None
+
+    wrappers = {"cmd", "cmd.exe", "powershell", "powershell.exe", "pwsh", "pwsh.exe"}
+    for segment in segments:
+        if not segment:
+            continue
+        command_word = Path(segment[0]).name.casefold()
+        result = inspect_removal(segment)
+        if result:
+            return result
+        if command_word in wrappers:
+            for index, argument in enumerate(segment[:-1]):
+                if argument.casefold() in {"-c", "/c", "-command", "-command"}:
+                    nested = segment[index + 1:]
+                    if len(nested) == 1:
+                        try:
+                            nested = shlex.split(nested[0], posix=True)
+                        except ValueError:
+                            return "ambiguous shell-wrapper deletion command"
+                    result = inspect_removal(nested)
+                    if result:
+                        return result
     return None
 
 
@@ -3899,8 +3923,30 @@ def critical_terminal_command_reason(command: str, cwd: str = ".") -> str | None
     removal_reason = critical_file_removal_reason(command, cwd)
     if removal_reason:
         return removal_reason
-    normalized = str(command).casefold()
-    if any(re.search(pattern, normalized) for pattern in CRITICAL_TERMINAL_PATTERNS):
+    try:
+        lexer = shlex.shlex(str(command), posix=True, punctuation_chars=";&|")
+        lexer.whitespace_split = True
+        lexer.commenters = ""
+        tokens = list(lexer)
+    except ValueError:
+        tokens = []
+    separators = {";", "&&", "||", "|", "&"}
+    segments: list[list[str]] = []
+    current: list[str] = []
+    for token in tokens:
+        if token in separators:
+            if current:
+                segments.append(current)
+            current = []
+        else:
+            current.append(token)
+    if current:
+        segments.append(current)
+    if any(
+        re.search(pattern, " ".join(segment).casefold())
+        for segment in segments
+        for pattern in CRITICAL_TERMINAL_PATTERNS
+    ) or re.search(r"\|\s*(?:sh|bash|zsh|powershell|pwsh)\b", str(command), re.IGNORECASE):
         return "potentially destructive, administrative, or irreversible command"
     return None
 
@@ -4511,8 +4557,8 @@ TOOLS = [
     {"type": "function", "function": {"name": "append_file", "description": "Append UTF-8 text to a project file, creating parent directories and the file if needed. Protected Forge source/configuration writes require explicit human approval; secret files and Git metadata are blocked.", "parameters": {"type": "object", "properties": {"path": {"type": "string"}, "content": {"type": "string", "maxLength": 2097152}}, "required": ["path", "content"]}}},
     {"type": "function", "function": {"name": "replace_in_file", "description": "Replace one exact, unique text occurrence in a UTF-8 project file. Protected Forge source/configuration writes require explicit human approval; secret files and Git metadata are blocked.", "parameters": {"type": "object", "properties": {"path": {"type": "string"}, "old_text": {"type": "string", "minLength": 1, "maxLength": 2097152}, "new_text": {"type": "string", "maxLength": 2097152}}, "required": ["path", "old_text", "new_text"]}}},
     {"type": "function", "function": {"name": "write_workspace_preview_file", "description": "When the user explicitly requests a static website, write or update UTF-8 HTML, CSS, JavaScript, JSON, SVG, or font/image assets inside workspace/. Keep linked assets relative and use index.html as the entry point. Existing workspace assets may be replaced immediately for the requested build or redesign. Do not write private data, executables, or files outside workspace/.", "parameters": {"type": "object", "properties": {"path": {"type": "string", "description": "Workspace-relative web asset path, such as index.html or assets/site.css."}, "content": {"type": "string", "maxLength": 2097152}}, "required": ["path", "content"]}}},
-    {"type": "function", "function": {"name": "delete_workspace_file", "description": "Request deletion of one regular project file. The task pauses for explicit human approval before the file is removed.", "parameters": {"type": "object", "properties": {"path": {"type": "string", "description": "Project-root-relative or absolute path to a file inside the project."}}, "required": ["path"]}}},
-    {"type": "function", "function": {"name": "delete_file", "description": "Request deletion of one regular project file. The task pauses for explicit human approval before the file is removed.", "parameters": {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]}}},
+    {"type": "function", "function": {"name": "delete_workspace_file", "description": "Delete one task-scoped regular file inside the project immediately. Protected Forge/core or secret files and broad/recursive removals pause for human approval.", "parameters": {"type": "object", "properties": {"path": {"type": "string", "description": "Project-root-relative or absolute path to one file inside the project."}}, "required": ["path"]}}},
+    {"type": "function", "function": {"name": "delete_file", "description": "Delete one task-scoped regular file inside the project immediately. Protected Forge/core or secret files and broad/recursive removals pause for human approval.", "parameters": {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]}}},
     {"type": "function", "function": {"name": "execute_elevated_command", "description": "Request one single-line administrative command for a local exported copy. This never executes immediately: it pauses for explicit task-details approval and shows the exact command. Shell chaining, redirection, inline script execution, and known destructive commands are blocked even after approval. Request elevation only when the user's task actually requires it.", "parameters": {"type": "object", "properties": {"command": {"type": "string", "maxLength": 4000, "description": "The exact single-line command that will be shown for approval."}}, "required": ["command"]}}},
     {"type": "function", "function": {"name": "write_workspace_app_script", "description": "Create or update a Python source file for a requested Flask, Streamlit, or FastAPI app inside workspace/. Use only when the user asked for an executable Python web app; this file runs only when the local preview preference is explicitly enabled. Existing workspace scripts may be replaced immediately for the requested build or redesign.", "parameters": {"type": "object", "properties": {"path": {"type": "string", "description": "Workspace-relative Python path, such as app.py or demos/weather/app.py."}, "content": {"type": "string", "maxLength": 2097152}}, "required": ["path", "content"]}}},
     {"type": "function", "function": {"name": "launch_workspace_app", "description": "Launch a workspace app in the Live Preview. Static HTML works in Replit and locally. Flask, Streamlit, FastAPI, and Vite child processes are local-export-only and require the user to enable “Enable Local App Previews (Unrestricted Workspace Execution)” in Preferences. They run with normal local user permissions, a cleaned environment without provider API keys, a workspace working directory, loopback binding, and automatic cleanup.", "parameters": {"type": "object", "properties": {"framework": {"type": "string", "enum": ["static", "flask", "streamlit", "fastapi", "vite"]}, "entryPath": {"type": "string", "description": "HTML file path for static previews, Python source path for Python apps, or Vite project directory/package.json, relative to workspace/."}}, "required": ["framework", "entryPath"]}}},
@@ -6299,7 +6345,7 @@ async def choose_task_approval(task_id: str, body: TaskApprovalInput) -> dict[st
         critical_shell_payload = parse_json(approval["payload_json"], {})
         command = str(critical_shell_payload.get("command", "")).strip()
         cwd = str(critical_shell_payload.get("cwd", "."))
-        if not is_critical_terminal_command(command):
+        if not is_critical_terminal_command(command, cwd):
             raise HTTPException(status_code=422, detail="The command no longer matches a critical-action approval.")
         if redact_sensitive_output(command) != command:
             raise HTTPException(status_code=422, detail="Sensitive values cannot be included in an approved command.")

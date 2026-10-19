@@ -418,6 +418,27 @@ class SpecialistRoutingTests(unittest.IsolatedAsyncioTestCase):
             {"notes.md"},
         )
 
+    async def test_authorized_specialist_can_delete_a_scoped_noncritical_file(self):
+        target = Path(self.temp_dir.name) / "old-note.txt"
+        target.write_text("no longer needed", encoding="utf-8")
+        create = AsyncMock(side_effect=[
+            completion(calls=[function_call("delete_file", {"path": "old-note.txt"})]),
+            completion("Removed the obsolete note."),
+        ])
+        client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+        with patch.object(main, "create_llm_client", return_value=client):
+            result = await main.run_specialist_worker(
+                "Remove the obsolete note file.",
+                "openai",
+                "specialist-test",
+                role="coding",
+                starting_tier="balanced",
+                allow_workspace_write=True,
+            )
+
+        self.assertEqual(result, "Removed the obsolete note.")
+        self.assertFalse(target.exists())
+
     async def test_authorized_specialist_can_run_terminal_command(self):
         create = AsyncMock(side_effect=[
             completion(calls=[
@@ -455,10 +476,10 @@ class SpecialistRoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("write_file", supplied_names)
 
     async def test_critical_tools_are_exposed_but_routed_back_to_supervisor(self):
-        (Path(self.temp_dir.name) / "important.txt").write_text("preserve until approval")
+        (Path(self.temp_dir.name) / "main.py").write_text("preserve until approval")
         create = AsyncMock(side_effect=[
             completion(calls=[
-                function_call("delete_file", {"path": "important.txt"}, "delete"),
+                function_call("delete_file", {"path": "main.py"}, "delete"),
                 function_call("execute_elevated_command", {"command": "whoami"}, "elevated"),
                 function_call(
                     "send_engine_remote_command",
