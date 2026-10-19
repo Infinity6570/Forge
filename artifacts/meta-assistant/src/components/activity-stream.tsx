@@ -63,6 +63,16 @@ function summarize(log: TaskLog): Summary {
   const msg = log.message.trim();
   const first = clip(msg.split('\n').find((l) => l.trim())?.trim() ?? msg);
   const lower = first.toLowerCase();
+  const anthropicSummaryPrefix = 'Claude thinking summary:\n';
+  if (log.kind === 'agent' && msg.startsWith(anthropicSummaryPrefix)) {
+    const summary = msg.slice(anthropicSummaryPrefix.length).trim();
+    return {
+      icon: Brain,
+      label: 'Claude summary',
+      text: clip(summary.split('\n').find((line) => line.trim())?.trim() ?? summary),
+      tone: 'think',
+    };
+  }
   const fence = msg.match(/```[\w-]*\n?([\s\S]*?)```/);
   const inline = msg.match(/`([^`\n]+)`/);
   const dollar = msg.match(/^\s*\$\s*(.+)$/m);
@@ -71,7 +81,7 @@ function summarize(log: TaskLog): Summary {
   if (log.kind === 'warning') return { icon: AlertCircle, label: 'Warning', text: first, tone: 'warn' };
   if (log.kind === 'plan') return { icon: ListChecks, label: 'Plan', text: first, tone: 'plan' };
   if (log.kind === 'success' || log.kind === 'result') return { icon: CheckCircle2, label: 'Done', text: first, tone: 'ok' };
-  if (/reasoning step|planning|thinking|reasoning/.test(lower)) return { icon: Brain, label: 'Reasoning', text: first, tone: 'think' };
+  if (/reasoning step|planning|thinking|reasoning/.test(lower)) return { icon: Brain, label: 'Progress', text: first, tone: 'think' };
   if (/search|browse|fetch|http|url|web/.test(lower) && log.kind === 'tool') return { icon: Globe, label: 'Web', text: clip(inline?.[1] ?? first), tone: 'web' };
   if (log.kind === 'tool') {
     if (/edit|write|wrote|creat|updat|patch|sav|delet|renam/.test(lower) && path) return { icon: FileEdit, label: 'Edit', text: `${/^editing/i.test(first) ? 'Editing' : 'Edited'} ${path[1]}`, tone: 'edit' };
@@ -81,7 +91,7 @@ function summarize(log: TaskLog): Summary {
     }
     return { icon: Wrench, label: 'Tool', text: first, tone: 'tool' };
   }
-  if (log.kind === 'agent') return { icon: Brain, label: 'Reasoning', text: first, tone: 'think' };
+  if (log.kind === 'agent') return { icon: Brain, label: 'Agent update', text: first, tone: 'think' };
   return { icon: Activity, label: 'Note', text: first, tone: 'info' };
 }
 
@@ -100,6 +110,13 @@ function rowsFor(logs: TaskLog[]): Row[] {
 
 function Step({ row }: { row: Row }) {
   const [open, setOpen] = useState(false);
+  const anthropicSummaryPrefix = 'Claude thinking summary:\n';
+  if (row.log.kind === 'agent' && row.log.message.startsWith(anthropicSummaryPrefix)) {
+    return <section className="exec-provider-summary" data-testid={`provider-summary-${row.log.id}`}>
+      <div className="exec-provider-summary-heading"><Brain size={14} /><span>Claude summary</span><time>{clock(row.log.createdAt)}</time></div>
+      <Rich text={row.log.message.slice(anthropicSummaryPrefix.length).trim()} />
+    </section>;
+  }
   const s = summarize(row.log);
   const Icon = s.icon;
   const multi = row.log.message.trim() !== s.text || row.log.message.includes('\n');
@@ -130,10 +147,19 @@ function ToolOutput({ message }: { message: ConversationMessage }) {
 const TaskArticle = memo(function TaskArticle({ task, extras, text, onOpen }: {
   task: AssistantTask; extras: ConversationMessage[]; text?: string; onOpen: (task: AssistantTask) => void;
 }) {
-        const [thinkingOpen, setThinkingOpen] = useState(false);
         const live = isLive(task);
-        const rows = useMemo(() => thinkingOpen ? rowsFor(task.logs ?? []) : [], [thinkingOpen, task.logs]);
         const stepCount = (task.logs?.length ?? 0) + extras.length;
+        const hasProviderSummary = (task.logs ?? []).some((log) =>
+          log.kind === 'agent' && log.message.startsWith('Claude thinking summary:\n'),
+        );
+        const activeModelLabel = [task.provider, task.modelId].filter(Boolean).join(' · ');
+        const [thinkingOpen, setThinkingOpen] = useState(
+          () => hasProviderSummary || (live && stepCount > 0),
+        );
+        useEffect(() => {
+          if (hasProviderSummary || (live && stepCount > 0)) setThinkingOpen(true);
+        }, [hasProviderSummary, live, stepCount]);
+        const rows = useMemo(() => thinkingOpen ? rowsFor(task.logs ?? []) : [], [thinkingOpen, task.logs]);
         const searchPayloads = useMemo(() => extras.map((m) => parseSearchPayload(m.content)).filter((payload) => payload !== null), [extras]);
         const sources = useMemo(() => {
           const seen = new Set<string>();
@@ -150,9 +176,10 @@ const TaskArticle = memo(function TaskArticle({ task, extras, text, onOpen }: {
             <div className="exec-user-meta"><span>You</span><time>{clock(task.createdAt)}</time><span className="exec-status">{String(task.status)}</span><button type="button" className="exec-view" onClick={() => onOpen(task)} data-testid={`button-stream-task-${task.id}`}>View Details<ArrowRight size={12} /></button></div>
           </div>
           {task.status === 'cancelled' && <div className="exec-aborted" role="status" data-testid={`task-aborted-${task.id}`}><StopCircle size={13} aria-hidden="true" /><span>[TASK ABORTED BY USER]</span></div>}
-          {(stepCount > 0 || (live && !task.result) || task.error) && <details className="exec-thinking" onToggle={(e) => setThinkingOpen(e.currentTarget.open)} data-testid={`thinking-${task.id}`}>
-            <summary><Brain size={14} /><span>Thinking ({stepCount} {stepCount === 1 ? 'step' : 'steps'})</span>{live && <span className="exec-working"><span className="exec-dot live" />Working</span>}<ChevronDown size={13} className="exec-chev" /></summary>
+          {(stepCount > 0 || (live && !task.result) || task.error) && <details className="exec-thinking" open={thinkingOpen} onToggle={(e) => setThinkingOpen(e.currentTarget.open)} data-testid={`thinking-${task.id}`}>
+            <summary><Brain size={14} /><span>Execution activity ({stepCount} {stepCount === 1 ? 'step' : 'steps'})</span>{activeModelLabel && <span className="exec-model-badge" title={activeModelLabel}>{activeModelLabel}</span>}{live && <span className="exec-working"><span className="exec-dot live" />Working</span>}<ChevronDown size={13} className="exec-chev" /></summary>
             {thinkingOpen && <>
+              <p className="exec-activity-note">Provider summaries and execution updates are shown here; private model reasoning is not displayed.</p>
               <div className="exec-steps">{rows.map((r) => <Step key={r.log.id} row={r} />)}{extras.map((m) => <ToolOutput key={m.id} message={m} />)}</div>
               {live && task.currentStep && <div className="exec-pending"><span className="exec-dot live" />{clip(task.currentStep, 160)}</div>}
               {task.error && !rows.some((row) => row.log.kind === 'error' && row.log.message.includes(task.error!)) && <ErrorLine error={task.error} />}

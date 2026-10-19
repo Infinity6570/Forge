@@ -23,10 +23,29 @@ test('historical thinking and tool contents are not mounted while collapsed', ()
   const html = renderToStaticMarkup(createElement(ActivityStream, {
     tasks: [task], messages: [message], loading: false, onOpen: () => {},
   }));
-  assert.match(html, /Thinking \(2 steps\)/);
+  assert.match(html, /Execution activity \(2 steps\)/);
   assert.match(html, /Final <strong>answer<\/strong>/);
   assert.doesNotMatch(html, /HIDDEN_THINKING_TRACE|HIDDEN_TOOL_OUTPUT|class="exec-raw"/);
   assert.doesNotMatch(html, /<details[^>]* open/);
+});
+
+test('provider-authored Claude summaries are visible without exposing raw thought traces', () => {
+  const summaryTask = {
+    ...task,
+    logs: [{
+      id: 'summary-1', kind: 'agent',
+      message: 'Claude thinking summary:\nThe evidence supports checking the primary source next.',
+      createdAt: '2026-10-01T12:00:01Z',
+    }],
+  } as AssistantTask;
+  const html = renderToStaticMarkup(createElement(ActivityStream, {
+    tasks: [summaryTask], loading: false, onOpen: () => {},
+  }));
+  assert.match(html, /<details[^>]* open/);
+  assert.match(html, /class="exec-provider-summary"/);
+  assert.match(html, /The evidence supports checking the primary source next/);
+  assert.match(html, /private model reasoning is not displayed/);
+  assert.doesNotMatch(html, /Claude thinking summary:/);
 });
 
 test('earlier history has an explicit load control', () => {

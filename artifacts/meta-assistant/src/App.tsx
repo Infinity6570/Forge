@@ -522,7 +522,7 @@ function Dashboard() {
   const settingsQuery = useGetAssistantSettings();
   const codingBenchmarks = useGetBenchmarksModels(
     { surface: 'coding' },
-    { query: { staleTime: 6 * 60 * 60 * 1000 } },
+    { query: { queryKey: getGetBenchmarksModelsQueryKey({ surface: 'coding' }), staleTime: 6 * 60 * 60 * 1000 } },
   );
   const [objective, setObjective] = useState('');
   const [submitError, setSubmitError] = useState('');
@@ -1276,7 +1276,7 @@ function SystemTelemetry() {
   const benchmarkSurface = latestThreadTask?.routingIntent === 'code_refactoring' ? 'coding' : 'overall';
   const modelBenchmarks = useGetBenchmarksModels(
     { surface: benchmarkSurface },
-    { query: { staleTime: 6 * 60 * 60 * 1000 } },
+    { query: { queryKey: getGetBenchmarksModelsQueryKey({ surface: benchmarkSurface }), staleTime: 6 * 60 * 60 * 1000 } },
   );
   const activeBenchmark = modelBenchmarks.data?.models.find((item) => item.modelId === activeModelId);
   const searchEngines = settings.data ? [
