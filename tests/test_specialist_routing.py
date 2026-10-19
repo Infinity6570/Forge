@@ -296,6 +296,265 @@ class SpecialistRoutingTests(unittest.IsolatedAsyncioTestCase):
         system = create.await_args_list[0].kwargs["messages"][0]["content"]
         self.assertIn("Act as a coding specialist", system)
 
+    def test_specialist_tool_schemas_only_include_explicitly_granted_categories(self):
+        def names(**permissions):
+            return {
+                tool["function"]["name"]
+                for tool in main.specialist_tool_schemas(**permissions)
+            }
+
+        delegation_tools = {
+            tool["function"]["name"]: tool["function"]["parameters"]
+            for tool in main.TOOLS
+            if tool.get("function", {}).get("name") in {
+                "delegate_to_specialist",
+                "start_specialist_worker",
+            }
+        }
+        self.assertEqual(set(delegation_tools), {
+            "delegate_to_specialist",
+            "start_specialist_worker",
+        })
+        for schema in delegation_tools.values():
+            for permission in ("allow_workspace_write", "allow_terminal_execution"):
+                with self.subTest(permission=permission):
+                    self.assertEqual(schema["properties"][permission]["type"], "boolean")
+                    self.assertIs(schema["properties"][permission]["default"], False)
+                    self.assertNotIn(permission, schema.get("required", []))
+
+        default_names = names()
+        self.assertEqual(default_names, main.SPECIALIST_READ_ONLY_TOOLS)
+        self.assertFalse(default_names & main.WORKSPACE_WRITE_TOOL_NAMES)
+        self.assertFalse(default_names & main.SPECIALIST_TERMINAL_TOOLS)
+
+        write_names = names(read_only_tools=False, allow_workspace_write=True)
+        self.assertEqual(write_names, main.WORKSPACE_WRITE_TOOL_NAMES)
+        self.assertIn("write_file", write_names)
+        self.assertIn("replace_in_file", write_names)
+        self.assertNotIn("delete_file", write_names)
+
+        terminal_names = names(read_only_tools=False, allow_terminal_execution=True)
+        self.assertEqual(terminal_names, main.SPECIALIST_TERMINAL_TOOLS)
+        self.assertNotIn("write_file", terminal_names)
+
+    async def test_unapproved_write_and_terminal_calls_are_rejected_before_execution(self):
+        create = AsyncMock(side_effect=[
+            completion(calls=[
+                function_call("write_file", {"path": "nope.txt", "content": "blocked"}, "write-1"),
+                function_call("run_command", {"command": "touch nope.txt"}, "terminal-1"),
+            ]),
+            completion("I was not granted permission to change files or run commands."),
+        ])
+        client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+        execute = AsyncMock(return_value='{"unexpected":true}')
+        with patch.object(main, "create_llm_client", return_value=client), \
+                patch.object(main, "execute_tool", new=execute):
+            result = await main.run_specialist_worker(
+                "Inspect the requested project change.",
+                "openai",
+                "specialist-test",
+                role="coding",
+                starting_tier="balanced",
+            )
+
+        self.assertIn("not granted permission", result)
+        execute.assert_not_awaited()
+        tool_results = [
+            message["content"]
+            for message in create.await_args_list[1].kwargs["messages"]
+            if message.get("role") == "tool"
+        ]
+        self.assertEqual(len(tool_results), 2)
+        for output in tool_results:
+            self.assertIn("not authorized for this specialist worker", output)
+        self.assertIn("Granted Tool Permissions: None", create.await_args_list[0].kwargs["messages"][0]["content"])
+
+    async def test_authorized_specialist_can_write_and_replace_project_files(self):
+        create = AsyncMock(side_effect=[
+            completion(calls=[
+                function_call(
+                    "replace_in_file",
+                    {"path": "notes.md", "old_text": "old", "new_text": "new"},
+                )
+            ]),
+            completion("Updated and verified notes.md."),
+        ])
+        client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+        execute = AsyncMock(return_value=json.dumps({"saved": True, "path": "notes.md"}))
+        metadata = {}
+        with patch.object(main, "create_llm_client", return_value=client), \
+                patch.object(main, "execute_tool", new=execute):
+            result = await main.run_specialist_worker(
+                "Update notes.md as requested.",
+                "openai",
+                "specialist-test",
+                role="coding",
+                starting_tier="balanced",
+                allow_workspace_write=True,
+                result_metadata=metadata,
+            )
+
+        self.assertEqual(result, "Updated and verified notes.md.")
+        execute.assert_awaited_once()
+        self.assertEqual(execute.await_args.args[0:2], (
+            "replace_in_file",
+            {"path": "notes.md", "old_text": "old", "new_text": "new"},
+        ))
+        supplied_names = {
+            tool["function"]["name"]
+            for tool in create.await_args_list[0].kwargs["tools"]
+        }
+        self.assertEqual(supplied_names, main.WORKSPACE_WRITE_TOOL_NAMES)
+        self.assertIn(
+            "Granted Tool Permissions: Workspace file write/edit tools.",
+            create.await_args_list[0].kwargs["messages"][0]["content"],
+        )
+        self.assertEqual(metadata["successfulWorkspaceWrites"], ["notes.md"])
+        self.assertEqual(
+            main.specialist_workspace_write_paths(
+                "delegate_to_specialist",
+                json.dumps({"successfulWorkspaceWrites": ["notes.md"]}),
+            ),
+            {"notes.md"},
+        )
+
+    async def test_authorized_specialist_can_run_terminal_command(self):
+        create = AsyncMock(side_effect=[
+            completion(calls=[
+                function_call("run_command", {"command": "python -m compileall ."})
+            ]),
+            completion("The compile check passed."),
+        ])
+        client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+        command_result = {
+            "returnCode": 0,
+            "timedOut": False,
+            "stdout": "OK",
+            "stderr": "",
+        }
+        with patch.object(main, "create_llm_client", return_value=client), \
+                patch.object(main, "run_workspace_command", return_value=command_result) as run_command:
+            result = await main.run_specialist_worker(
+                "Run the requested verification command.",
+                "openai",
+                "specialist-test",
+                role="coding",
+                starting_tier="balanced",
+                allow_terminal_execution=True,
+            )
+
+        self.assertEqual(result, "The compile check passed.")
+        run_command.assert_called_once()
+        self.assertEqual(run_command.call_args.args, ("python -m compileall .", "."))
+        self.assertNotIn("OPENAI_API_KEY", run_command.call_args.kwargs["env"])
+        supplied_names = {
+            tool["function"]["name"]
+            for tool in create.await_args_list[0].kwargs["tools"]
+        }
+        self.assertEqual(supplied_names, main.SPECIALIST_TERMINAL_TOOLS)
+        self.assertNotIn("write_file", supplied_names)
+
+    async def test_admin_engine_and_delete_tools_remain_unavailable_with_full_grants(self):
+        create = AsyncMock(side_effect=[
+            completion(calls=[
+                function_call("delete_file", {"path": "important.txt"}, "delete"),
+                function_call("execute_elevated_command", {"command": "whoami"}, "elevated"),
+                function_call(
+                    "send_engine_remote_command",
+                    {"engine": "unreal", "endpoint_url": "http://localhost:30010", "payload": {}},
+                    "engine",
+                ),
+            ]),
+            completion("Those actions are outside my delegated permissions."),
+        ])
+        client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+        execute = AsyncMock(return_value='{"unexpected":true}')
+        with patch.object(main, "create_llm_client", return_value=client), \
+                patch.object(main, "execute_tool", new=execute):
+            result = await main.run_specialist_worker(
+                "Inspect and update the project.",
+                "openai",
+                "specialist-test",
+                role="coding",
+                starting_tier="balanced",
+                allow_workspace_write=True,
+                allow_terminal_execution=True,
+            )
+
+        self.assertEqual(result, "Those actions are outside my delegated permissions.")
+        execute.assert_not_awaited()
+        supplied_names = {
+            tool["function"]["name"]
+            for tool in create.await_args_list[0].kwargs["tools"]
+        }
+        self.assertNotIn("delete_file", supplied_names)
+        self.assertNotIn("execute_elevated_command", supplied_names)
+        self.assertNotIn("send_engine_remote_command", supplied_names)
+
+    async def test_delegation_handlers_forward_explicit_permission_flags(self):
+        arguments = {
+            "task": "Implement and test a small change.",
+            "role": "coding",
+            "allow_workspace_write": True,
+            "allow_terminal_execution": True,
+        }
+        with patch.object(main, "run_specialist_worker", new=AsyncMock(return_value="done")) as worker:
+            await main.execute_tool(
+                "delegate_to_specialist",
+                arguments,
+                "openai",
+                {"model": "gpt-4o-mini"},
+                "",
+                "specialist-test",
+            )
+
+        self.assertTrue(worker.await_args.kwargs["allow_workspace_write"])
+        self.assertTrue(worker.await_args.kwargs["allow_terminal_execution"])
+
+        with patch.object(
+            main,
+            "start_specialist_background_job",
+            return_value={"workerId": "worker-test", "status": "running"},
+        ) as background:
+            await main.execute_tool(
+                "start_specialist_worker",
+                arguments,
+                "openai",
+                {"model": "gpt-4o-mini"},
+                "",
+                "specialist-test",
+            )
+
+        self.assertTrue(background.call_args.kwargs["allow_workspace_write"])
+        self.assertTrue(background.call_args.kwargs["allow_terminal_execution"])
+
+    async def test_background_worker_preserves_granted_permissions(self):
+        worker = AsyncMock(return_value="Background work completed.")
+        with patch.object(main, "run_specialist_worker", new=worker):
+            started = main.start_specialist_background_job(
+                "Implement and test the assigned change.",
+                "openai",
+                "specialist-test",
+                role="coding",
+                starting_tier="balanced",
+                read_only_tools=True,
+                allow_workspace_write=True,
+                allow_terminal_execution=True,
+            )
+            job = main.SPECIALIST_BACKGROUND_JOBS[started["workerId"]]
+            await job["task"]
+
+        self.assertEqual(started["status"], "running")
+        self.assertEqual(job["permissions"], {
+            "read_only_tools": True,
+            "allow_workspace_write": True,
+            "allow_terminal_execution": True,
+        })
+        self.assertTrue(worker.await_args.kwargs["read_only_tools"])
+        self.assertTrue(worker.await_args.kwargs["allow_workspace_write"])
+        self.assertTrue(worker.await_args.kwargs["allow_terminal_execution"])
+        await main.cleanup_specialist_background_jobs("specialist-test")
+
     async def test_requested_safe_read_tool_can_run(self):
         create = AsyncMock(side_effect=[
             completion(calls=[function_call("read_file", {"path": "notes.md"})]),
