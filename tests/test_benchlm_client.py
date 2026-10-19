@@ -70,6 +70,31 @@ class BenchLMClientTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(first["models"][0]["provider"], "openai")
         self.assertEqual(second["models"], first["models"])
 
+    def test_normalization_keeps_real_cost_latency_and_omits_non_finite_values(self) -> None:
+        rows = benchlm_client.normalize_rankings(
+            [
+                {
+                    "modelId": "gpt-4o",
+                    "codingScore": 92,
+                    "costIndex": "1.25",
+                    "latency_ms": "450",
+                },
+                {
+                    "modelId": "claude-sonnet-5-5",
+                    "codingScore": float("nan"),
+                    "costIndex": float("inf"),
+                    "latencyMs": None,
+                },
+            ],
+            surface="coding",
+        )
+
+        self.assertEqual(rows[0]["costIndex"], 1.25)
+        self.assertEqual(rows[0]["latencyMs"], 450)
+        self.assertIsNone(rows[1]["codingScore"])
+        self.assertIsNone(rows[1]["costIndex"])
+        self.assertIsNone(rows[1]["latencyMs"])
+
     async def test_refresh_failure_serves_last_good_rankings_as_stale(self) -> None:
         success = httpx.Response(
             200,

@@ -133,6 +133,130 @@ class AutoModelRoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("BenchLM coding score 94", global_decision["reason"])
         self.assertEqual((scoped_decision["provider"], scoped_decision["model"]), ("gemini", "gemini-3.8-flash"))
 
+    def test_benchlm_cost_and_latency_break_only_quality_ties(self) -> None:
+        rankings = [
+            {
+                "modelId": "gemini-3.8-flash",
+                "provider": "gemini",
+                "codingScore": 90,
+                "rank": 2,
+                "costIndex": 1,
+                "latencyMs": 800,
+            },
+            {
+                "modelId": "claude-sonnet-5-5",
+                "provider": "anthropic",
+                "codingScore": 90,
+                "rank": 2,
+                "costIndex": 1,
+                "latencyMs": 500,
+            },
+            {
+                "modelId": "gpt-4o",
+                "provider": "openai",
+                "codingScore": 90,
+                "rank": 2,
+                "costIndex": 2,
+                "latencyMs": 100,
+            },
+        ]
+
+        decision = main.route_task(
+            "Refactor the codebase architecture",
+            "auto-global",
+            available_providers={"gemini", "anthropic", "openai"},
+            benchmark_rankings=rankings,
+        )
+
+        self.assertEqual((decision["provider"], decision["model"]), ("anthropic", "claude-sonnet-5-5"))
+        self.assertIn("BenchLM cost index 1", decision["reason"])
+        self.assertIn("BenchLM latency 500", decision["reason"])
+
+    def test_missing_benchlm_cost_does_not_bias_tied_models(self) -> None:
+        rankings = [
+            {
+                "modelId": "gemini-3.8-flash",
+                "provider": "gemini",
+                "codingScore": 90,
+                "rank": 2,
+                "costIndex": 0,
+            },
+            {
+                "modelId": "claude-sonnet-5-5",
+                "provider": "anthropic",
+                "codingScore": 90,
+                "rank": 2,
+            },
+        ]
+
+        baseline_rankings = [
+            {
+                "modelId": "gemini-3.8-flash",
+                "provider": "gemini",
+                "codingScore": 90,
+                "rank": 2,
+            },
+            {
+                "modelId": "claude-sonnet-5-5",
+                "provider": "anthropic",
+                "codingScore": 90,
+                "rank": 2,
+            },
+        ]
+        baseline = main.route_task(
+            "Refactor the codebase architecture",
+            "auto-global",
+            available_providers={"gemini", "anthropic"},
+            benchmark_rankings=baseline_rankings,
+        )
+        decision = main.route_task(
+            "Refactor the codebase architecture",
+            "auto-global",
+            available_providers={"gemini", "anthropic"},
+            benchmark_rankings=rankings,
+        )
+
+        self.assertEqual(
+            (decision["provider"], decision["model"]),
+            (baseline["provider"], baseline["model"]),
+        )
+        self.assertNotIn("cost index", decision["reason"])
+
+    def test_provider_scoped_benchmark_tie_breaks_within_provider(self) -> None:
+        rankings = [
+            {
+                "modelId": "gemini-3.8-flash",
+                "provider": "gemini",
+                "codingScore": 88,
+                "rank": 3,
+                "latencyMs": 900,
+            },
+            {
+                "modelId": "gemini-3.1-pro-preview",
+                "provider": "gemini",
+                "codingScore": 88,
+                "rank": 3,
+                "latencyMs": 400,
+            },
+            {
+                "modelId": "claude-sonnet-5-5",
+                "provider": "anthropic",
+                "codingScore": 99,
+                "rank": 1,
+                "latencyMs": 1,
+            },
+        ]
+
+        decision = main.route_task(
+            "Refactor the codebase architecture",
+            "auto-gemini",
+            available_providers={"gemini", "anthropic"},
+            benchmark_rankings=rankings,
+        )
+
+        self.assertEqual((decision["provider"], decision["model"]), ("gemini", "gemini-3.1-pro-preview"))
+        self.assertIn("BenchLM latency 400", decision["reason"])
+
     def test_scoped_mode_without_provider_key_fails_clearly(self) -> None:
         with self.assertRaisesRegex(RuntimeError, "configured Gemini API key"):
             main.route_task("hello", "auto-gemini", available_providers={"openai"})

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import math
 import os
 import time
 from datetime import datetime, timezone
@@ -22,12 +23,19 @@ def _number(record: dict[str, Any], keys: tuple[str, ...]) -> float | None:
     for key in keys:
         value = record.get(key)
         if isinstance(value, (int, float)) and not isinstance(value, bool):
-            return float(value)
+            try:
+                numeric = float(value)
+            except OverflowError:
+                continue
+            if math.isfinite(numeric):
+                return numeric
         if isinstance(value, str):
             try:
-                return float(value.strip().replace(",", ""))
+                numeric = float(value.strip().replace(",", ""))
             except ValueError:
                 continue
+            if math.isfinite(numeric):
+                return numeric
     return None
 
 

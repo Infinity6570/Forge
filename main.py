@@ -1673,17 +1673,27 @@ def benchlm_model_catalog() -> list[dict[str, str]]:
     ]
 
 
+def _benchmark_number(value: Any) -> float | None:
+    if isinstance(value, bool) or value is None:
+        return None
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return numeric if math.isfinite(numeric) else None
+
+
 def route_task_by_benchmark(
     intent: str,
     complexity_reason: str | None,
     candidates: list[str],
     rankings: list[dict[str, Any]] | None,
 ) -> tuple[str, str, str] | None:
-    """Use only actual BenchLM values for compatible registered models."""
+    """Use benchmark quality first, with complete cost/latency data as tie-breakers."""
     if not rankings or (intent != "code_refactoring" and not complexity_reason):
         return None
     metric = "codingScore" if intent == "code_refactoring" else "reasoningScore"
-    eligible: list[tuple[float, int, int, str, str, str]] = []
+    eligible: list[dict[str, Any]] = []
     candidate_priority = {provider: index for index, provider in enumerate(candidates)}
     for row in rankings:
         model_id = row.get("modelId")
@@ -1702,14 +1712,11 @@ def route_task_by_benchmark(
         if score is None and intent != "code_refactoring":
             score = row.get("rating")
             score_label = "overall rating"
-        try:
-            numeric_score = float(score) if score is not None else None
-        except (TypeError, ValueError):
-            numeric_score = None
+        numeric_score = _benchmark_number(score)
         rank = row.get("rank")
         try:
             numeric_rank = int(rank) if rank is not None else None
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             numeric_rank = None
         if numeric_score is None and numeric_rank is None:
             continue
@@ -1720,18 +1727,40 @@ def route_task_by_benchmark(
             if numeric_score is not None
             else f"BenchLM rank #{numeric_rank}"
         )
-        eligible.append((
-            ranking_value,
-            -(numeric_rank if numeric_rank is not None else 1_000_000),
-            -candidate_priority[provider],
-            provider,
-            model_id,
-            label,
-        ))
+        cost_index = _benchmark_number(row.get("costIndex"))
+        latency_ms = _benchmark_number(row.get("latencyMs"))
+        eligible.append({
+            "quality": (
+                ranking_value,
+                -(numeric_rank if numeric_rank is not None else 1_000_000),
+            ),
+            "provider_priority": candidate_priority[provider],
+            "provider": provider,
+            "model_id": model_id,
+            "label": label,
+            "cost_index": cost_index if cost_index is not None and cost_index >= 0 else None,
+            "latency_ms": latency_ms if latency_ms is not None and latency_ms >= 0 else None,
+        })
     if not eligible:
         return None
-    selected = max(eligible)
-    return selected[3], selected[4], selected[5]
+    best_quality = max(item["quality"] for item in eligible)
+    tied = [item for item in eligible if item["quality"] == best_quality]
+    used_tradeoffs: list[tuple[str, float]] = []
+    for key, label in (("cost_index", "cost index"), ("latency_ms", "latency")):
+        if len(tied) < 2 or not all(item[key] is not None for item in tied):
+            continue
+        best_value = min(item[key] for item in tied)
+        narrowed = [item for item in tied if item[key] == best_value]
+        if len(narrowed) < len(tied):
+            tied = narrowed
+            used_tradeoffs.append((label, best_value))
+    selected = min(tied, key=lambda item: item["provider_priority"])
+    reason = selected["label"]
+    if used_tradeoffs:
+        reason += " · " + " · ".join(
+            f"BenchLM {label} {value:g}" for label, value in used_tradeoffs
+        )
+    return selected["provider"], selected["model_id"], reason
 
 
 def route_task(
