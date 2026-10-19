@@ -1,5 +1,6 @@
 - [Local execution and elevation boundary](local-execution-boundary.md) — file tools stay workspace-scoped; local Python previews are explicit opt-in and unrestricted; admin actions require approval.
 - [Provider model availability](provider-model-availability.md) — portable routing; preserve provider-neutral history, Gemini signatures, and exact model selections across switches.
+- [Gemini prompt caching](gemini-prompt-caching.md) — supported Gemini models cache stable repeated prefixes implicitly; report cache-hit tokens instead of creating explicit cache objects.
 - [Market-feed freshness](market-feed-freshness.md) — distinguish API response time from source freshness; disclose stale or unknown quotes.
 - [Provider turn history](provider-turn-history.md) — preserve opaque provider turns and tool order; only surface provider-authored summaries, never raw thoughts or signatures.
 - [Vault migration backups](vault-migration-backups.md) — migration backups must password-encrypt the matching local vault key and restore only after validating every encrypted entry.

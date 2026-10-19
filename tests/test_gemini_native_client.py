@@ -165,7 +165,10 @@ class GeminiNativeClientTests(unittest.IsolatedAsyncioTestCase):
     async def test_streaming_uses_google_async_stream_and_collects_text(self):
         models = FakeModels(stream_chunks=[
             {"candidates": [{"content": {"parts": [{"text": "Live "}]}}]},
-            {"candidates": [{"content": {"parts": [{"text": "text"}]}}]},
+            {
+                "candidates": [{"content": {"parts": [{"text": "text"}]}}],
+                "usage_metadata": {"cached_content_token_count": 128},
+            },
         ])
         client = GeminiChatClient("test-key", sdk_client=self.sdk(models))
         stream = await client.chat.completions.create(
@@ -177,7 +180,30 @@ class GeminiNativeClientTests(unittest.IsolatedAsyncioTestCase):
 
         completion = await collect_completion(stream)
         self.assertEqual(completion.choices[0].message.content, "Live text")
+        self.assertEqual(completion.gemini_cached_tokens, 128)
         self.assertEqual(models.kwargs["model"], "gemini-3.5-flash-lite")
+
+    async def test_non_streaming_cache_usage_metadata_is_preserved_for_telemetry(self):
+        models = FakeModels(response={
+            "candidates": [{
+                "finishReason": "STOP",
+                "content": {"parts": [{"text": "Cached response"}]},
+            }],
+            "usageMetadata": {"cachedContentTokenCount": 64},
+        })
+        client = GeminiChatClient("test-key", sdk_client=self.sdk(models))
+
+        completion = await client.chat.completions.create(
+            model="gemini-3.8-flash",
+            messages=[
+                {"role": "system", "content": "Stable shared instructions"},
+                {"role": "user", "content": "Hello"},
+            ],
+            stream=False,
+        )
+
+        self.assertEqual(completion.choices[0].message.content, "Cached response")
+        self.assertEqual(completion.gemini_cached_tokens, 64)
 
     async def test_modality_models_receive_distinct_generation_configuration(self):
         _, _, tts_config = _call_config({

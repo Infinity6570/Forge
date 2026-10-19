@@ -196,12 +196,26 @@ async def collect_completion(response: Any, on_text: TextCallback | None = None)
     seen_choice = False
     last_text: str | None = None
     native_parts: list[dict[str, Any]] = []
+    gemini_cached_tokens: int | None = None
     try:
         async for chunk in response:
             raw = to_wire(chunk)
             response_id = raw.get("id", response_id)
             model = raw.get("model", model)
             created = raw.get("created", created)
+            usage_metadata = raw.get("usage_metadata") or raw.get("usageMetadata")
+            if isinstance(usage_metadata, dict):
+                cached_tokens = (
+                    usage_metadata.get("cached_content_token_count")
+                    or usage_metadata.get("cachedContentTokenCount")
+                    or usage_metadata.get("total_cached_tokens")
+                    or usage_metadata.get("totalCachedTokens")
+                )
+                if cached_tokens is not None:
+                    try:
+                        gemini_cached_tokens = max(0, int(cached_tokens))
+                    except (TypeError, ValueError):
+                        pass
             choices = raw.get("choices", [])
             candidates = raw.get("candidates", [])
             if not choices and candidates:
@@ -300,7 +314,7 @@ async def collect_completion(response: Any, on_text: TextCallback | None = None)
     if native_parts:
         message["parts"] = native_parts
     message.setdefault("content", None)
-    return ChatCompletion.model_validate({
+    completion = ChatCompletion.model_validate({
         "id": response_id,
         "object": "chat.completion",
         "created": created,
@@ -311,3 +325,8 @@ async def collect_completion(response: Any, on_text: TextCallback | None = None)
             "message": message,
         }],
     })
+    if gemini_cached_tokens is not None:
+        # Keep provider-specific usage out of visible conversation text while
+        # making Google's implicit context-cache hits available to telemetry.
+        object.__setattr__(completion, "gemini_cached_tokens", gemini_cached_tokens)
+    return completion

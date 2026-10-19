@@ -188,6 +188,9 @@ def _function_tools(tools: Any) -> list[types.Tool]:
 def _call_config(kwargs: dict[str, Any]) -> tuple[str, list[types.Content], types.GenerateContentConfig]:
     model = str(kwargs.get("model") or "")
     model = model.removeprefix("models/")
+    # Keep system instructions and tool declarations stable, and preserve
+    # chronological conversation order. Google's implicit context caching uses
+    # repeated prefixes on supported Gemini models; do not reorder signed turns.
     contents, system_instruction = _make_contents(kwargs.get("messages") or [])
     config: dict[str, Any] = {
         "system_instruction": system_instruction or None,

@@ -2183,6 +2183,15 @@ async def create_completion_with_fallback(
                     "info",
                     update_step=False,
                 )
+        elif provider == "gemini":
+            cached_tokens = getattr(completion, "gemini_cached_tokens", None)
+            if cached_tokens is not None:
+                log_task(
+                    task_id,
+                    f"Gemini implicit prompt cache · cached_content_token_count={cached_tokens}",
+                    "info",
+                    update_step=False,
+                )
         return completion
 
     def retryable_status(error: Exception) -> int | None:
