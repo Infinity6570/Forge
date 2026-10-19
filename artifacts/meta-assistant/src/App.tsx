@@ -1312,7 +1312,7 @@ function SystemTelemetry() {
     { surface: benchmarkSurface },
     { query: { queryKey: getGetBenchmarksModelsQueryKey({ surface: benchmarkSurface }), staleTime: 6 * 60 * 60 * 1000 } },
   );
-  const activeBenchmark = modelBenchmarks.data?.models.find((item) => item.modelId === activeModelId);
+  const activeBenchmark = modelBenchmarks.data?.models?.find((item) => item.modelId === activeModelId);
   const searchEngines = settings.data ? [
     { id: 'tavily', label: 'TAVILY', configured: settings.data.hasTavilyKey, selected: settings.data.searchMode === 'api' && settings.data.searchApiProvider === 'tavily' },
     { id: 'serper', label: 'SERPER', configured: settings.data.hasSerperKey, selected: settings.data.searchMode === 'api' && settings.data.searchApiProvider === 'serper' },
@@ -1683,7 +1683,7 @@ function SettingsPage() {
   }, [settingsQuery.data]);
   useEffect(() => {
     if (systemPromptQuery.data && !systemPromptDirty) {
-      setSystemPromptDraft(systemPromptQuery.data.systemPrompt);
+      setSystemPromptDraft(systemPromptQuery.data.systemPrompt ?? '');
     }
   }, [systemPromptQuery.data, systemPromptDirty]);
   useEffect(() => {
@@ -1905,7 +1905,7 @@ function SettingsPage() {
         data-testid="input-system-prompt"
       />
       <div className="system-prompt-footer">
-        <span id="forge-system-prompt-help" className="settings-footnote">{systemPromptDraft.length.toLocaleString()} / 20,000 characters · Empty text restores the built-in persona.</span>
+        <span id="forge-system-prompt-help" className="settings-footnote">{(systemPromptDraft?.length ?? 0).toLocaleString()} / 20,000 characters · Empty text restores the built-in persona.</span>
         {systemPromptError && <span className="field-error" role="alert" data-testid="status-system-prompt-error">{systemPromptError}</span>}
         {systemPromptSaved && <span className="save-state" role="status" data-testid="status-system-prompt-saved"><CheckCircle2 size={15} /> Saved and applied to active tasks.</span>}
         <button

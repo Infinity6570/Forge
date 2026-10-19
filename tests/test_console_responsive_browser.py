@@ -112,6 +112,8 @@ class ResponsiveConsoleBrowserTests(unittest.TestCase):
                                 }
                             elif path.endswith("/assistant/preview"):
                                 body = {"staticAvailable": False, "apps": []}
+                            elif path.endswith("/benchmarks/models"):
+                                body = {"models": [], "message": "No benchmark scores are available."}
                             else:
                                 body = []
                             route.fulfill(status=200, content_type="application/json", body=json.dumps(body))

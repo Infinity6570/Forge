@@ -127,6 +127,8 @@ class VaultRecoveryBrowserTests(unittest.TestCase):
                         body = {**locked, "vault_status": "ready", "gemini_api_key": "configured"}
                     elif path.endswith("/assistant/timers"):
                         body = []
+                    elif path.endswith("/assistant/system-prompt"):
+                        body = {"systemPrompt": "", "isCustomized": False}
                     else:
                         body = []
                     route.fulfill(status=200, content_type="application/json", body=json.dumps(body))

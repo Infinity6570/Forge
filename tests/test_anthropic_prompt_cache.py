@@ -44,7 +44,7 @@ class AnthropicPromptCacheTests(unittest.IsolatedAsyncioTestCase):
             "tool_choice": {"type": "none"},
         })
 
-        self.assertEqual(request["cache_control"], {"type": "ephemeral"})
+        self.assertEqual(request["cache_control"], {"type": "ephemeral", "ttl": "5m"})
         self.assertEqual(
             request["extra_headers"],
             {"anthropic-beta": "thinking-binding-controls-2026-08-01"},
@@ -52,10 +52,10 @@ class AnthropicPromptCacheTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(request["system"], [{
             "type": "text",
             "text": "Stable assistant instructions",
-            "cache_control": {"type": "ephemeral"},
+            "cache_control": {"type": "ephemeral", "ttl": "5m"},
         }])
         self.assertEqual(request["tools"][-1]["name"], "read_file")
-        self.assertEqual(request["tools"][-1]["cache_control"], {"type": "ephemeral"})
+        self.assertEqual(request["tools"][-1]["cache_control"], {"type": "ephemeral", "ttl": "5m"})
         self.assertEqual(len(request["tools"]), 2)
         self.assertEqual(request["thinking"], {
             "type": "adaptive",
@@ -174,7 +174,7 @@ class AnthropicPromptCacheTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(message.anthropic_content_blocks, blocks)
         self.assertEqual(message.anthropic_usage, usage)
         self.assertNotIn("private provider data", "".join(text or "" for text in visible_text))
-        self.assertEqual(sdk.messages.request["cache_control"], {"type": "ephemeral"})
+        self.assertEqual(sdk.messages.request["cache_control"], {"type": "ephemeral", "ttl": "5m"})
 
     async def test_cache_usage_is_written_to_the_task_telemetry_feed(self):
         response = ChatCompletion.model_validate({
