@@ -1253,6 +1253,40 @@ export const ListWorkspaceHtmlEntriesResponse = zod.array(ListWorkspaceHtmlEntri
 
 
 /**
+ * @summary List previewable source and document files in the workspace
+ */
+export const listWorkspaceCanvasFilesResponseSizeBytesMin = 0;
+
+
+
+export const ListWorkspaceCanvasFilesResponseItem = zod.object({
+  "path": zod.string(),
+  "name": zod.string(),
+  "kind": zod.enum(['html', 'react', 'markdown', 'mermaid', 'code', 'text', 'image', 'pdf']),
+  "contentType": zod.string(),
+  "sizeBytes": zod.number().int().min(listWorkspaceCanvasFilesResponseSizeBytesMin),
+  "modifiedAt": zod.coerce.date(),
+  "previewUrl": zod.string()
+})
+export const ListWorkspaceCanvasFilesResponse = zod.array(ListWorkspaceCanvasFilesResponseItem)
+
+
+/**
+ * @summary Read a text source or document for the workspace canvas
+ */
+export const GetWorkspaceCanvasFileQueryParams = zod.object({
+  "path": zod.coerce.string()
+})
+
+export const GetWorkspaceCanvasFileResponse = zod.object({
+  "path": zod.string(),
+  "content": zod.string(),
+  "modifiedAt": zod.coerce.date(),
+  "truncated": zod.boolean()
+})
+
+
+/**
  * @summary Stop a workspace app started by the assistant
  */
 export const StopWorkspacePreviewAppBody = zod.object({

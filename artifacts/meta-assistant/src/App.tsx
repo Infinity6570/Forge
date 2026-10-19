@@ -65,6 +65,7 @@ import { SearchSettingsPanel } from '@/components/search-settings-panel';
 import { NewChatAction, RecentSessions } from '@/components/chat-sidebar';
 import { ChatModelPicker } from '@/components/chat-model-picker';
 import { ActivityStream } from '@/components/activity-stream';
+import { WorkspaceCanvas } from '@/components/workspace-canvas';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { RecentFileRows, RecentNoteRows, RecentTaskLogRows } from '@/components/telemetry-records';
 import { TradingViewChart } from '@/components/TradingViewChart';
@@ -316,8 +317,17 @@ function AppShell({ children, page }: { children: ReactNode; page: Page }) {
       setPreviewMaximized(false);
       window.dispatchEvent(new Event('morrow:show-preview'));
     };
+    const openCanvas = () => {
+      setInspectorOpen(true);
+      setPreviewMaximized(false);
+      window.dispatchEvent(new Event('morrow:show-canvas'));
+    };
     window.addEventListener('morrow:open-preview-inspector', openPreview);
-    return () => window.removeEventListener('morrow:open-preview-inspector', openPreview);
+    window.addEventListener('morrow:open-canvas-inspector', openCanvas);
+    return () => {
+      window.removeEventListener('morrow:open-preview-inspector', openPreview);
+      window.removeEventListener('morrow:open-canvas-inspector', openCanvas);
+    };
   }, []);
   const toggleInspector = () => {
     if (inspectorOpen) setPreviewMaximized(false);
@@ -1322,17 +1332,22 @@ function SystemTelemetry() {
 
 function InspectorPanel({ onClose, defaultTab, previewMaximized, onPreviewMaximizedChange }: {
   onClose: () => void;
-  defaultTab: 'telemetry' | 'preview';
+  defaultTab: 'telemetry' | 'preview' | 'files' | 'canvas';
   previewMaximized: boolean;
   onPreviewMaximizedChange: (maximized: boolean) => void;
 }) {
-  const [tab, setTab] = useState<'telemetry' | 'preview' | 'files'>(defaultTab);
+  const [tab, setTab] = useState<'telemetry' | 'preview' | 'files' | 'canvas'>(defaultTab);
   useEffect(() => {
     const showPreview = () => setTab('preview');
+    const showCanvas = () => setTab('canvas');
     window.addEventListener('morrow:show-preview', showPreview);
-    return () => window.removeEventListener('morrow:show-preview', showPreview);
+    window.addEventListener('morrow:show-canvas', showCanvas);
+    return () => {
+      window.removeEventListener('morrow:show-preview', showPreview);
+      window.removeEventListener('morrow:show-canvas', showCanvas);
+    };
   }, []);
-  const selectTab = (next: 'telemetry' | 'preview' | 'files') => {
+  const selectTab = (next: 'telemetry' | 'preview' | 'files' | 'canvas') => {
     setTab(next);
     if (next !== 'preview') onPreviewMaximizedChange(false);
   };
@@ -1342,8 +1357,9 @@ function InspectorPanel({ onClose, defaultTab, previewMaximized, onPreviewMaximi
       <button type="button" role="tab" aria-selected={tab === 'telemetry'} className={tab === 'telemetry' ? 'active' : ''} onClick={() => selectTab('telemetry')} data-testid="tab-inspector-telemetry">Telemetry</button>
       <button type="button" role="tab" aria-selected={tab === 'preview'} className={tab === 'preview' ? 'active' : ''} onClick={() => selectTab('preview')} data-testid="tab-inspector-live-preview">Live Preview</button>
       <button type="button" role="tab" aria-label="Workspace Inspector" title="Workspace Inspector" aria-selected={tab === 'files'} className={tab === 'files' ? 'active' : ''} onClick={() => selectTab('files')} data-testid="tab-workspace-inspector">Workspace</button>
+      <button type="button" role="tab" aria-selected={tab === 'canvas'} className={tab === 'canvas' ? 'active' : ''} onClick={() => selectTab('canvas')} data-testid="tab-workspace-canvas">Canvas</button>
     </div>
-    <div className="inspector-content">{tab === 'telemetry' ? <SystemTelemetry /> : tab === 'preview' ? <WorkspacePreview isMaximized={previewMaximized} onToggleMaximized={() => onPreviewMaximizedChange(!previewMaximized)} /> : <WorkspaceInspector />}</div>
+    <div className="inspector-content">{tab === 'telemetry' ? <SystemTelemetry /> : tab === 'preview' ? <WorkspacePreview isMaximized={previewMaximized} onToggleMaximized={() => onPreviewMaximizedChange(!previewMaximized)} /> : tab === 'files' ? <WorkspaceInspector /> : <WorkspaceCanvas />}</div>
   </aside>;
 }
 
@@ -1407,7 +1423,7 @@ function WorkspacePage() {
   const removeNote = (note: AssistantNote) => { if (window.confirm(`Delete “${note.title}”? This cannot be undone.`)) deleteNote.mutate({ id: note.id }, { onSuccess: () => { qc.invalidateQueries({ queryKey: getListAssistantNotesQueryKey() }); qc.invalidateQueries({ queryKey: getGetAssistantDashboardQueryKey() }); } }); };
   const removeFile = (file: AssistantFile) => { if (window.confirm(`Delete “${file.name}”? This cannot be undone.`)) deleteFile.mutate({ id: file.id }, { onSuccess: () => { qc.invalidateQueries({ queryKey: getListAssistantFilesQueryKey() }); qc.invalidateQueries({ queryKey: getGetAssistantDashboardQueryKey() }); } }); };
   return <AppShell page="workspace"><div className="content-page enter">
-    <PageHeading eyebrow="REFERENCE LIBRARY" title="Workspace" description="Files and notes your agent can draw on when the context matters." right={<><button className="button button-quiet" onClick={() => void onDownload()} disabled={downloadWorkspace.isFetching} data-testid="button-download-workspace"><ArrowDownToLine size={15} /> {downloadWorkspace.isFetching ? 'Preparing ZIP…' : 'Download ZIP'}</button><label className={`button button-quiet ${uploading ? 'disabled' : ''}`} htmlFor="workspace-upload" data-testid="button-upload-file"><Upload size={15} />{uploading ? 'Uploading…' : 'Upload file'}<input id="workspace-upload" type="file" hidden disabled={uploading} onChange={(e) => { void onUpload(e.currentTarget.files?.[0]); e.currentTarget.value = ''; }} /></label><button className="button button-primary" onClick={() => setNoteOpen(true)} data-testid="button-new-note"><Plus size={16} /> New note</button></>} />
+    <PageHeading eyebrow="REFERENCE LIBRARY" title="Workspace" description="Files and notes your agent can draw on when the context matters." right={<><button className="button button-quiet" onClick={() => window.dispatchEvent(new Event('morrow:open-canvas-inspector'))} data-testid="button-open-workspace-canvas"><Layers3 size={15} /> Open Canvas</button><button className="button button-quiet" onClick={() => void onDownload()} disabled={downloadWorkspace.isFetching} data-testid="button-download-workspace"><ArrowDownToLine size={15} /> {downloadWorkspace.isFetching ? 'Preparing ZIP…' : 'Download ZIP'}</button><label className={`button button-quiet ${uploading ? 'disabled' : ''}`} htmlFor="workspace-upload" data-testid="button-upload-file"><Upload size={15} />{uploading ? 'Uploading…' : 'Upload file'}<input id="workspace-upload" type="file" hidden disabled={uploading} onChange={(e) => { void onUpload(e.currentTarget.files?.[0]); e.currentTarget.value = ''; }} /></label><button className="button button-primary" onClick={() => setNoteOpen(true)} data-testid="button-new-note"><Plus size={16} /> New note</button></>} />
     <div className="library-intro info-banner" role="note" data-testid="status-workspace-context-tip"><div className="library-graphic"><div className="graphic-file"><FileText size={22} /></div><div className="graphic-note"><BookOpen size={19} /></div><div className="graphic-orbit" /></div><div><strong>A little context goes a long way.</strong><p>Keep source material and useful details close. Your agent can reference uploaded files and saved notes in future work.</p></div></div>
     {uploadError && <div className="inline-error"><AlertCircle size={15} />{uploadError}<button onClick={() => setUploadError('')} aria-label="Dismiss upload error"><X size={14} /></button></div>}
     {downloadError && <div className="inline-error" role="alert" data-testid="status-download-error"><AlertCircle size={15} />{downloadError}<button onClick={() => setDownloadError('')} aria-label="Dismiss download error"><X size={14} /></button></div>}

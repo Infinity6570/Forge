@@ -447,6 +447,38 @@ export interface WorkspacePreviewStatus {
   apps: WorkspacePreviewApp[];
 }
 
+export type WorkspaceCanvasFileKind = typeof WorkspaceCanvasFileKind[keyof typeof WorkspaceCanvasFileKind];
+
+
+export const WorkspaceCanvasFileKind = {
+  html: 'html',
+  react: 'react',
+  markdown: 'markdown',
+  mermaid: 'mermaid',
+  code: 'code',
+  text: 'text',
+  image: 'image',
+  pdf: 'pdf',
+} as const;
+
+export interface WorkspaceCanvasFile {
+  path: string;
+  name: string;
+  kind: WorkspaceCanvasFileKind;
+  contentType: string;
+  /** @minimum 0 */
+  sizeBytes: number;
+  modifiedAt: string;
+  previewUrl: string;
+}
+
+export interface WorkspaceCanvasFileContent {
+  path: string;
+  content: string;
+  modifiedAt: string;
+  truncated: boolean;
+}
+
 export interface WorkspacePreviewStopAllResult {
   /** @minimum 0 */
   stopped: number;
@@ -990,5 +1022,9 @@ limit?: number;
  * @minimum 1
  */
 before?: number;
+};
+
+export type GetWorkspaceCanvasFileParams = {
+path: string;
 };
 

@@ -32,6 +32,7 @@ import type {
   DashboardSummary,
   FileUploadInput,
   GetConversationThreadParams,
+  GetWorkspaceCanvasFileParams,
   HealthStatus,
   ListConversationThreadsParams,
   ModelSelectionInput,
@@ -49,6 +50,8 @@ import type {
   TimerInput,
   VaultKeyStatuses,
   VaultKeysInput,
+  WorkspaceCanvasFile,
+  WorkspaceCanvasFileContent,
   WorkspaceHtmlEntry,
   WorkspacePreviewStatus,
   WorkspacePreviewStopAllResult,
@@ -3290,6 +3293,167 @@ export function useListWorkspaceHtmlEntries<TData = Awaited<ReturnType<typeof li
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListWorkspaceHtmlEntriesQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getListWorkspaceCanvasFilesUrl = () => {
+
+
+
+
+  return `/api/workspace/canvas/files`
+}
+
+/**
+ * @summary List previewable source and document files in the workspace
+ */
+export const listWorkspaceCanvasFiles = async ( options?: Parameters<typeof customFetch>[1]): Promise<WorkspaceCanvasFile[]> => {
+
+  return customFetch<WorkspaceCanvasFile[]>(getListWorkspaceCanvasFilesUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListWorkspaceCanvasFilesQueryKey = () => {
+    return [
+    `/api/workspace/canvas/files`
+    ] as const;
+    }
+
+
+export const getListWorkspaceCanvasFilesQueryOptions = <TData = Awaited<ReturnType<typeof listWorkspaceCanvasFiles>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listWorkspaceCanvasFiles>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListWorkspaceCanvasFilesQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listWorkspaceCanvasFiles>>> = ({ signal }) => listWorkspaceCanvasFiles({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listWorkspaceCanvasFiles>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListWorkspaceCanvasFilesQueryResult = NonNullable<Awaited<ReturnType<typeof listWorkspaceCanvasFiles>>>
+export type ListWorkspaceCanvasFilesQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List previewable source and document files in the workspace
+ */
+
+export function useListWorkspaceCanvasFiles<TData = Awaited<ReturnType<typeof listWorkspaceCanvasFiles>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listWorkspaceCanvasFiles>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListWorkspaceCanvasFilesQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetWorkspaceCanvasFileUrl = (params: GetWorkspaceCanvasFileParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/workspace/canvas/file?${stringifiedParams}` : `/api/workspace/canvas/file`
+}
+
+/**
+ * @summary Read a text source or document for the workspace canvas
+ */
+export const getWorkspaceCanvasFile = async (params: GetWorkspaceCanvasFileParams, options?: Parameters<typeof customFetch>[1]): Promise<WorkspaceCanvasFileContent> => {
+
+  return customFetch<WorkspaceCanvasFileContent>(getGetWorkspaceCanvasFileUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetWorkspaceCanvasFileQueryKey = (params?: GetWorkspaceCanvasFileParams,) => {
+    return [
+    `/api/workspace/canvas/file`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetWorkspaceCanvasFileQueryOptions = <TData = Awaited<ReturnType<typeof getWorkspaceCanvasFile>>, TError = ErrorType<void>>(params: GetWorkspaceCanvasFileParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getWorkspaceCanvasFile>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetWorkspaceCanvasFileQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getWorkspaceCanvasFile>>> = ({ signal }) => getWorkspaceCanvasFile(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getWorkspaceCanvasFile>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetWorkspaceCanvasFileQueryResult = NonNullable<Awaited<ReturnType<typeof getWorkspaceCanvasFile>>>
+export type GetWorkspaceCanvasFileQueryError = ErrorType<void>
+
+
+/**
+ * @summary Read a text source or document for the workspace canvas
+ */
+
+export function useGetWorkspaceCanvasFile<TData = Awaited<ReturnType<typeof getWorkspaceCanvasFile>>, TError = ErrorType<void>>(
+ params: GetWorkspaceCanvasFileParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getWorkspaceCanvasFile>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetWorkspaceCanvasFileQueryOptions(params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

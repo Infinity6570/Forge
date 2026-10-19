@@ -626,6 +626,41 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/WorkspaceHtmlEntry"
+  /workspace/canvas/files:
+    get:
+      operationId: listWorkspaceCanvasFiles
+      tags: [assistant]
+      summary: List previewable source and document files in the workspace
+      responses:
+        "200":
+          description: Workspace canvas files ordered by most recent change
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/WorkspaceCanvasFile"
+  /workspace/canvas/file:
+    get:
+      operationId: getWorkspaceCanvasFile
+      tags: [assistant]
+      summary: Read a text source or document for the workspace canvas
+      parameters:
+        - name: path
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Text file contents for a read-only preview
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceCanvasFileContent"
+        "404":
+          description: File not found in the workspace
+        "415":
+          description: File type is not available as text
   /workspace/preview/stop:
     post:
       operationId: stopWorkspacePreviewApp
@@ -1004,6 +1039,27 @@ components:
         previewUrl: { type: string }
         modifiedAt: { type: string, format: date-time }
         projectModifiedAt: { type: string, description: "Nanosecond timestamp used to detect in-place HTML, CSS, and JavaScript edits." }
+    WorkspaceCanvasFile:
+      type: object
+      required: [path, name, kind, contentType, sizeBytes, modifiedAt, previewUrl]
+      properties:
+        path: { type: string }
+        name: { type: string }
+        kind:
+          type: string
+          enum: [html, react, markdown, mermaid, code, text, image, pdf]
+        contentType: { type: string }
+        sizeBytes: { type: integer, minimum: 0 }
+        modifiedAt: { type: string, format: date-time }
+        previewUrl: { type: string }
+    WorkspaceCanvasFileContent:
+      type: object
+      required: [path, content, modifiedAt, truncated]
+      properties:
+        path: { type: string }
+        content: { type: string }
+        modifiedAt: { type: string, format: date-time }
+        truncated: { type: boolean }
     WorkspacePreviewStopAllResult:
       type: object
       required: [stopped, preview]
