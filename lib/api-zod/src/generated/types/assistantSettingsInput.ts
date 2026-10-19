@@ -47,6 +47,11 @@ export interface AssistantSettingsInput {
      * @nullable
      */
   openrouterApiKey?: string | null;
+  /**
+     * @maxLength 1000
+     * @nullable
+     */
+  benchlmApiKey?: string | null;
   codeRunnerEnabled?: boolean;
   appPreviewsEnabled?: boolean;
   engineToolsEnabled?: boolean;

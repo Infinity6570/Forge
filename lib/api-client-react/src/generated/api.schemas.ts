@@ -631,6 +631,11 @@ export interface ProviderKeysInput {
      * @nullable
      */
   openrouterApiKey?: string | null;
+  /**
+     * @maxLength 1000
+     * @nullable
+     */
+  benchlmApiKey?: string | null;
   /** @maxLength 500 */
   ollamaBaseUrl?: string;
   /**
@@ -717,6 +722,11 @@ export interface VaultKeysInput {
      * @nullable
      */
   openrouterApiKey?: string | null;
+  /**
+     * @maxLength 1000
+     * @nullable
+     */
+  benchlmApiKey?: string | null;
   /**
      * @maxLength 500
      * @nullable
@@ -832,6 +842,15 @@ export const VaultKeyStatusesOpenrouterApiKey = {
   unavailable: 'unavailable',
 } as const;
 
+export type VaultKeyStatusesBenchlmApiKey = typeof VaultKeyStatusesBenchlmApiKey[keyof typeof VaultKeyStatusesBenchlmApiKey];
+
+
+export const VaultKeyStatusesBenchlmApiKey = {
+  configured: 'configured',
+  not_set: 'not_set',
+  unavailable: 'unavailable',
+} as const;
+
 export type VaultKeyStatusesTavilyApiKey = typeof VaultKeyStatusesTavilyApiKey[keyof typeof VaultKeyStatusesTavilyApiKey];
 
 
@@ -938,6 +957,7 @@ export interface VaultKeyStatuses {
   gemini_api_key: VaultKeyStatusesGeminiApiKey;
   anthropic_api_key: VaultKeyStatusesAnthropicApiKey;
   openrouter_api_key: VaultKeyStatusesOpenrouterApiKey;
+  benchlm_api_key: VaultKeyStatusesBenchlmApiKey;
   tavily_api_key: VaultKeyStatusesTavilyApiKey;
   serper_api_key: VaultKeyStatusesSerperApiKey;
   brave_search_api_key: VaultKeyStatusesBraveSearchApiKey;
@@ -1003,9 +1023,57 @@ export interface AssistantSettingsInput {
      * @nullable
      */
   openrouterApiKey?: string | null;
+  /**
+     * @maxLength 1000
+     * @nullable
+     */
+  benchlmApiKey?: string | null;
   codeRunnerEnabled?: boolean;
   appPreviewsEnabled?: boolean;
   engineToolsEnabled?: boolean;
+}
+
+export type BenchmarksModelsResponseSource = typeof BenchmarksModelsResponseSource[keyof typeof BenchmarksModelsResponseSource];
+
+
+export const BenchmarksModelsResponseSource = {
+  benchlm: 'benchlm',
+  'catalog-fallback': 'catalog-fallback',
+} as const;
+
+export type BenchmarksModelsResponseModelsItem = {
+  modelId: string;
+  /** @nullable */
+  provider: string | null;
+  name: string;
+  surface: string;
+  /** @nullable */
+  rating?: number | null;
+  /** @nullable */
+  rank?: number | null;
+  /** @nullable */
+  codingScore?: number | null;
+  /** @nullable */
+  reasoningScore?: number | null;
+  /** @nullable */
+  knowledgeScore?: number | null;
+  /** @nullable */
+  costIndex?: number | null;
+  /** @nullable */
+  latencyMs?: number | null;
+  /** @nullable */
+  tier?: string | null;
+};
+
+export interface BenchmarksModelsResponse {
+  surface: string;
+  source: BenchmarksModelsResponseSource;
+  stale: boolean;
+  /** @nullable */
+  updatedAt?: string | null;
+  /** @nullable */
+  message?: string | null;
+  models: BenchmarksModelsResponseModelsItem[];
 }
 
 export type ListConversationThreadsParams = {
@@ -1023,6 +1091,20 @@ limit?: number;
  */
 before?: number;
 };
+
+export type GetBenchmarksModelsParams = {
+surface?: GetBenchmarksModelsSurface;
+};
+
+export type GetBenchmarksModelsSurface = typeof GetBenchmarksModelsSurface[keyof typeof GetBenchmarksModelsSurface];
+
+
+export const GetBenchmarksModelsSurface = {
+  overall: 'overall',
+  coding: 'coding',
+  agentic: 'agentic',
+  knowledge: 'knowledge',
+} as const;
 
 export type GetWorkspaceCanvasFileParams = {
 path: string;

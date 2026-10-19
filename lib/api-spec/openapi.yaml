@@ -569,6 +569,23 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/VaultKeyStatuses"
+  /benchmarks/models:
+    get:
+      operationId: getBenchmarksModels
+      tags: [assistant]
+      summary: Read current BenchLM model rankings or an unscored local model catalog
+      parameters:
+        - in: query
+          name: surface
+          required: false
+          schema: { type: string, enum: [overall, coding, agentic, knowledge], default: overall }
+      responses:
+        "200":
+          description: Current, cached, stale, or explicitly unscored model benchmark information
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BenchmarksModelsResponse"
   /assistant/settings/search:
     patch:
       operationId: updateAssistantSearchSettings
@@ -1130,6 +1147,7 @@ components:
         geminiApiKey: { type: ["string", "null"], maxLength: 1000 }
         anthropicApiKey: { type: ["string", "null"], maxLength: 1000 }
         openrouterApiKey: { type: ["string", "null"], maxLength: 1000 }
+        benchlmApiKey: { type: ["string", "null"], maxLength: 1000 }
         ollamaBaseUrl: { type: string, maxLength: 500 }
         tavilyApiKey: { type: ["string", "null"], maxLength: 1000 }
         serperApiKey: { type: ["string", "null"], maxLength: 1000 }
@@ -1151,6 +1169,7 @@ components:
         geminiApiKey: { type: ["string", "null"], maxLength: 1000 }
         anthropicApiKey: { type: ["string", "null"], maxLength: 1000 }
         openrouterApiKey: { type: ["string", "null"], maxLength: 1000 }
+        benchlmApiKey: { type: ["string", "null"], maxLength: 1000 }
         ollamaBaseUrl: { type: ["string", "null"], maxLength: 500 }
         tavilyApiKey: { type: ["string", "null"], maxLength: 1000 }
         serperApiKey: { type: ["string", "null"], maxLength: 1000 }
@@ -1172,6 +1191,7 @@ components:
         - gemini_api_key
         - anthropic_api_key
         - openrouter_api_key
+        - benchlm_api_key
         - tavily_api_key
         - serper_api_key
         - brave_search_api_key
@@ -1190,6 +1210,7 @@ components:
         gemini_api_key: { type: string, enum: [configured, not_set, unavailable] }
         anthropic_api_key: { type: string, enum: [configured, not_set, unavailable] }
         openrouter_api_key: { type: string, enum: [configured, not_set, unavailable] }
+        benchlm_api_key: { type: string, enum: [configured, not_set, unavailable] }
         tavily_api_key: { type: string, enum: [configured, not_set, unavailable] }
         serper_api_key: { type: string, enum: [configured, not_set, unavailable] }
         brave_search_api_key: { type: string, enum: [configured, not_set, unavailable] }
@@ -1214,7 +1235,35 @@ components:
         geminiApiKey: { type: ["string", "null"], maxLength: 1000 }
         anthropicApiKey: { type: ["string", "null"], maxLength: 1000 }
         openrouterApiKey: { type: ["string", "null"], maxLength: 1000 }
+        benchlmApiKey: { type: ["string", "null"], maxLength: 1000 }
         codeRunnerEnabled: { type: boolean }
         appPreviewsEnabled: { type: boolean }
         engineToolsEnabled: { type: boolean, default: false }
+    BenchmarksModelsResponse:
+      type: object
+      required: [surface, source, stale, models]
+      properties:
+        surface: { type: string }
+        source: { type: string, enum: [benchlm, catalog-fallback] }
+        stale: { type: boolean }
+        updatedAt: { type: ["string", "null"], format: date-time }
+        message: { type: ["string", "null"] }
+        models:
+          type: array
+          items:
+            type: object
+            required: [modelId, provider, name, surface]
+            properties:
+              modelId: { type: string }
+              provider: { type: ["string", "null"] }
+              name: { type: string }
+              surface: { type: string }
+              rating: { type: ["number", "null"] }
+              rank: { type: ["integer", "null"] }
+              codingScore: { type: ["number", "null"] }
+              reasoningScore: { type: ["number", "null"] }
+              knowledgeScore: { type: ["number", "null"] }
+              costIndex: { type: ["number", "null"] }
+              latencyMs: { type: ["number", "null"] }
+              tier: { type: ["string", "null"] }
 

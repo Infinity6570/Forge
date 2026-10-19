@@ -34,6 +34,11 @@ export interface VaultKeysInput {
      */
   openrouterApiKey?: string | null;
   /**
+     * @maxLength 1000
+     * @nullable
+     */
+  benchlmApiKey?: string | null;
+  /**
      * @maxLength 500
      * @nullable
      */

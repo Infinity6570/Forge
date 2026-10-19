@@ -890,6 +890,8 @@ export const updateAssistantSettingsBodyAnthropicApiKeyMax = 1000;
 
 export const updateAssistantSettingsBodyOpenrouterApiKeyMax = 1000;
 
+export const updateAssistantSettingsBodyBenchlmApiKeyMax = 1000;
+
 export const updateAssistantSettingsBodyEngineToolsEnabledDefault = false;
 
 export const UpdateAssistantSettingsBody = zod.object({
@@ -902,6 +904,7 @@ export const UpdateAssistantSettingsBody = zod.object({
   "geminiApiKey": zod.string().max(updateAssistantSettingsBodyGeminiApiKeyMax).nullish(),
   "anthropicApiKey": zod.string().max(updateAssistantSettingsBodyAnthropicApiKeyMax).nullish(),
   "openrouterApiKey": zod.string().max(updateAssistantSettingsBodyOpenrouterApiKeyMax).nullish(),
+  "benchlmApiKey": zod.string().max(updateAssistantSettingsBodyBenchlmApiKeyMax).nullish(),
   "codeRunnerEnabled": zod.boolean().optional(),
   "appPreviewsEnabled": zod.boolean().optional(),
   "engineToolsEnabled": zod.boolean().default(updateAssistantSettingsBodyEngineToolsEnabledDefault)
@@ -989,6 +992,8 @@ export const saveAssistantProviderKeysBodyAnthropicApiKeyMax = 1000;
 
 export const saveAssistantProviderKeysBodyOpenrouterApiKeyMax = 1000;
 
+export const saveAssistantProviderKeysBodyBenchlmApiKeyMax = 1000;
+
 export const saveAssistantProviderKeysBodyOllamaBaseUrlMax = 500;
 
 export const saveAssistantProviderKeysBodyTavilyApiKeyMax = 1000;
@@ -1021,6 +1026,7 @@ export const SaveAssistantProviderKeysBody = zod.object({
   "geminiApiKey": zod.string().max(saveAssistantProviderKeysBodyGeminiApiKeyMax).nullish(),
   "anthropicApiKey": zod.string().max(saveAssistantProviderKeysBodyAnthropicApiKeyMax).nullish(),
   "openrouterApiKey": zod.string().max(saveAssistantProviderKeysBodyOpenrouterApiKeyMax).nullish(),
+  "benchlmApiKey": zod.string().max(saveAssistantProviderKeysBodyBenchlmApiKeyMax).nullish(),
   "ollamaBaseUrl": zod.string().max(saveAssistantProviderKeysBodyOllamaBaseUrlMax).optional(),
   "tavilyApiKey": zod.string().max(saveAssistantProviderKeysBodyTavilyApiKeyMax).nullish(),
   "serperApiKey": zod.string().max(saveAssistantProviderKeysBodySerperApiKeyMax).nullish(),
@@ -1070,6 +1076,7 @@ export const GetVaultKeysResponse = zod.object({
   "gemini_api_key": zod.enum(['configured', 'not_set', 'unavailable']),
   "anthropic_api_key": zod.enum(['configured', 'not_set', 'unavailable']),
   "openrouter_api_key": zod.enum(['configured', 'not_set', 'unavailable']),
+  "benchlm_api_key": zod.enum(['configured', 'not_set', 'unavailable']),
   "tavily_api_key": zod.enum(['configured', 'not_set', 'unavailable']),
   "serper_api_key": zod.enum(['configured', 'not_set', 'unavailable']),
   "brave_search_api_key": zod.enum(['configured', 'not_set', 'unavailable']),
@@ -1097,6 +1104,8 @@ export const saveVaultKeysBodyGeminiApiKeyMax = 1000;
 export const saveVaultKeysBodyAnthropicApiKeyMax = 1000;
 
 export const saveVaultKeysBodyOpenrouterApiKeyMax = 1000;
+
+export const saveVaultKeysBodyBenchlmApiKeyMax = 1000;
 
 export const saveVaultKeysBodyOllamaBaseUrlMax = 500;
 
@@ -1131,6 +1140,7 @@ export const SaveVaultKeysBody = zod.object({
   "geminiApiKey": zod.string().max(saveVaultKeysBodyGeminiApiKeyMax).nullish(),
   "anthropicApiKey": zod.string().max(saveVaultKeysBodyAnthropicApiKeyMax).nullish(),
   "openrouterApiKey": zod.string().max(saveVaultKeysBodyOpenrouterApiKeyMax).nullish(),
+  "benchlmApiKey": zod.string().max(saveVaultKeysBodyBenchlmApiKeyMax).nullish(),
   "ollamaBaseUrl": zod.string().max(saveVaultKeysBodyOllamaBaseUrlMax).nullish(),
   "tavilyApiKey": zod.string().max(saveVaultKeysBodyTavilyApiKeyMax).nullish(),
   "serperApiKey": zod.string().max(saveVaultKeysBodySerperApiKeyMax).nullish(),
@@ -1152,6 +1162,7 @@ export const SaveVaultKeysResponse = zod.object({
   "gemini_api_key": zod.enum(['configured', 'not_set', 'unavailable']),
   "anthropic_api_key": zod.enum(['configured', 'not_set', 'unavailable']),
   "openrouter_api_key": zod.enum(['configured', 'not_set', 'unavailable']),
+  "benchlm_api_key": zod.enum(['configured', 'not_set', 'unavailable']),
   "tavily_api_key": zod.enum(['configured', 'not_set', 'unavailable']),
   "serper_api_key": zod.enum(['configured', 'not_set', 'unavailable']),
   "brave_search_api_key": zod.enum(['configured', 'not_set', 'unavailable']),
@@ -1163,6 +1174,38 @@ export const SaveVaultKeysResponse = zod.object({
   "goldapi_io_key": zod.enum(['configured', 'not_set', 'unavailable']),
   "oilpriceapi_key": zod.enum(['configured', 'not_set', 'unavailable']),
   "commodity_api_key": zod.enum(['configured', 'not_set', 'unavailable'])
+})
+
+
+/**
+ * @summary Read current BenchLM model rankings or an unscored local model catalog
+ */
+export const getBenchmarksModelsQuerySurfaceDefault = `overall`;
+
+export const GetBenchmarksModelsQueryParams = zod.object({
+  "surface": zod.enum(['overall', 'coding', 'agentic', 'knowledge']).default(getBenchmarksModelsQuerySurfaceDefault)
+})
+
+export const GetBenchmarksModelsResponse = zod.object({
+  "surface": zod.string(),
+  "source": zod.enum(['benchlm', 'catalog-fallback']),
+  "stale": zod.boolean(),
+  "updatedAt": zod.coerce.date().nullish(),
+  "message": zod.string().nullish(),
+  "models": zod.array(zod.object({
+  "modelId": zod.string(),
+  "provider": zod.string().nullable(),
+  "name": zod.string(),
+  "surface": zod.string(),
+  "rating": zod.number().nullish(),
+  "rank": zod.number().int().nullish(),
+  "codingScore": zod.number().nullish(),
+  "reasoningScore": zod.number().nullish(),
+  "knowledgeScore": zod.number().nullish(),
+  "costIndex": zod.number().nullish(),
+  "latencyMs": zod.number().nullish(),
+  "tier": zod.string().nullish()
+}))
 })
 
 

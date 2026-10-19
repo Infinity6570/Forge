@@ -101,6 +101,38 @@ class AutoModelRoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((fast["provider"], fast["model"]), ("gemini", "gemini-3.5-flash-lite"))
         self.assertEqual((academic["provider"], academic["model"]), ("gemini", "gemini-3.8-flash"))
 
+    def test_benchlm_scores_improve_auto_routing_without_crossing_provider_scope(self) -> None:
+        rankings = [
+            {
+                "modelId": "gemini-3.8-flash",
+                "provider": "gemini",
+                "codingScore": 87.5,
+                "rank": 4,
+            },
+            {
+                "modelId": "claude-sonnet-5-5",
+                "provider": "anthropic",
+                "codingScore": 94.0,
+                "rank": 1,
+            },
+        ]
+        global_decision = main.route_task(
+            "Refactor the codebase architecture",
+            "auto-global",
+            available_providers={"gemini", "anthropic"},
+            benchmark_rankings=rankings,
+        )
+        scoped_decision = main.route_task(
+            "Refactor the codebase architecture",
+            "auto-gemini",
+            available_providers={"gemini", "anthropic"},
+            benchmark_rankings=rankings,
+        )
+
+        self.assertEqual((global_decision["provider"], global_decision["model"]), ("anthropic", "claude-sonnet-5-5"))
+        self.assertIn("BenchLM coding score 94", global_decision["reason"])
+        self.assertEqual((scoped_decision["provider"], scoped_decision["model"]), ("gemini", "gemini-3.8-flash"))
+
     def test_scoped_mode_without_provider_key_fails_clearly(self) -> None:
         with self.assertRaisesRegex(RuntimeError, "configured Gemini API key"):
             main.route_task("hello", "auto-gemini", available_providers={"openai"})

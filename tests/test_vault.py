@@ -28,6 +28,8 @@ class LocalVaultTests(unittest.IsolatedAsyncioTestCase):
                 "DEEPSEEK_API_KEY": "",
                 "GEMINI_API_KEY": "",
                 "OPENROUTER_API_KEY": "",
+                "BENCHLM_API_KEY": "",
+                "BENCHLM_DATA_KEY": "",
                 "TAVILY_API_KEY": "",
                 "SERPER_API_KEY": "",
                 "BRAVE_SEARCH_API_KEY": "",
@@ -131,6 +133,36 @@ class LocalVaultTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.json()["vault_status"], "ready")
         self.assertEqual(response.json()["gemini_api_key"], "not_set")
         self.assertNotIn("VAULT_ENCRYPTION_KEY", response.text)
+
+    async def test_benchlm_key_is_encrypted_and_only_status_is_returned(self) -> None:
+        secret = "benchlm-vault-test-secret"
+        response = await self.request(
+            "POST",
+            "/api/vault/keys",
+            json={"benchlmApiKey": secret},
+        )
+
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["benchlm_api_key"], "configured")
+        self.assertNotIn(secret, response.text)
+        self.assertEqual(main.get_vault_secret("BENCHLM_API_KEY"), secret)
+
+        stored = main.db_one(
+            "SELECT key_value FROM vault_secrets WHERE key_name='BENCHLM_API_KEY'"
+        )
+        self.assertIsNotNone(stored)
+        self.assertNotIn(secret, stored["key_value"])
+
+    async def test_benchmarks_endpoint_returns_unscored_catalog_without_a_key(self) -> None:
+        response = await self.request("GET", "/api/benchmarks/models?surface=coding")
+
+        self.assertEqual(response.status_code, 200, response.text)
+        payload = response.json()
+        self.assertEqual(payload["source"], "catalog-fallback")
+        self.assertEqual(payload["surface"], "coding")
+        self.assertTrue(payload["models"])
+        self.assertTrue(all(item["rating"] is None for item in payload["models"]))
+        self.assertTrue(all(item["codingScore"] is None for item in payload["models"]))
 
     async def test_missing_encryption_key_reports_locked_without_exposing_saved_values(self) -> None:
         secret = "missing-key-vault-secret"

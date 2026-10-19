@@ -7,6 +7,7 @@
  */
 import type { VaultKeyStatusesAlphaVantageApiKey } from './vaultKeyStatusesAlphaVantageApiKey';
 import type { VaultKeyStatusesAnthropicApiKey } from './vaultKeyStatusesAnthropicApiKey';
+import type { VaultKeyStatusesBenchlmApiKey } from './vaultKeyStatusesBenchlmApiKey';
 import type { VaultKeyStatusesBraveSearchApiKey } from './vaultKeyStatusesBraveSearchApiKey';
 import type { VaultKeyStatusesCommodityApiKey } from './vaultKeyStatusesCommodityApiKey';
 import type { VaultKeyStatusesDeepseekApiKey } from './vaultKeyStatusesDeepseekApiKey';
@@ -30,6 +31,7 @@ export interface VaultKeyStatuses {
   gemini_api_key: VaultKeyStatusesGeminiApiKey;
   anthropic_api_key: VaultKeyStatusesAnthropicApiKey;
   openrouter_api_key: VaultKeyStatusesOpenrouterApiKey;
+  benchlm_api_key: VaultKeyStatusesBenchlmApiKey;
   tavily_api_key: VaultKeyStatusesTavilyApiKey;
   serper_api_key: VaultKeyStatusesSerperApiKey;
   brave_search_api_key: VaultKeyStatusesBraveSearchApiKey;

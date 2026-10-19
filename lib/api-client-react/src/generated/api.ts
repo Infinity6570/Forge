@@ -26,11 +26,13 @@ import type {
   AssistantSettingsInput,
   AssistantTask,
   AssistantTimer,
+  BenchmarksModelsResponse,
   ConversationMessage,
   ConversationThread,
   ConversationThreadDetail,
   DashboardSummary,
   FileUploadInput,
+  GetBenchmarksModelsParams,
   GetConversationThreadParams,
   GetWorkspaceCanvasFileParams,
   HealthStatus,
@@ -2985,6 +2987,90 @@ export const useSaveVaultKeys = <TError = ErrorType<unknown>,
       > => {
       return useMutation(getSaveVaultKeysMutationOptions(options));
     }
+
+export const getGetBenchmarksModelsUrl = (params?: GetBenchmarksModelsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/benchmarks/models?${stringifiedParams}` : `/api/benchmarks/models`
+}
+
+/**
+ * @summary Read current BenchLM model rankings or an unscored local model catalog
+ */
+export const getBenchmarksModels = async (params?: GetBenchmarksModelsParams, options?: Parameters<typeof customFetch>[1]): Promise<BenchmarksModelsResponse> => {
+
+  return customFetch<BenchmarksModelsResponse>(getGetBenchmarksModelsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetBenchmarksModelsQueryKey = (params?: GetBenchmarksModelsParams,) => {
+    return [
+    `/api/benchmarks/models`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetBenchmarksModelsQueryOptions = <TData = Awaited<ReturnType<typeof getBenchmarksModels>>, TError = ErrorType<unknown>>(params?: GetBenchmarksModelsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getBenchmarksModels>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetBenchmarksModelsQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getBenchmarksModels>>> = ({ signal }) => getBenchmarksModels(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getBenchmarksModels>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetBenchmarksModelsQueryResult = NonNullable<Awaited<ReturnType<typeof getBenchmarksModels>>>
+export type GetBenchmarksModelsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Read current BenchLM model rankings or an unscored local model catalog
+ */
+
+export function useGetBenchmarksModels<TData = Awaited<ReturnType<typeof getBenchmarksModels>>, TError = ErrorType<unknown>>(
+ params?: GetBenchmarksModelsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getBenchmarksModels>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetBenchmarksModelsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
 
 export const getUpdateAssistantSearchSettingsUrl = () => {
 

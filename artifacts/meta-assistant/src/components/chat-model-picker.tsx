@@ -2,6 +2,7 @@ import { Zap } from 'lucide-react';
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectSeparator, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 export type ModelPickerGroup = { id: string; label: string; items: readonly { id: string; name: string }[] };
+export type ModelPickerBenchmark = { rating?: number | null; rank?: number | null };
 type Props = {
   value: string;
   onChange: (value: string) => void;
@@ -9,9 +10,10 @@ type Props = {
   lastUsedLabel: string | null;
   currentSessionLabel?: string;
   groups: ModelPickerGroup[];
+  benchmarkRatings?: Record<string, ModelPickerBenchmark>;
 };
 
-export function ChatModelPicker({ value, onChange, configuredLabel, lastUsedLabel, currentSessionLabel, groups }: Props) {
+export function ChatModelPicker({ value, onChange, configuredLabel, lastUsedLabel, currentSessionLabel, groups, benchmarkRatings = {} }: Props) {
   const selectedParts = value.split('|');
   const hasListedSelection = selectedParts.length === 3 && groups.some((group) =>
     group.id === selectedParts[1] && group.items.some((item) => item.id === selectedParts[2]),
@@ -35,7 +37,18 @@ export function ChatModelPicker({ value, onChange, configuredLabel, lastUsedLabe
       {groups.map((group) => <SelectGroup key={group.id}>
         <SelectSeparator className="model-menu-sep" />
         <SelectLabel className="model-menu-label">{group.label}</SelectLabel>
-        {group.items.map((item) => <SelectItem key={`${group.id}:${item.id}`} value={`direct|${group.id}|${item.id}`} className="model-menu-item">{item.name}</SelectItem>)}
+        {group.items.map((item) => {
+          const benchmark = benchmarkRatings[item.id];
+          const benchmarkLabel = typeof benchmark?.rating === 'number'
+            ? `BLM ${benchmark.rating.toFixed(1)}`
+            : typeof benchmark?.rank === 'number'
+              ? `BLM #${benchmark.rank}`
+              : null;
+          return <SelectItem key={`${group.id}:${item.id}`} value={`direct|${group.id}|${item.id}`} className="model-menu-item">
+            <span className="model-menu-item-name">{item.name}</span>
+            {benchmarkLabel && <span className="model-benchmark-badge" title="BenchLM coding ranking">{benchmarkLabel}</span>}
+          </SelectItem>;
+        })}
       </SelectGroup>)}
     </SelectContent>
   </Select>;

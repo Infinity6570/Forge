@@ -26,6 +26,7 @@ import {
   useGetAssistantTask,
   useGetAssistantSettings,
   useGetAssistantSystemPrompt,
+  useGetBenchmarksModels,
   useGetWorkspacePreview,
   useListAssistantFiles,
   useGetConversationThread,
@@ -46,6 +47,7 @@ import {
   getGetAssistantTaskQueryKey,
   getGetAssistantSettingsQueryKey,
   getGetAssistantSystemPromptQueryKey,
+  getGetBenchmarksModelsQueryKey,
   getGetWorkspacePreviewQueryKey,
   getDownloadAssistantWorkspaceQueryKey,
   getListAssistantFilesQueryKey,
@@ -518,6 +520,10 @@ function Dashboard() {
   const threadDetail = useThreadHistory(threadId);
   const threadStale = (threadDetail.error as { status?: number } | null)?.status === 404;
   const settingsQuery = useGetAssistantSettings();
+  const codingBenchmarks = useGetBenchmarksModels(
+    { surface: 'coding' },
+    { query: { staleTime: 6 * 60 * 60 * 1000 } },
+  );
   const [objective, setObjective] = useState('');
   const [submitError, setSubmitError] = useState('');
   const [liveText, setLiveText] = useState<{ taskId: string; text: string }>();
@@ -898,7 +904,7 @@ function Dashboard() {
         {submitError && <p className="field-error" role="alert">{submitError}</p>}
         <div className="composer-bottom"><div className="composer-actions">
           <span className="composer-counter" data-testid="text-prompt-counter">{objective.length.toLocaleString()} / 12,000</span>
-          <ChatModelPicker value={displayModelMode} onChange={changeModelMode} configuredLabel={settingsQuery.data ? modelDisplayName(settingsQuery.data.provider, settingsQuery.data.modelId) : 'Loading model…'} lastUsedLabel={lastUsedModel?.provider && lastUsedModel.modelId ? modelDisplayName(lastUsedModel.provider, lastUsedModel.modelId) : null} currentSessionLabel={selectedModelForDisplay ? modelDisplayName(selectedModelForDisplay.provider, selectedModelForDisplay.model) : undefined} groups={Object.entries(models).filter(([groupProvider]) => groupProvider !== 'ollama' || settingsQuery.data?.localSetupAllowed).map(([groupProvider, items]) => ({ id: groupProvider, label: groupProvider === 'gemini' ? 'Google Gemini' : groupProvider === 'anthropic' ? 'Anthropic Claude' : groupProvider === 'openrouter' ? 'OpenRouter' : groupProvider === 'ollama' ? 'Local · Ollama' : groupProvider === 'openai' ? 'OpenAI' : 'DeepSeek', items }))} />
+           <ChatModelPicker value={displayModelMode} onChange={changeModelMode} configuredLabel={settingsQuery.data ? modelDisplayName(settingsQuery.data.provider, settingsQuery.data.modelId) : 'Loading model…'} lastUsedLabel={lastUsedModel?.provider && lastUsedModel.modelId ? modelDisplayName(lastUsedModel.provider, lastUsedModel.modelId) : null} currentSessionLabel={selectedModelForDisplay ? modelDisplayName(selectedModelForDisplay.provider, selectedModelForDisplay.model) : undefined} groups={Object.entries(models).filter(([groupProvider]) => groupProvider !== 'ollama' || settingsQuery.data?.localSetupAllowed).map(([groupProvider, items]) => ({ id: groupProvider, label: groupProvider === 'gemini' ? 'Google Gemini' : groupProvider === 'anthropic' ? 'Anthropic Claude' : groupProvider === 'openrouter' ? 'OpenRouter' : groupProvider === 'ollama' ? 'Local · Ollama' : groupProvider === 'openai' ? 'OpenAI' : 'DeepSeek', items }))} benchmarkRatings={Object.fromEntries((codingBenchmarks.data?.models ?? []).map((item) => [item.modelId, { rating: item.codingScore ?? item.rating, rank: item.rank }]))} />
           <input ref={attachmentInput} type="file" hidden multiple onChange={(event) => { void attachFiles(Array.from(event.currentTarget.files ?? [])); }} data-testid="input-task-attachment" />
           <button type="button" className="button button-quiet submit-button composer-attach" title="Attach a file" aria-label={uploadingAttachment ? 'Uploading attachment' : 'Attach a file'} onClick={() => attachmentInput.current?.click()} disabled={uploadingAttachment} data-testid="button-attach-task-file">{uploadingAttachment ? <LoaderCircle className="spin" size={12} /> : <Upload size={12} />}</button>
           {stopTargetId ? <button type="button" className="button submit-button button-stop-task" disabled={abort.isPending || stopRequestedTaskId === stopTargetId} title="Stop the active task (Escape)" aria-label="Stop active task" aria-keyshortcuts="Escape" onClick={() => requestStop(stopTargetId)} data-testid="button-stop-task"><StopCircle size={12} />{stopRequestedTaskId === stopTargetId ? 'Stopping…' : 'Stop task'}<kbd>Esc</kbd></button>
@@ -1267,6 +1273,12 @@ function SystemTelemetry() {
     : undefined;
   const activeProvider = latestThreadTask?.provider ?? currentModel?.provider ?? settings.data?.provider;
   const activeModelId = latestThreadTask?.modelId ?? currentModel?.modelId ?? settings.data?.modelId;
+  const benchmarkSurface = latestThreadTask?.routingIntent === 'code_refactoring' ? 'coding' : 'overall';
+  const modelBenchmarks = useGetBenchmarksModels(
+    { surface: benchmarkSurface },
+    { query: { staleTime: 6 * 60 * 60 * 1000 } },
+  );
+  const activeBenchmark = modelBenchmarks.data?.models.find((item) => item.modelId === activeModelId);
   const searchEngines = settings.data ? [
     { id: 'tavily', label: 'TAVILY', configured: settings.data.hasTavilyKey, selected: settings.data.searchMode === 'api' && settings.data.searchApiProvider === 'tavily' },
     { id: 'serper', label: 'SERPER', configured: settings.data.hasSerperKey, selected: settings.data.searchMode === 'api' && settings.data.searchApiProvider === 'serper' },
@@ -1285,6 +1297,10 @@ function SystemTelemetry() {
         <span className="telemetry-kicker">ACTIVE MODEL · {currentModel ? 'SELECTED CHAT' : 'SETTINGS'}</span>
         {settings.isLoading && !currentModel ? <div className="telemetry-skeleton model-skeleton"><i /></div> : settings.isError && !currentModel ? <div className="telemetry-error"><span>Model configuration unavailable.</span><button type="button" onClick={() => settings.refetch()}>Retry</button></div> : activeProvider && activeModelId ? <strong data-testid="text-telemetry-model">{modelDisplayName(activeProvider, activeModelId)}</strong> : <strong data-testid="text-telemetry-model">No model selected</strong>}
         {activeProvider && activeModelId && <span className="telemetry-model-id" data-testid="text-telemetry-model-id">{activeProvider} / {activeModelId}</span>}
+         {activeBenchmark && (activeBenchmark.rating != null || activeBenchmark.rank != null) && <span className="telemetry-benchmark" data-testid="text-telemetry-benchmark">
+           BenchLM {benchmarkSurface} · {activeBenchmark.rating != null ? activeBenchmark.rating.toFixed(1) : `rank #${activeBenchmark.rank}`}
+         </span>}
+         {modelBenchmarks.data?.message && <small className="telemetry-benchmark-note" data-testid="text-telemetry-benchmark-note">{modelBenchmarks.data.message}</small>}
         {latestThreadTask?.routingMode && isAutoRouteMode(latestThreadTask.routingMode) && <div className="telemetry-route-decision" data-testid="status-auto-routing-decision">
           <span className="telemetry-live-tag">{AUTO_ROUTE_LABELS[latestThreadTask.routingMode]}</span>
           <span>{latestThreadTask.routingIntent?.replaceAll('_', ' ') ?? 'task intent'}</span>
@@ -1550,7 +1566,7 @@ function SettingsPage() {
   const credentialStatus = settingsQuery.data;
   const vaultLocked = vaultStatusQuery.data?.vault_status === 'locked';
   const [apiKeys, setApiKeys] = useState<VaultKeysInput>({
-    openaiApiKey: '', deepseekApiKey: '', geminiApiKey: '', anthropicApiKey: '', openrouterApiKey: '',
+    openaiApiKey: '', deepseekApiKey: '', geminiApiKey: '', anthropicApiKey: '', openrouterApiKey: '', benchlmApiKey: '',
     tavilyApiKey: '', serperApiKey: '', braveApiKey: '', kiteApiKey: '',
     kiteApiSecret: '', kiteAccessToken: '', alphaVantageApiKey: '', finnhubApiKey: '',
     goldapiIoKey: '', oilpriceapiKey: '', commodityApiKey: '',
@@ -1568,7 +1584,7 @@ function SettingsPage() {
   const [vaultBackupBusy, setVaultBackupBusy] = useState(false);
   const [vaultBackupMessage, setVaultBackupMessage] = useState('');
   const [vaultBackupError, setVaultBackupError] = useState('');
-  const [vaultExpanded, setVaultExpanded] = useState<Record<string, boolean>>({ core: true, search: false, market: false });
+  const [vaultExpanded, setVaultExpanded] = useState<Record<string, boolean>>({ core: true, search: false, market: false, benchmarks: false });
   const [modelApplied, setModelApplied] = useState('');
   const [confirmBeforeActions, setConfirmBeforeActions] = useState(true);
   const [allowExternalResearch, setAllowExternalResearch] = useState(true);
@@ -1602,7 +1618,7 @@ function SettingsPage() {
     }
   }, [systemPromptQuery.data, systemPromptDirty]);
   useEffect(() => {
-    if (vaultLocked) setVaultExpanded({ core: true, search: true, market: true });
+    if (vaultLocked) setVaultExpanded({ core: true, search: true, market: true, benchmarks: true });
     else setConfirmVaultReset(false);
   }, [vaultLocked]);
   const configured = provider === 'openai'
@@ -1648,8 +1664,10 @@ function SettingsPage() {
       onSuccess: () => {
         void qc.invalidateQueries({ queryKey: getGetVaultKeysQueryKey() });
         void qc.invalidateQueries({ queryKey: getGetAssistantSettingsQueryKey() });
+        void qc.invalidateQueries({ queryKey: getGetBenchmarksModelsQueryKey({ surface: 'coding' }) });
+        void qc.invalidateQueries({ queryKey: getGetBenchmarksModelsQueryKey({ surface: 'overall' }) });
         setApiKeys({
-          openaiApiKey: '', deepseekApiKey: '', geminiApiKey: '', anthropicApiKey: '', openrouterApiKey: '',
+          openaiApiKey: '', deepseekApiKey: '', geminiApiKey: '', anthropicApiKey: '', openrouterApiKey: '', benchlmApiKey: '',
           tavilyApiKey: '', serperApiKey: '', braveApiKey: '', kiteApiKey: '',
           kiteApiSecret: '', kiteAccessToken: '', alphaVantageApiKey: '', finnhubApiKey: '',
           goldapiIoKey: '', oilpriceapiKey: '', commodityApiKey: '',
@@ -1785,6 +1803,9 @@ function SettingsPage() {
       ['goldapiIoKey', 'goldapi_io_key', 'GoldAPI.io backup key', 'Optional metals API key'],
       ['oilpriceapiKey', 'oilpriceapi_key', 'OilPriceAPI key', 'Optional real-time energy API key'],
       ['commodityApiKey', 'commodity_api_key', 'Commodity API key', 'Optional alternate energy API key'],
+    ] },
+    { id: 'benchmarks', title: 'Model Benchmarks & Telemetry', fields: [
+      ['benchlmApiKey', 'benchlm_api_key', 'BenchLM API key', 'Enter BenchLM data API key'],
     ] },
   ] as const;
   return <AppShell page="settings"><div className="content-page settings-page enter">

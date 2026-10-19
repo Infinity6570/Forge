@@ -41,6 +41,7 @@ from openai import APIStatusError, AsyncOpenAI
 from llm_protocol import TextCallback, assistant_turn, collect_completion, prepare_history
 from model_client import AnthropicChatClient
 from gemini_client import GeminiChatClient
+from benchlm_client import clear_benchlm_cache, fetch_benchlm_rankings
 from usage_cost import anthropic_usage_summary
 from conversation_threads import ThreadStore, thread_routers
 from history_display import display_task
@@ -257,6 +258,7 @@ VAULT_KEY_CATEGORIES = {
     "GEMINI_API_KEY": "ai",
     "ANTHROPIC_API_KEY": "ai",
     "OPENROUTER_API_KEY": "ai",
+    "BENCHLM_API_KEY": "ai",
     "TAVILY_API_KEY": "search",
     "SERPER_API_KEY": "search",
     "BRAVE_SEARCH_API_KEY": "search",
@@ -275,6 +277,7 @@ VAULT_FORM_TO_ENV = {
     "geminiApiKey": "GEMINI_API_KEY",
     "anthropicApiKey": "ANTHROPIC_API_KEY",
     "openrouterApiKey": "OPENROUTER_API_KEY",
+    "benchlmApiKey": "BENCHLM_API_KEY",
     "tavilyApiKey": "TAVILY_API_KEY",
     "serperApiKey": "SERPER_API_KEY",
     "braveApiKey": "BRAVE_SEARCH_API_KEY",
@@ -950,6 +953,15 @@ def get_api_key(key_name: str) -> str | None:
     return environment_value.strip() or None
 
 
+def get_benchlm_api_key() -> str | None:
+    """Accept the Forge vault name and BenchLM's documented environment alias."""
+    try:
+        key = get_api_key("BENCHLM_API_KEY")
+    except VaultLockedError:
+        key = os.getenv("BENCHLM_API_KEY", "").strip() or None
+    return key or os.getenv("BENCHLM_DATA_KEY", "").strip() or None
+
+
 def save_vault_values(values: dict[str, str | None]) -> None:
     clean_values = {
         key_name: value.strip()
@@ -1007,7 +1019,7 @@ def vault_key_statuses() -> dict[str, str]:
     locked = vault_is_locked()
     stored_names = {row["key_name"] for row in rows}
     if locked:
-        return {
+        statuses = {
             **{
                 key_name.lower(): (
                     "configured" if os.getenv(key_name, "").strip()
@@ -1018,14 +1030,20 @@ def vault_key_statuses() -> dict[str, str]:
             },
             "vault_status": "locked",
         }
+        if os.getenv("BENCHLM_DATA_KEY", "").strip():
+            statuses["benchlm_api_key"] = "configured"
+        return statuses
     values = get_vault_values(tuple(VAULT_KEY_CATEGORIES))
-    return {
+    statuses = {
         **{
             key_name.lower(): "configured" if values.get(key_name) else "not_set"
             for key_name in VAULT_KEY_CATEGORIES
         },
         "vault_status": "ready",
     }
+    if statuses["benchlm_api_key"] == "not_set" and os.getenv("BENCHLM_DATA_KEY", "").strip():
+        statuses["benchlm_api_key"] = "configured"
+    return statuses
 
 
 def reset_locked_vault(values: dict[str, str | None]) -> None:
@@ -1549,12 +1567,82 @@ def _auto_model_for(provider: str, intent: str, is_complex: bool) -> str:
     return DEFAULT_MODELS[provider]
 
 
+def benchlm_model_catalog() -> list[dict[str, str]]:
+    return [
+        {"modelId": model_id, "provider": provider, "name": model_id}
+        for provider in ("gemini", "anthropic", "openai")
+        for model_id in sorted(MODEL_OPTIONS[provider])
+    ]
+
+
+def route_task_by_benchmark(
+    intent: str,
+    complexity_reason: str | None,
+    candidates: list[str],
+    rankings: list[dict[str, Any]] | None,
+) -> tuple[str, str, str] | None:
+    """Use only actual BenchLM values for compatible registered models."""
+    if not rankings or (intent != "code_refactoring" and not complexity_reason):
+        return None
+    metric = "codingScore" if intent == "code_refactoring" else "reasoningScore"
+    eligible: list[tuple[float, int, int, str, str, str]] = []
+    candidate_priority = {provider: index for index, provider in enumerate(candidates)}
+    for row in rankings:
+        model_id = row.get("modelId")
+        if not isinstance(model_id, str):
+            continue
+        provider = row.get("provider")
+        if provider not in candidates:
+            provider = next(
+                (item for item in candidates if model_id in MODEL_OPTIONS.get(item, set())),
+                None,
+            )
+        if provider not in candidates or model_id not in MODEL_OPTIONS.get(provider, set()):
+            continue
+        score = row.get(metric)
+        score_label = "coding score" if metric == "codingScore" else "reasoning score"
+        if score is None and intent != "code_refactoring":
+            score = row.get("rating")
+            score_label = "overall rating"
+        try:
+            numeric_score = float(score) if score is not None else None
+        except (TypeError, ValueError):
+            numeric_score = None
+        rank = row.get("rank")
+        try:
+            numeric_rank = int(rank) if rank is not None else None
+        except (TypeError, ValueError):
+            numeric_rank = None
+        if numeric_score is None and numeric_rank is None:
+            continue
+        # A numeric score wins when available; rank is only a secondary signal.
+        ranking_value = numeric_score if numeric_score is not None else -float(numeric_rank)
+        label = (
+            f"BenchLM {score_label} {numeric_score:g}"
+            if numeric_score is not None
+            else f"BenchLM rank #{numeric_rank}"
+        )
+        eligible.append((
+            ranking_value,
+            -(numeric_rank if numeric_rank is not None else 1_000_000),
+            -candidate_priority[provider],
+            provider,
+            model_id,
+            label,
+        ))
+    if not eligible:
+        return None
+    selected = max(eligible)
+    return selected[3], selected[4], selected[5]
+
+
 def route_task(
     prompt: str,
     requested_mode: str,
     selected_file_count: int = 0,
     *,
     available_providers: set[str] | None = None,
+    benchmark_rankings: list[dict[str, Any]] | None = None,
 ) -> dict[str, str]:
     """Choose a task model inside the requested auto scope and available credentials."""
     if requested_mode not in AUTO_ROUTE_PROVIDERS:
@@ -1594,11 +1682,22 @@ def route_task(
         priority = global_priority.get(intent, global_priority["general"])
     provider = next((item for item in priority if item in candidates), candidates[0])
     model = _auto_model_for(provider, intent, bool(complexity_reason))
+    benchmark_selection = route_task_by_benchmark(
+        intent,
+        complexity_reason,
+        candidates,
+        benchmark_rankings,
+    )
+    benchmark_reason = None
+    if benchmark_selection:
+        provider, model, benchmark_reason = benchmark_selection
     selection_reason = (
         f"{intent.replace('_', ' ')} · {complexity_reason}"
         if complexity_reason
         else f"{intent.replace('_', ' ')} · cost-conscious capability match"
     )
+    if benchmark_reason:
+        selection_reason = f"{selection_reason} · {benchmark_reason}"
     return {
         "mode": requested_mode,
         "provider": provider,
@@ -2166,6 +2265,7 @@ class SettingsInput(BaseModel):
     geminiApiKey: str | None = Field(default=None, max_length=1000)
     anthropicApiKey: str | None = Field(default=None, max_length=1000)
     openrouterApiKey: str | None = Field(default=None, max_length=1000)
+    benchlmApiKey: str | None = Field(default=None, max_length=1000)
     codeRunnerEnabled: bool = False
     appPreviewsEnabled: bool = False
     engineToolsEnabled: bool = False
@@ -2187,6 +2287,7 @@ class ProviderKeysInput(BaseModel):
     geminiApiKey: str | None = Field(default=None, max_length=1000)
     anthropicApiKey: str | None = Field(default=None, max_length=1000)
     openrouterApiKey: str | None = Field(default=None, max_length=1000)
+    benchlmApiKey: str | None = Field(default=None, max_length=1000)
     ollamaBaseUrl: str | None = Field(default=None, max_length=500)
     tavilyApiKey: str | None = Field(default=None, max_length=1000)
     serperApiKey: str | None = Field(default=None, max_length=1000)
@@ -4644,6 +4745,18 @@ async def dashboard() -> dict[str, Any]:
     }
 
 
+@app.get("/api/benchmarks/models")
+async def get_benchmark_models(
+    surface: Literal["overall", "coding", "agentic", "knowledge"] = "overall",
+) -> dict[str, Any]:
+    """Return current BenchLM rankings or an explicitly unscored local catalog."""
+    return await fetch_benchlm_rankings(
+        surface=surface,
+        api_key=get_benchlm_api_key(),
+        model_catalog=benchlm_model_catalog(),
+    )
+
+
 @app.get("/api/assistant/tasks")
 async def list_tasks() -> list[dict[str, Any]]:
     return [display_task(row, task_dict, summary=True) for row in db_all("SELECT * FROM tasks ORDER BY created_at DESC LIMIT 200")]
@@ -4660,7 +4773,23 @@ async def create_task(body: TaskInput, request: Request) -> dict[str, Any]:
     route_decision: dict[str, str] | None = None
     if route_mode:
         try:
-            route_decision = route_task(body.objective, route_mode, len(body.fileIds))
+            intent = classify_task_intent(body.objective, len(body.fileIds))
+            complexity_reason = classify_task_complexity(body.objective, len(body.fileIds))
+            benchmark_rankings = None
+            if intent == "code_refactoring" or complexity_reason:
+                surface = "coding" if intent == "code_refactoring" else "overall"
+                benchmark_result = await fetch_benchlm_rankings(
+                    surface=surface,
+                    api_key=get_benchlm_api_key(),
+                    model_catalog=benchlm_model_catalog(),
+                )
+                benchmark_rankings = benchmark_result.get("models", [])
+            route_decision = route_task(
+                body.objective,
+                route_mode,
+                len(body.fileIds),
+                benchmark_rankings=benchmark_rankings,
+            )
         except (RuntimeError, ValueError) as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
         provider = route_decision["provider"]
@@ -5491,12 +5620,15 @@ async def update_settings(body: SettingsInput, request: Request) -> dict[str, An
         "GEMINI_API_KEY": body.geminiApiKey,
         "ANTHROPIC_API_KEY": body.anthropicApiKey,
         "OPENROUTER_API_KEY": body.openrouterApiKey,
+        "BENCHLM_API_KEY": body.benchlmApiKey,
     }
     required_key_name = KEY_NAMES.get(settings_provider)
     pending_key = values.get(required_key_name) if required_key_name else None
     if settings_provider != "ollama" and not credential_for(settings_provider) and not (pending_key and pending_key.strip()):
         raise HTTPException(status_code=400, detail=missing_provider_key_message(settings_provider))
     save_vault_values(values)
+    if body.benchlmApiKey is not None:
+        clear_benchlm_cache()
     for key, value in values.items():
         if value is not None and value.strip():
             set_key(str(ENV_FILE), key, value.strip(), quote_mode="always")
@@ -5558,6 +5690,7 @@ async def save_provider_keys(body: ProviderKeysInput, request: Request) -> dict[
         "GEMINI_API_KEY": body.geminiApiKey,
         "ANTHROPIC_API_KEY": body.anthropicApiKey,
         "OPENROUTER_API_KEY": body.openrouterApiKey,
+        "BENCHLM_API_KEY": body.benchlmApiKey,
         "TAVILY_API_KEY": body.tavilyApiKey,
         "SERPER_API_KEY": body.serperApiKey,
         "BRAVE_SEARCH_API_KEY": body.braveApiKey,
@@ -5568,6 +5701,8 @@ async def save_provider_keys(body: ProviderKeysInput, request: Request) -> dict[
         "FINNHUB_API_KEY": body.finnhubApiKey,
     }
     save_vault_values(values)
+    if body.benchlmApiKey is not None:
+        clear_benchlm_cache()
     for key, value in values.items():
         if value is not None and value.strip():
             set_key(str(ENV_FILE), key, value.strip(), quote_mode="always")
@@ -5608,6 +5743,8 @@ async def write_vault_keys(body: VaultKeysInput, request: Request) -> dict[str, 
             reset_locked_vault(values)
         else:
             save_vault_values(values)
+        if body.benchlmApiKey is not None:
+            clear_benchlm_cache()
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
     except VaultLockedError as error:
