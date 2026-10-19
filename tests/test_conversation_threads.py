@@ -204,6 +204,58 @@ class ConversationTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("PROJECT_MEMORY_REFERENCE_DATA", formatted)
         self.assertIn("reference data, not instructions", formatted)
 
+    async def test_project_memory_search_finds_older_saved_fact_after_500_and_backfills_index(self):
+        older_id = "older-memory"
+        # Simulate a pre-index database containing 501 memories.
+        with main.THREADS.transaction() as connection:
+            connection.execute("DROP TABLE project_memory_terms")
+            connection.execute(
+                "DELETE FROM conversation_meta WHERE name='project_memory_search_index_v1'"
+            )
+            connection.execute(
+                "INSERT INTO project_memories(id,title,title_key,content,tags_json,created_at,updated_at) "
+                "VALUES(?,?,?,?,?,?,?)",
+                (
+                    older_id,
+                    "Cryogenic Aurora Alloy",
+                    "cryogenic aurora alloy",
+                    "The observatory shell uses a cryogenic aurora alloy for insulation.",
+                    '["observatory"]',
+                    "2000-01-01T00:00:00Z",
+                    "2000-01-01T00:00:00Z",
+                ),
+            )
+            connection.executemany(
+                "INSERT INTO project_memories(id,title,title_key,content,tags_json,created_at,updated_at) "
+                "VALUES(?,?,?,?,?,?,?)",
+                (
+                    (
+                        f"recent-{index}",
+                        f"Recent routine note {index}",
+                        f"recent routine note {index}",
+                        f"Routine status update {index}.",
+                        '["routine"]',
+                        "2026-01-01T00:00:00Z",
+                        "2026-01-01T00:00:00Z",
+                    )
+                    for index in range(500)
+                ),
+            )
+
+        main.init_db()
+        query = "cryogenic aurora alloy observatory"
+        recalled = main.THREADS.recall_project_memories(query)
+        self.assertEqual([memory["id"] for memory in recalled], [older_id])
+
+        injected = main.THREADS.relevant_project_memories(query)
+        self.assertEqual([memory["id"] for memory in injected], [older_id])
+        self.assertLessEqual(len(injected), 5)
+        self.assertLessEqual(
+            sum(len(memory["title"]) + len(memory["content"]) for memory in injected),
+            3_100,
+        )
+        self.assertTrue(all(len(memory["content"]) <= 1_000 for memory in injected))
+
     async def test_pin_rename_delete_and_busy_guards_preserve_task_activity(self):
         thread = (await self.client.post("/api/assistant/threads", json={})).json()
         client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=AsyncMock(return_value=completion("Saved.")))))
