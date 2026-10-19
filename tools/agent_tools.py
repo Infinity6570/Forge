@@ -15,7 +15,7 @@ from urllib.parse import urlsplit
 from typing import Any
 
 import httpx
-from tools.academic_search import academic_search
+from tools.academic_search import academic_search, pubmed_search
 from websockets.asyncio.client import connect as websocket_connect
 
 MAX_TERMINAL_COMMAND_LENGTH = 4_000

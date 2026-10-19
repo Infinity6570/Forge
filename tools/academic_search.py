@@ -3,6 +3,10 @@ from __future__ import annotations
 
 import asyncio
 import random
+import re
+import threading
+import time
+import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 from typing import Any
 
@@ -12,6 +16,13 @@ from bs4 import BeautifulSoup
 JOURNAL_DOMAINS = ("jisponline.com", "jcdr.net", "ijdr.in", "pmc.ncbi.nlm.nih.gov")
 HEADERS = {"User-Agent": "Forge-AcademicSearch/1.0 (personal academic literature discovery)",
            "Accept": "application/json"}
+NCBI_HEADERS = {
+    "User-Agent": "Forge-PubMedSearch/1.0 (personal academic literature discovery)",
+    "Accept": "application/xml",
+}
+_NCBI_REQUEST_INTERVAL = 1 / 3
+_ncbi_rate_lock = threading.Lock()
+_ncbi_next_request_at = 0.0
 
 
 def reconstruct_abstract(index: dict[str, list[int]] | None) -> str:
@@ -144,4 +155,281 @@ async def academic_search(query: str, year_from: int = 2016, max_results: int = 
                     "a returned paper is not proof of Scopus indexing. Abstracts and full text may be unavailable."),
         **({"error": "No academic results were available. Try targeted journal web searches.",
             "suggested_web_queries": [f"{query} site:{domain}" for domain in JOURNAL_DOMAINS]} if not results else {}),
+    }
+
+
+async def _ncbi_get(
+    client: httpx.AsyncClient,
+    endpoint: str,
+    params: dict[str, str | int],
+) -> httpx.Response:
+    """Reserve a request slot shared across concurrent PubMed tool calls."""
+    global _ncbi_next_request_at
+    with _ncbi_rate_lock:
+        now = time.monotonic()
+        wait = max(0.0, _ncbi_next_request_at - now)
+        _ncbi_next_request_at = max(now, _ncbi_next_request_at) + _NCBI_REQUEST_INTERVAL
+    if wait:
+        await asyncio.sleep(wait)
+    response = await client.get(endpoint, params=params)
+    response.raise_for_status()
+    return response
+
+
+def _xml_text(element: ET.Element | None) -> str:
+    if element is None:
+        return ""
+    return " ".join(" ".join(element.itertext()).split())
+
+
+def _bibtex_escape(value: str) -> str:
+    replacements = {
+        "\\": r"\textbackslash{}",
+        "{": r"\{",
+        "}": r"\}",
+        "&": r"\&",
+        "%": r"\%",
+        "$": r"\$",
+        "#": r"\#",
+        "_": r"\_",
+    }
+    return "".join(replacements.get(char, char) for char in value)
+
+
+def _pubmed_article(article: ET.Element) -> dict[str, Any]:
+    medline = article.find("./MedlineCitation")
+    article_data = medline.find("./Article") if medline is not None else None
+    if article_data is None:
+        return {}
+
+    pmid = _xml_text(medline.find("./ PMID")) if medline is not None else ""
+    if not pmid and medline is not None:
+        pmid = _xml_text(medline.find("./PMID"))
+    title = _xml_text(article_data.find("./ArticleTitle"))
+    journal_data = article_data.find("./Journal")
+    journal = _xml_text(journal_data.find("./Title")) if journal_data is not None else ""
+    journal_abbreviation = (
+        _xml_text(journal_data.find("./ISOAbbreviation")) if journal_data is not None else ""
+    )
+    issue_data = journal_data.find("./JournalIssue") if journal_data is not None else None
+    volume = _xml_text(issue_data.find("./Volume")) if issue_data is not None else ""
+    issue = _xml_text(issue_data.find("./Issue")) if issue_data is not None else ""
+    pagination = article_data.find("./Pagination")
+    pages = _xml_text(pagination.find("./MedlinePgn")) if pagination is not None else ""
+
+    author_names: list[str] = []
+    author_list = article_data.find("./AuthorList")
+    if author_list is not None:
+        for author in author_list.findall("./Author"):
+            collective = _xml_text(author.find("./CollectiveName"))
+            if collective:
+                author_names.append(collective)
+                continue
+            last_name = _xml_text(author.find("./LastName"))
+            initials = _xml_text(author.find("./Initials"))
+            if not initials:
+                initials = "".join(
+                    word[0].upper() for word in _xml_text(author.find("./ForeName")).split() if word
+                )
+            if last_name:
+                author_names.append(f"{last_name} {initials}".strip())
+
+    pub_year = ""
+    article_date = article_data.find("./ArticleDate/Year")
+    pub_date = issue_data.find("./PubDate") if issue_data is not None else None
+    for candidate in (
+        _xml_text(article_date),
+        _xml_text(pub_date.find("./Year")) if pub_date is not None else "",
+        _xml_text(pub_date.find("./MedlineDate")) if pub_date is not None else "",
+    ):
+        year_match = re.search(r"\b(19|20|21)\d{2}\b", candidate)
+        if year_match:
+            pub_year = year_match.group(0)
+            break
+
+    abstract_sections: list[dict[str, str]] = []
+    abstract_data = article_data.find("./Abstract")
+    if abstract_data is not None:
+        for abstract_text in abstract_data.findall("./AbstractText"):
+            section_text = _xml_text(abstract_text)
+            if section_text:
+                abstract_sections.append({
+                    "label": abstract_text.attrib.get("Label", "").strip(),
+                    "text": section_text,
+                })
+    abstract = "\n".join(
+        f"{section['label']}: {section['text']}" if section["label"] else section["text"]
+        for section in abstract_sections
+    )
+
+    article_ids = article.find("./PubmedData/ArticleIdList")
+    doi = pmcid = ""
+    if article_ids is not None:
+        for item in article_ids.findall("./ArticleId"):
+            kind, value = item.attrib.get("IdType", "").lower(), _xml_text(item)
+            if kind == "doi":
+                doi = value
+            elif kind == "pmc":
+                pmcid = value if value.startswith("PMC") else f"PMC{value}"
+    if not doi:
+        for item in article_data.findall("./ELocationID"):
+            if item.attrib.get("EIdType", "").lower() == "doi":
+                doi = _xml_text(item)
+                break
+
+    mesh_terms = []
+    if medline is not None:
+        mesh_heading_list = medline.find("./MeshHeadingList")
+        if mesh_heading_list is not None:
+            for descriptor in mesh_heading_list.findall("./MeshHeading/DescriptorName"):
+                value = _xml_text(descriptor)
+                if value:
+                    mesh_terms.append(value)
+
+    authors_for_citation = author_names[:6]
+    if len(author_names) > 6:
+        authors_for_citation.append("et al.")
+    citation_authors = ", ".join(authors_for_citation)
+    citation_journal = journal_abbreviation or journal
+    citation = f"{citation_authors}. " if citation_authors else ""
+    citation += f"{title}."
+    if citation_journal:
+        citation += f" {citation_journal}."
+    if pub_year:
+        citation += f" {pub_year}"
+    if volume:
+        citation += f";{volume}"
+        if issue:
+            citation += f"({issue})"
+    elif issue:
+        citation += f";({issue})"
+    if pages:
+        citation += f":{pages}"
+    if pub_year or volume or issue or pages:
+        citation += "."
+    if doi:
+        citation += f" doi:{doi}."
+    if pmid:
+        citation += f" PMID:{pmid}."
+
+    first_author = re.sub(r"[^A-Za-z0-9]+", "", author_names[0].split()[0]) if author_names else "pubmed"
+    cite_key = f"{first_author}{pub_year or 'nd'}{pmid or 'record'}"
+    bibtex_fields = {
+        "author": " and ".join(author_names),
+        "title": title,
+        "journal": journal,
+        "year": pub_year,
+        "volume": volume,
+        "number": issue,
+        "pages": pages,
+        "doi": doi,
+        "pmid": pmid,
+    }
+    bibtex = "@article{" + cite_key + ",\n" + ",\n".join(
+        f"  {key} = {{{_bibtex_escape(value)}}}"
+        for key, value in bibtex_fields.items() if value
+    ) + "\n}"
+    url = f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/" if pmid else ""
+    return {
+        "pmid": pmid,
+        "pmcid": pmcid,
+        "title": title,
+        "authors": author_names,
+        "year": int(pub_year) if pub_year else None,
+        "journal": journal,
+        "journal_abbreviation": journal_abbreviation,
+        "volume": volume,
+        "issue": issue,
+        "pages": pages,
+        "doi": doi,
+        "url": url,
+        "abstract_sections": abstract_sections,
+        "abstract": abstract,
+        "mesh_terms": mesh_terms,
+        "vancouver_citation": citation,
+        "bibtex": bibtex,
+        "sources": ["pubmed"],
+    }
+
+
+async def pubmed_search(
+    query: str,
+    year_from: int = 2016,
+    max_results: int = 15,
+) -> dict[str, Any]:
+    """Search NCBI PubMed and return parsed records plus Vancouver/BibTeX citations."""
+    query = query.strip() if isinstance(query, str) else ""
+    if not query or len(query) > 2_000:
+        raise ValueError("PubMed query must contain 1–2,000 characters.")
+    current_year = datetime.now(timezone.utc).year
+    if isinstance(year_from, bool) or not isinstance(year_from, int) or not 1000 <= year_from <= current_year:
+        raise ValueError(f"year_from must be an integer between 1000 and {current_year}.")
+    if isinstance(max_results, bool) or not isinstance(max_results, int) or not 1 <= max_results <= 50:
+        raise ValueError("max_results must be an integer between 1 and 50.")
+
+    base_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils"
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(20), headers=NCBI_HEADERS) as client:
+            search_response = await _ncbi_get(
+                client,
+                f"{base_url}/esearch.fcgi",
+                {
+                    "db": "pubmed",
+                    "term": query,
+                    "retmax": max_results,
+                    "retmode": "xml",
+                    "datetype": "pdat",
+                    "mindate": year_from,
+                    "maxdate": current_year,
+                    "tool": "Forge",
+                },
+            )
+            search_root = ET.fromstring(search_response.content)
+            count_text = _xml_text(search_root.find("./Count"))
+            total_count = int(count_text) if count_text.isdigit() else 0
+            pmids = [
+                _xml_text(item) for item in search_root.findall("./IdList/Id")
+                if _xml_text(item).isdigit()
+            ][:max_results]
+            if not pmids:
+                return {
+                    "engine": "pubmed",
+                    "query": query,
+                    "year_from": year_from,
+                    "total_available": total_count,
+                    "results": [],
+                    "sources": {"pubmed": {"status": "empty", "count": 0}},
+                }
+            fetch_response = await _ncbi_get(
+                client,
+                f"{base_url}/efetch.fcgi",
+                {"db": "pubmed", "id": ",".join(pmids), "retmode": "xml", "tool": "Forge"},
+            )
+            fetch_root = ET.fromstring(fetch_response.content)
+            articles = [
+                parsed for article in fetch_root.findall("./PubmedArticle")
+                if (parsed := _pubmed_article(article))
+            ]
+    except httpx.HTTPStatusError as error:
+        return {
+            "engine": "pubmed",
+            "query": query,
+            "year_from": year_from,
+            "results": [],
+            "error": f"NCBI PubMed returned HTTP {error.response.status_code}.",
+        }
+    except httpx.TimeoutException:
+        return {"engine": "pubmed", "query": query, "year_from": year_from, "results": [], "error": "NCBI PubMed timed out."}
+    except (httpx.RequestError, ET.ParseError, ValueError):
+        return {"engine": "pubmed", "query": query, "year_from": year_from, "results": [], "error": "NCBI PubMed returned an unavailable or malformed response."}
+
+    return {
+        "engine": "pubmed",
+        "query": query,
+        "year_from": year_from,
+        "total_available": total_count,
+        "returned": len(articles),
+        "results": articles,
+        "sources": {"pubmed": {"status": "ok" if articles else "empty", "count": len(articles)}},
+        "citation_note": "Vancouver and BibTeX strings are generated from returned PubMed metadata; verify them against the journal’s instructions before submission.",
     }
