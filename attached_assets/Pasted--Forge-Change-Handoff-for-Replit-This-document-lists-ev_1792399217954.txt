@@ -1,0 +1,125 @@
+# Forge: Change Handoff for Replit
+
+This document lists every change made to Forge during the recent working sessions, the instructions for applying them in Replit, and suggested follow-up changes.
+
+**Scope caveat:** Git history on this machine ends at commit `61acf18`. Everything below was either made in these sessions or appears in `git status` as uncommitted work. Changes from before the repository was first committed are not reconstructed here.
+
+**Secrets:** Do not copy `.env` into Replit or into any file in this document. Move API keys through Replit Secrets. The vault and `VAULT_ENCRYPTION_KEY` are local to the Windows install.
+
+---
+
+## 1. Known problems to fix first
+
+1. **Two stray files in the repository root.** These were created by failed edit attempts and have mangled names. Delete them. Do not restore them:
+   - `meta-assistantsrcApp.tsx<U+F022>`
+   - `sionModel<U+F022>) {`
+   - `t selectedModel = resolveModelMode(displayModelMode);<U+F022>`
+   - `t selectedModelForDisplays<U+F0AA>=<U+F022>) {`
+   (The Windows filenames contain private-use characters. Find them with `git status --short` and delete them by exact name.)
+2. **Windows-only dependencies in `package.json`.** The `devDependencies` include `@esbuild/win32-x64`, `@rollup/rollup-win32-x64-msvc`, `@tailwindcss/oxide-win32-x64-msvc`, and `lightningcss-win32-x64-msvc`. These will fail to install on Linux. Replace them with the Linux packages (or let pnpm resolve platform binaries) before running `pnpm install` on Replit.
+3. **Unexplained lockfile and generated-file changes.** `pnpm-lock.yaml`, `.npmrc`, `package.json`, `artifacts/mockup-sandbox/src/.generated/mockup-components.ts`, `static/app/favicon.svg`, and `static/app/index.html` show as modified. Check the diff before committing. Some may be line-ending changes (LF/CRLF) rather than content changes.
+4. **`LaunchForge.vbs` hardcodes `C:\Users\HomeS\Desktop\Forge`.** It only works on that one machine. See Suggested Changes.
+
+---
+
+## 2. Changes made (apply these on Replit)
+
+### Backend: `main.py`
+- Tool-round budget raised from 10 to **40**, configurable with `FORGE_MAX_TOOL_ROUNDS` (`MAX_TOOL_ROUNDS`). The system prompt and `<ACTIVE_ENGINE_CONTEXT>` report the same value.
+- Reasoning and thinking are captured into the task log. Added `upsert_task_log`, `_format_reasoning_log`, and `on_reasoning` streaming. Agent log messages keep up to 30,000 characters; tool input/output logs up to 16,000.
+- Specialist sub-agents (`delegate_to_specialist`):
+  - Tiered routing per provider: `fast`, `balanced`, `reasoning` (`SPECIALIST_MODEL_TIERS`, `select_specialist_routing`).
+  - Role prompts: `code_architect`, `clinical_researcher`, `debugger`, `fast_extractor`, `general`.
+  - Automatic escalation to the next tier when the output is empty or shows a failure marker.
+  - Optional read-only tool use (`use_tools`, limited to `SPECIALIST_SAFE_TOOL_NAMES`).
+- **Gemini reasoning model is `gemini-4-argon` only.** `gemini-3.1-pro-preview` was removed from reasoning and complex routes (`AUTO_MODEL_POLICY["gemini"]["complex"]`, `recommended_model_for("gemini")`, and the specialist reasoning tier). `gemini-3.1-pro-preview` remains in `MODEL_OPTIONS` as a selectable model, not a routed default.
+- Parallel tool execution: when every tool call in a turn is in `CONCURRENT_SAFE_TOOLS`, they run with `asyncio.gather`.
+- Retry and backoff for `429` / `503`: up to 5 attempts with exponential backoff (2s, 4s, 8s, 16s), logged to the task, then fallback model.
+- Persistent memory: `memories` table, `remember_fact`, `recall_memory`, and `get_persistent_memory_context()` injected into the system prompt.
+- New tools: `pubmed_search`, `self_upgrade_status`, `capture_screen`.
+- New endpoints: `GET /api/assistant/snapshots`, `GET /api/assistant/memories`. `GET /api/healthz` and `/api/assistant/dashboard` now include `buildHash`.
+- `import hashlib` added (it was missing and caused a 500 on the dashboard).
+- Startup: `lifespan` and `recover_interrupted` are skipped when `FORGE_CANARY_MODE=1`, so canary boots cannot cancel real tasks.
+
+### Other backend files
+- `gemini_client.py`: extended thinking enabled for tool-capable Gemini models.
+- `llm_protocol.py`: `collect_completion(response, on_text, on_reasoning)`.
+- `history_display.py` and `conversation_threads.py`: task log limit raised from 10 to 250 entries per task. Summary views keep the last 6 log entries.
+- `tools/academic_search.py`: PubMed E-utilities search (`pubmed_search`), PMID/PMCID handling, Vancouver and BibTeX citation formatting, parallel OpenAlex and Europe PMC sources.
+- `tools/agent_tools.py`: Blender lookup falls back to standard install paths (Blender 5.1, 5.0, 4.3, 4.2) when `blender` is not on PATH. This is a Windows path and has no effect on Linux.
+- `tools/self_upgrade.py`: snapshot, verify (syntax, isolated import, canary boot, unit tests), rollback, hot-restart, and `list_snapshots`.
+- `tools/screen_capture.py`: read-only page inspection for agents (visible text, controls, composer state, console errors, screenshot). Localhost URLs only.
+- `tools/frontend_safe_deploy.py`: checks a built frontend, backs up the live folders, swaps in the new build, runs the smoke test, and rolls back if it fails.
+- `tools/frontend_smoke_test.py`: headless Playwright check that the live page renders the composer with no JavaScript errors.
+- `forge_supervisor.py`: hot-swap of the uvicorn worker. Waits for active tasks before restarting.
+- `tests/test_specialist_routing.py`: new. `tests/test_auto_model_routing.py` and `tests/test_gemini_tool_history.py` updated for `gemini-4-argon` and the round budget.
+
+### Frontend: `artifacts/meta-assistant/src/`
+- `App.tsx`:
+  - QueryClient retry settings.
+  - Dashboard overview polling disabled (`refetchInterval: false`). This removed the repeating "Your overview is temporarily unavailable" banner.
+  - Error banner now reads "Click to retry" and only shows when there is no cached data.
+  - Live merge of the running task into the activity stream (`streamTasks`), with the active task polled every 1 second.
+  - Build-hash effect: reloads the window when `buildHash` changes while idle.
+  - Global Escape-to-stop listener removed. Stop is now only via the Stop button.
+  - Drag-and-drop file attach on the task composer (uses the existing upload path).
+  - Tab abbreviation expansion in the task input: `impl`, `perio`, `endo`, `prostho`, `ortho`, `radiog`, `dx`, `tx`, `hx`, `fx`.
+- `components/activity-stream.tsx`: reasoning headline in the step line; thinking and reasoning sections open by default.
+- `hooks/use-thread-history.ts`: poll interval 1000 ms while a task is active.
+- `styles/execution-stream.css`: drop-target highlight (`.composer-panel.composer-dragging`).
+
+### Built frontend
+- The served bundle is `index-BTu-4Wf3.js` (CSS `index-XpEgRc-K.css`), written to both `artifacts/meta-assistant/dist/public` and `static/app`.
+
+### Deployment rule (important)
+- Never run `vite build` directly into a served folder. Build into `.forge-staging/frontend`, validate, then deploy with `tools/frontend_safe_deploy.py deploy`.
+- Frontend changes need no backend restart. Backend changes need a restart.
+
+---
+
+## 3. Replit steps
+
+1. Delete the stray files in section 1.1.
+2. Fix the Windows-only entries in `package.json` (section 1.2).
+3. Install dependencies:
+   ```bash
+   pip install -r requirements.txt
+   python -m playwright install chromium
+   pnpm install
+   ```
+   The `.replit` `nix` packages already include `playwright-driver`. If Chromium still fails to launch, install it with `playwright install-deps chromium`.
+4. Create `.env` in Replit Secrets (not a file). Set the provider keys the app needs. Leave `RUN_LOCAL_3D_ENGINE_TOOLS` unset or `false`. The backend already disables engine tools on Replit (`is_replit_runtime()`).
+5. Build the frontend to staging, then deploy through the checked tool:
+   ```bash
+   pnpm exec vite build --config artifacts/meta-assistant/vite.config.ts --outDir .forge-staging/frontend --emptyOutDir
+   python tools/frontend_safe_deploy.py check .forge-staging/frontend
+   python tools/frontend_safe_deploy.py deploy .forge-staging/frontend
+   ```
+   `deploy` calls the smoke test against `http://127.0.0.1:8000/`. On Replit, change `LIVE_URL` in `tools/frontend_safe_deploy.py` and `tools/frontend_smoke_test.py` to the port the workflow actually serves on (the `.replit` file maps 8080, 8081, and 22536; use whichever the app listens on).
+6. Run the verification pipeline:
+   ```bash
+   python tools/self_upgrade.py verify
+   ```
+   Expected: syntax, isolated import, canary boot, and 41 unit tests pass.
+7. Start the backend with the same command the Windows launcher uses:
+   ```bash
+   python -m uvicorn main:app --host 0.0.0.0 --port 8080
+   ```
+   Use the port your Replit workflow expects.
+8. Smoke test: `python tools/frontend_smoke_test.py http://<your-replit-url>/`.
+
+Replit runs Linux, so `venv\Scripts\...` paths do not apply. Use `python` and `pnpm` directly. The `forge_supervisor.py` hot-swap and `Forge.exe` are Windows-only and are not needed on Replit.
+
+---
+
+## 4. Suggested changes
+
+1. **Make the launcher portable.** `LaunchForge.vbs` should use its own folder (`WshShell.CurrentDirectory = Replace(WScript.ScriptFullName, WScript.ScriptName, "")`) instead of a hardcoded path.
+2. **Review the build-hash auto-reload.** It reloads the window when the hash changes while idle. This is useful after a deploy, but any unexpected reload will look like a glitch. Consider a visible "New version available, reload?" prompt instead.
+3. **Restore live dashboard updates without polling.** The overview no longer refreshes automatically. Use Server-Sent Events from `/api/assistant/dashboard`, or a slower interval (for example 15 s) with an error grace period.
+4. **Send screenshots to the model.** `capture_screen` gives the agent the text and controls, but not the image. Add image input to the model clients to let the agent see layout problems.
+5. **Repoint `last_known_good`.** It still contains the drag-and-drop experiment. Re-promote after the verification pipeline passes on the current code.
+6. **Commit the working tree in small steps.** Frontend, backend, and tools are separate concerns. Commit them separately so a rollback is one `git revert` away.
+7. **Add a CI check** that runs `python tools/self_upgrade.py verify` and `pnpm run build` on every push.
+8. **Provider credit monitoring.** Gemini returned `402` when prepaid credits ran out. Surface the provider billing error in the UI rather than a generic failure.
+9. **Keep Windows-only tooling out of the Replit build.** The Blender path, `Forge.exe`, and `forge_supervisor.py` should stay in a Windows-only folder.
