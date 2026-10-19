@@ -9,6 +9,12 @@ Keep each chat's conversation context and visible execution stream separate from
 
 **How to apply:** Follow-ups use the selected chat's chronological turns, not a collection of recent tasks from unrelated chats.
 
+Only deliberately saved, concise project memories may cross chat boundaries; raw conversation history and attachments remain thread-specific.
+
+**Why:** The user wants useful project notes to carry across chats without importing one thread's context into another.
+
+**How to apply:** Keep cross-chat memory in its own project-scoped store, inject only relevant entries under a strict limit, and treat saved text as untrusted reference data.
+
 Permit only one unfinished run per chat; other chats can run independently.
 
 **Why:** Interleaved runs can separate signed function calls from their matching results and create inconsistent conversational context.

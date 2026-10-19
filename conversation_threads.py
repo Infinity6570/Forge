@@ -105,6 +105,25 @@ def sanitize_turns(turns: list[dict[str, Any]]) -> list[dict[str, Any]]:
     ]
 
 
+MEMORY_STOP_WORDS = frozenset({
+    "about", "after", "also", "and", "are", "but", "can", "could", "for", "from",
+    "have", "into", "its", "not", "our", "should", "that", "the", "their", "them",
+    "then", "there", "these", "this", "those", "was", "were", "what", "when", "where",
+    "which", "who", "will", "with", "would", "you", "your",
+})
+MEMORY_CONTEXT_LIMIT = 5
+MEMORY_CONTEXT_CHARS = 3_100
+MEMORY_CONTEXT_NOTE_CHARS = 1_000
+
+
+def memory_terms(value: str) -> set[str]:
+    return {
+        token.casefold()
+        for token in re.findall(r"[\w-]{3,}", value)
+        if token.casefold() not in MEMORY_STOP_WORDS
+    }
+
+
 class ThreadStore:
     def __init__(self, connect, lock):
         self.connect, self.lock = connect, lock
@@ -136,6 +155,11 @@ class ThreadStore:
           CREATE INDEX IF NOT EXISTS conversation_messages_thread_idx ON conversation_messages(thread_id,ordering);
           CREATE INDEX IF NOT EXISTS tasks_thread_idx ON tasks(thread_id,created_at);
           CREATE TABLE IF NOT EXISTS conversation_meta (name TEXT PRIMARY KEY);
+          CREATE TABLE IF NOT EXISTS project_memories (
+            id TEXT PRIMARY KEY, title TEXT NOT NULL, title_key TEXT NOT NULL UNIQUE,
+            content TEXT NOT NULL, tags_json TEXT NOT NULL DEFAULT '[]',
+            created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+          CREATE INDEX IF NOT EXISTS project_memories_updated_idx ON project_memories(updated_at DESC);
         """)
         if "archived" not in {row[1] for row in connection.execute("PRAGMA table_info(conversation_threads)")}:
             connection.execute("ALTER TABLE conversation_threads ADD COLUMN archived INTEGER NOT NULL DEFAULT 0")
@@ -287,6 +311,122 @@ class ThreadStore:
                                               if key in {"id", "type", "function"}} for call in turn["tool_calls"]]
                 turns.append(compact_history_turn(turn))
             return turns
+
+    def remember_project_memory(
+        self, title: str, content: str, tags: list[str] | None = None
+    ) -> dict[str, Any]:
+        title = title.strip()
+        content = content.strip()
+        if not title or len(title) > 120:
+            raise ValueError("A memory title must contain 1 to 120 characters.")
+        if not content or len(content) > 2_000:
+            raise ValueError("Memory content must contain 1 to 2,000 characters.")
+        clean_tags = []
+        for tag in tags or []:
+            clean_tag = str(tag).strip()[:40]
+            if clean_tag and clean_tag.casefold() not in {item.casefold() for item in clean_tags}:
+                clean_tags.append(clean_tag)
+            if len(clean_tags) >= 10:
+                break
+        title_key = " ".join(title.casefold().split())
+        timestamp = now()
+        with self.transaction() as connection:
+            existing = connection.execute(
+                "SELECT id,created_at FROM project_memories WHERE title_key=?", (title_key,)
+            ).fetchone()
+            memory_id = existing["id"] if existing else str(uuid.uuid4())
+            created_at = existing["created_at"] if existing else timestamp
+            connection.execute(
+                "INSERT INTO project_memories(id,title,title_key,content,tags_json,created_at,updated_at) "
+                "VALUES(?,?,?,?,?,?,?) ON CONFLICT(title_key) DO UPDATE SET "
+                "title=excluded.title,content=excluded.content,tags_json=excluded.tags_json,"
+                "updated_at=excluded.updated_at",
+                (
+                    memory_id,
+                    title,
+                    title_key,
+                    content,
+                    json.dumps(clean_tags, ensure_ascii=False),
+                    created_at,
+                    timestamp,
+                ),
+            )
+            return {
+                "id": memory_id,
+                "title": title,
+                "content": content,
+                "tags": clean_tags,
+                "createdAt": created_at,
+                "updatedAt": timestamp,
+            }
+
+    @staticmethod
+    def _memory_dict(row) -> dict[str, Any]:
+        try:
+            tags = json.loads(row["tags_json"])
+        except (TypeError, json.JSONDecodeError):
+            tags = []
+        return {
+            "id": row["id"],
+            "title": row["title"],
+            "content": row["content"],
+            "tags": tags if isinstance(tags, list) else [],
+            "createdAt": row["created_at"],
+            "updatedAt": row["updated_at"],
+        }
+
+    def recall_project_memories(self, query: str, limit: int = 10) -> list[dict[str, Any]]:
+        terms = memory_terms(query)
+        if not terms:
+            return []
+        with self.transaction() as connection:
+            rows = connection.execute(
+                "SELECT * FROM project_memories ORDER BY updated_at DESC LIMIT 500"
+            ).fetchall()
+        ranked = []
+        for row in rows:
+            memory = self._memory_dict(row)
+            searchable = " ".join([memory["title"], memory["content"], *memory["tags"]])
+            matches = terms & memory_terms(searchable)
+            if matches:
+                ranked.append((len(matches), memory["updatedAt"], memory))
+        ranked.sort(key=lambda item: (item[0], item[1]), reverse=True)
+        return [item[2] for item in ranked[:max(1, min(int(limit), 10))]]
+
+    def relevant_project_memories(
+        self,
+        objective: str,
+        limit: int = MEMORY_CONTEXT_LIMIT,
+        max_chars: int = MEMORY_CONTEXT_CHARS,
+    ) -> list[dict[str, Any]]:
+        terms = memory_terms(objective)
+        if not terms:
+            return []
+        with self.transaction() as connection:
+            rows = connection.execute(
+                "SELECT * FROM project_memories ORDER BY updated_at DESC LIMIT 500"
+            ).fetchall()
+        ranked = []
+        for row in rows:
+            memory = self._memory_dict(row)
+            searchable = " ".join([memory["title"], memory["content"], *memory["tags"]])
+            matches = terms & memory_terms(searchable)
+            if matches:
+                ranked.append((len(matches), memory["updatedAt"], memory))
+        ranked.sort(key=lambda item: (item[0], item[1]), reverse=True)
+        selected: list[dict[str, Any]] = []
+        used_chars = 0
+        for _, _, memory in ranked:
+            clipped = {
+                **memory,
+                "content": memory["content"][:MEMORY_CONTEXT_NOTE_CHARS],
+            }
+            entry_chars = len(clipped["title"]) + len(clipped["content"])
+            if len(selected) >= max(0, limit) or used_chars + entry_chars > max_chars:
+                continue
+            selected.append(clipped)
+            used_chars += entry_chars
+        return selected
 
     def checkpoint(self, task_id: str, messages: list[dict[str, Any]], start: int) -> None:
         with self.transaction() as connection:
