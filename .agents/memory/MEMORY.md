@@ -11,3 +11,4 @@
 - [Regional literature coverage](regional-literature.md) — literature discovery must include Indian dental journals, without claiming guaranteed Scholar or Scopus indexing.
 - [History display boundary](history-display-boundary.md) — paginate display only; keep signed replay complete, open newest chat, and preserve reading position during prepends.
 - [Editable system prompt boundary](editable-system-prompt.md) — the Preferences editor changes persona guidance, while fixed safety and tool rules remain outside the editable prompt.
+- [Specialist routing boundary](specialist-routing-boundary.md) — specialists may escalate only upward through configured tiers for their parent task's provider; tool access stays explicitly read-only.

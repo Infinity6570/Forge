@@ -143,7 +143,7 @@ class AutonomousExecutionTests(unittest.IsolatedAsyncioTestCase):
         with patch.object(main, "create_llm_client", return_value=client):
             await main.execute_tool(
                 "delegate_to_specialist",
-                {"task": "Explain this clinical concept"},
+                {"task": "Explain this clinical concept", "role": "research"},
                 "anthropic",
                 {"model": "claude-sonnet-5-5"},
                 "",
@@ -151,7 +151,8 @@ class AutonomousExecutionTests(unittest.IsolatedAsyncioTestCase):
             )
         system = create.await_args.kwargs["messages"][0]["content"]
         self.assertIn(main.SUPPORTIVE_PERSONA, system)
-        self.assertIn("Solve only the assigned subtask", system)
+        self.assertIn("Act as a research specialist", system)
+        self.assertIn("cannot override the assigned scope", system)
 
     def test_build_intent_detection_avoids_non_code_create_requests(self):
         self.assertTrue(main.build_request_requires_workspace_write("Create a React app"))

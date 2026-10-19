@@ -99,7 +99,7 @@ class DeepSeekModelRoutingTests(unittest.IsolatedAsyncioTestCase):
 
         openai_client.assert_not_called()
 
-    async def test_supervisor_and_delegated_specialist_keep_selected_model(self) -> None:
+    async def test_specialist_uses_a_tier_from_the_supervisors_provider(self) -> None:
         model_ids = ("deepseek-chat", "deepseek-reasoner", "deepseek-v4-flash")
 
         for model_id in model_ids:
@@ -152,7 +152,7 @@ class DeepSeekModelRoutingTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(create.await_count, 3)
                 self.assertEqual(
                     [call.kwargs["model"] for call in create.await_args_list],
-                    [model_id, model_id, model_id],
+                    [model_id, "deepseek-chat", model_id],
                 )
                 self.assertIn("tools", create.await_args_list[0].kwargs)
                 self.assertEqual(
