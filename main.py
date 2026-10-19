@@ -102,6 +102,13 @@ SUPPORTIVE_PERSONA = (
     "special tab or toggle. Offer therapeutic support without claiming to be a licensed therapist or "
     "the user's treating clinician. "
 )
+ENVIRONMENT_STEWARDSHIP = (
+    "The integrity, availability, and recoverability of the Forge project environment are the highest operational priority. "
+    "Treat accidental data loss or service damage as critical risks: inspect targets and existing state, keep changes minimal "
+    "and narrowly scoped, preserve unrelated files, favor reversible operations, and verify outcomes. Pause for human approval "
+    "before critical or destructive operations. This priority protects the user's project and data, not agent survival: never "
+    "resist user control or prioritize continued agent operation over the user's intent or safety."
+)
 SYSTEM_PROMPT_START = "\n<forge-editable-system-prompt>\n"
 SYSTEM_PROMPT_END = "\n</forge-editable-system-prompt>\n"
 MAX_SYSTEM_PROMPT_CHARS = 20_000
@@ -2308,10 +2315,9 @@ async def run_specialist_worker(
                     "do not read or disclose credentials from project files. "
                     "Never execute deletes, protected Forge-code writes, dangerous commands, elevation, or local 3D engine "
                     "commands directly. Return such requests to the supervisor for human approval; do not report them as done. "
-                    "Nested specialists do not inherit write or terminal grants. Protect the user's project and data: inspect "
-                    "the target and scope, make the smallest required change, preserve unrelated files, and verify outcomes. "
-                    "This is project stewardship, not a self-preservation goal; user intent and safety policies take priority. "
-                    "Return a concise report with evidence, assumptions, "
+                    "Nested specialists do not inherit write or terminal grants. "
+                    + ENVIRONMENT_STEWARDSHIP
+                    + " Return a concise report with evidence, assumptions, "
                     "and limitations. Do not provide private chain-of-thought."
                 ),
             },
@@ -4681,9 +4687,7 @@ async def run_agent_task(
                 "provider credentials. "
                 "When running multiple specialists in parallel, assign non-overlapping write targets and keep concurrent "
                 "workers read-only unless their changes are independent. "
-                "Protect the user's project and data: inspect targets, keep changes narrowly scoped, preserve unrelated files, "
-                "and verify outcomes. This is project stewardship, not a self-preservation objective; user intent and safety "
-                "policies take priority. "
+                + ENVIRONMENT_STEWARDSHIP + " "
                 "Before finalizing, incorporate every started worker's summary and artifacts; the backend will wait for and "
                 "supply uncollected worker reports if you reach a final-answer turn first. "
                 "For literature reviews and clinical or academic paper searches, use academic_search for OpenAlex/Europe PMC discovery "
