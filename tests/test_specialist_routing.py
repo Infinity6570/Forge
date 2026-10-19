@@ -214,8 +214,9 @@ class SpecialistRoutingTests(unittest.IsolatedAsyncioTestCase):
             [call.kwargs["model"] for call in create.await_args_list],
             ["claude-haiku-5-5", "claude-sonnet-5-5", "claude-opus-5-5", "gpt-4o-mini"],
         )
+        all_tool_names = {tool["function"]["name"] for tool in main.TOOLS}
         self.assertTrue(all(
-            "write_file" not in {tool["function"]["name"] for tool in call.kwargs.get("tools", [])}
+            {tool["function"]["name"] for tool in call.kwargs.get("tools", [])} == all_tool_names
             for call in create.await_args_list
         ))
 
@@ -268,7 +269,7 @@ class SpecialistRoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(any("could not complete the subtask" in item["message"] for item in logs))
         self.assertFalse(any("escalated" in item["message"] for item in logs))
 
-    async def test_read_only_tools_are_allowlisted_and_write_calls_are_never_executed(self):
+    async def test_all_tools_are_exposed_but_ungranted_write_calls_are_not_executed(self):
         create = AsyncMock(side_effect=[
             completion(calls=[function_call("write_file", {"path": "nope.txt", "content": "blocked"})]),
             completion("I could not write the file."),
@@ -290,13 +291,13 @@ class SpecialistRoutingTests(unittest.IsolatedAsyncioTestCase):
         execute.assert_not_awaited()
         supplied_tools = create.await_args_list[0].kwargs["tools"]
         supplied_names = {tool["function"]["name"] for tool in supplied_tools}
-        self.assertTrue(supplied_names)
-        self.assertLessEqual(supplied_names, main.SPECIALIST_READ_ONLY_TOOLS)
-        self.assertNotIn("write_file", supplied_names)
+        self.assertEqual(supplied_names, {tool["function"]["name"] for tool in main.TOOLS})
+        self.assertIn("write_file", supplied_names)
         system = create.await_args_list[0].kwargs["messages"][0]["content"]
         self.assertIn("Act as a coding specialist", system)
+        self.assertIn("full read/inspection access are always supplied", system)
 
-    def test_specialist_tool_schemas_only_include_explicitly_granted_categories(self):
+    def test_specialist_tool_schemas_always_include_the_full_catalog(self):
         def names(**permissions):
             return {
                 tool["function"]["name"]
@@ -322,20 +323,16 @@ class SpecialistRoutingTests(unittest.IsolatedAsyncioTestCase):
                     self.assertIs(schema["properties"][permission]["default"], False)
                     self.assertNotIn(permission, schema.get("required", []))
 
-        default_names = names()
-        self.assertEqual(default_names, main.SPECIALIST_READ_ONLY_TOOLS)
-        self.assertFalse(default_names & main.WORKSPACE_WRITE_TOOL_NAMES)
-        self.assertFalse(default_names & main.SPECIALIST_TERMINAL_TOOLS)
-
-        write_names = names(read_only_tools=False, allow_workspace_write=True)
-        self.assertEqual(write_names, main.WORKSPACE_WRITE_TOOL_NAMES)
-        self.assertIn("write_file", write_names)
-        self.assertIn("replace_in_file", write_names)
-        self.assertNotIn("delete_file", write_names)
-
-        terminal_names = names(read_only_tools=False, allow_terminal_execution=True)
-        self.assertEqual(terminal_names, main.SPECIALIST_TERMINAL_TOOLS)
-        self.assertNotIn("write_file", terminal_names)
+        expected_names = {tool["function"]["name"] for tool in main.TOOLS}
+        self.assertEqual(names(), expected_names)
+        self.assertEqual(names(read_only_tools=False), expected_names)
+        self.assertEqual(names(allow_workspace_write=True), expected_names)
+        self.assertEqual(names(allow_terminal_execution=True), expected_names)
+        self.assertEqual(names(
+            read_only_tools=False,
+            allow_workspace_write=True,
+            allow_terminal_execution=True,
+        ), expected_names)
 
     async def test_unapproved_write_and_terminal_calls_are_rejected_before_execution(self):
         create = AsyncMock(side_effect=[
@@ -367,7 +364,10 @@ class SpecialistRoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(tool_results), 2)
         for output in tool_results:
             self.assertIn("not authorized for this specialist worker", output)
-        self.assertIn("Granted Tool Permissions: None", create.await_args_list[0].kwargs["messages"][0]["content"])
+        self.assertIn(
+            "Granted Tool Permissions: Full read and inspection tools (always enabled)",
+            create.await_args_list[0].kwargs["messages"][0]["content"],
+        )
 
     async def test_authorized_specialist_can_write_and_replace_project_files(self):
         create = AsyncMock(side_effect=[
@@ -404,9 +404,9 @@ class SpecialistRoutingTests(unittest.IsolatedAsyncioTestCase):
             tool["function"]["name"]
             for tool in create.await_args_list[0].kwargs["tools"]
         }
-        self.assertEqual(supplied_names, main.WORKSPACE_WRITE_TOOL_NAMES)
+        self.assertEqual(supplied_names, {tool["function"]["name"] for tool in main.TOOLS})
         self.assertIn(
-            "Granted Tool Permissions: Workspace file write/edit tools.",
+            "Workspace file write/edit tools",
             create.await_args_list[0].kwargs["messages"][0]["content"],
         )
         self.assertEqual(metadata["successfulWorkspaceWrites"], ["notes.md"])
@@ -451,10 +451,11 @@ class SpecialistRoutingTests(unittest.IsolatedAsyncioTestCase):
             tool["function"]["name"]
             for tool in create.await_args_list[0].kwargs["tools"]
         }
-        self.assertEqual(supplied_names, main.SPECIALIST_TERMINAL_TOOLS)
-        self.assertNotIn("write_file", supplied_names)
+        self.assertEqual(supplied_names, {tool["function"]["name"] for tool in main.TOOLS})
+        self.assertIn("write_file", supplied_names)
 
-    async def test_admin_engine_and_delete_tools_remain_unavailable_with_full_grants(self):
+    async def test_critical_tools_are_exposed_but_routed_back_to_supervisor(self):
+        (Path(self.temp_dir.name) / "important.txt").write_text("preserve until approval")
         create = AsyncMock(side_effect=[
             completion(calls=[
                 function_call("delete_file", {"path": "important.txt"}, "delete"),
@@ -487,9 +488,15 @@ class SpecialistRoutingTests(unittest.IsolatedAsyncioTestCase):
             tool["function"]["name"]
             for tool in create.await_args_list[0].kwargs["tools"]
         }
-        self.assertNotIn("delete_file", supplied_names)
-        self.assertNotIn("execute_elevated_command", supplied_names)
-        self.assertNotIn("send_engine_remote_command", supplied_names)
+        self.assertEqual(supplied_names, {tool["function"]["name"] for tool in main.TOOLS})
+        tool_results = [
+            message["content"]
+            for message in create.await_args_list[1].kwargs["messages"]
+            if message.get("role") == "tool"
+        ]
+        self.assertEqual(len(tool_results), 3)
+        self.assertIn('"requiresSupervisorAction": true', tool_results[0])
+        self.assertIn("human approval", tool_results[0])
 
     async def test_delegation_handlers_forward_explicit_permission_flags(self):
         arguments = {
@@ -527,6 +534,37 @@ class SpecialistRoutingTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertTrue(background.call_args.kwargs["allow_workspace_write"])
         self.assertTrue(background.call_args.kwargs["allow_terminal_execution"])
+
+    async def test_nested_specialist_cannot_regrant_write_or_terminal_access(self):
+        create = AsyncMock(side_effect=[
+            completion(calls=[function_call(
+                "delegate_to_specialist",
+                {
+                    "task": "Edit files and run tests.",
+                    "allow_workspace_write": True,
+                    "allow_terminal_execution": True,
+                },
+            )]),
+            completion("The nested work was delegated without inheriting permissions."),
+        ])
+        client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+        execute = AsyncMock(return_value='{"summary":"read-only child"}')
+        with patch.object(main, "create_llm_client", return_value=client), \
+                patch.object(main, "execute_tool", new=execute):
+            await main.run_specialist_worker(
+                "Delegate independent analysis.",
+                "openai",
+                "specialist-test",
+                role="coding",
+                starting_tier="balanced",
+                allow_workspace_write=True,
+                allow_terminal_execution=True,
+            )
+
+        nested_arguments = execute.await_args.args[1]
+        self.assertTrue(nested_arguments["read_only_tools"])
+        self.assertFalse(nested_arguments["allow_workspace_write"])
+        self.assertFalse(nested_arguments["allow_terminal_execution"])
 
     async def test_background_worker_preserves_granted_permissions(self):
         worker = AsyncMock(return_value="Background work completed.")

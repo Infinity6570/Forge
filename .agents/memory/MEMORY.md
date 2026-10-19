@@ -1,4 +1,4 @@
-- [Local execution and elevation boundary](local-execution-boundary.md) — file tools stay workspace-scoped; local Python previews are explicit opt-in and unrestricted; admin actions require approval.
+- [Local execution and elevation boundary](local-execution-boundary.md) — project edits stay path-bound; critical deletes/config changes and risky shell commands require approval.
 - [Provider model availability](provider-model-availability.md) — portable routing; preserve provider-neutral history, Gemini signatures, and exact model selections across switches.
 - [Gemini prompt caching](gemini-prompt-caching.md) — supported Gemini models cache stable repeated prefixes implicitly; report cache-hit tokens instead of creating explicit cache objects.
 - [Market-feed freshness](market-feed-freshness.md) — distinguish API response time from source freshness; disclose stale or unknown quotes.
@@ -12,4 +12,4 @@
 - [Regional literature coverage](regional-literature.md) — literature discovery must include Indian dental journals, without claiming guaranteed Scholar or Scopus indexing.
 - [History display boundary](history-display-boundary.md) — paginate display only; keep signed replay complete, open newest chat, and preserve reading position during prepends.
 - [Editable system prompt boundary](editable-system-prompt.md) — the Preferences editor changes persona guidance, while fixed safety and tool rules remain outside the editable prompt.
-- [Specialist routing boundary](specialist-routing-boundary.md) — specialists get no tools by default; the supervisor may separately grant read, write, or terminal tools per worker.
+- [Specialist routing boundary](specialist-routing-boundary.md) — specialists see all tools; read is open, while writes/terminal use need per-worker grants and critical actions need approval.

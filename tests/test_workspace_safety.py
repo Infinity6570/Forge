@@ -78,6 +78,86 @@ class WorkspaceSafetyTests(unittest.IsolatedAsyncioTestCase):
             "built",
         )
 
+    def test_critical_shell_commands_are_classified_for_human_approval(self) -> None:
+        self.assertIsNone(main.workspace_action_requiring_approval(
+            "run_command",
+            {"command": "mkdir -p generated/site", "cwd": "."},
+        ))
+        approval = main.workspace_action_requiring_approval(
+            "run_command",
+            {"command": "rm -rf generated/site", "cwd": "."},
+        )
+        self.assertIsNotNone(approval)
+        self.assertEqual(approval[0], "critical_shell_command")
+        self.assertIn("rm -rf generated/site", approval[1]["command"])
+
+    async def test_critical_delete_and_protected_file_write_wait_for_approval(self) -> None:
+        protected = self.root / "main.py"
+        protected.write_text("original()", encoding="utf-8")
+        important = self.root / "important.txt"
+        important.write_text("keep me", encoding="utf-8")
+
+        delete_result = json.loads(await main.execute_tool(
+            "delete_file",
+            {"path": "important.txt"},
+            "gemini",
+            {"model": "test-model"},
+            "",
+            "test-task",
+        ))
+        self.assertTrue(delete_result["approvalRequired"])
+        self.assertTrue(important.exists())
+
+        write_result = json.loads(await main.execute_tool(
+            "write_file",
+            {"path": "main.py", "content": "updated()"},
+            "gemini",
+            {"model": "test-model"},
+            "",
+            "test-task",
+        ))
+        self.assertTrue(write_result["approvalRequired"])
+        self.assertEqual(protected.read_text(encoding="utf-8"), "original()")
+
+        write_action, write_payload, _ = main.workspace_action_requiring_approval(
+            "write_file",
+            {"path": "main.py", "content": "updated()"},
+        )
+        protected.write_text("changed while waiting", encoding="utf-8")
+        with self.assertRaisesRegex(PermissionError, "changed while approval"):
+            main.apply_approved_workspace_action(write_action, write_payload)
+
+        delete_action, delete_payload, _ = main.workspace_action_requiring_approval(
+            "delete_file",
+            {"path": "important.txt"},
+        )
+        self.assertTrue(important.exists())
+        important.write_text("changed while waiting", encoding="utf-8")
+        with self.assertRaisesRegex(PermissionError, "changed while approval"):
+            main.apply_approved_workspace_action(delete_action, delete_payload)
+        important.write_text("keep me", encoding="utf-8")
+        delete_action, delete_payload, _ = main.workspace_action_requiring_approval(
+            "delete_file",
+            {"path": "important.txt"},
+        )
+        deleted = json.loads(main.apply_approved_workspace_action(delete_action, delete_payload))
+        self.assertTrue(deleted["deleted"])
+        self.assertFalse(important.exists())
+
+    async def test_critical_shell_command_tool_call_only_returns_approval_request(self) -> None:
+        with patch.object(main, "run_workspace_command") as run_command:
+            result = json.loads(await main.execute_tool(
+                "run_command",
+                {"command": "rm sample.txt"},
+                "gemini",
+                {"model": "test-model"},
+                "",
+                "test-task",
+            ))
+        self.assertTrue(result["approvalRequired"])
+        self.assertEqual(result["action"], "critical_shell_command")
+        run_command.assert_not_called()
+
     async def test_run_command_and_run_terminal_command_execute_without_approval_or_toggle(self) -> None:
         for tool_name in ("run_command", "run_terminal_command"):
             with self.subTest(tool=tool_name):
@@ -296,15 +376,23 @@ class WorkspaceSafetyTests(unittest.IsolatedAsyncioTestCase):
             "test-task",
         )
         self.assertIn("closed", main.parse_json(read_back, {})["content"])
-        deleted = await main.execute_tool(
+        deleted = main.parse_json(await main.execute_tool(
             "delete_file",
             {"path": ".forge-data/nested/config.json"},
             "gemini",
             {"model": "test-model"},
             "",
             "test-task",
+        ), {})
+        self.assertTrue(deleted["approvalRequired"])
+        delete_action, delete_payload, _ = main.workspace_action_requiring_approval(
+            "delete_file",
+            {"path": ".forge-data/nested/config.json"},
         )
-        self.assertTrue(main.parse_json(deleted, {})["deleted"])
+        self.assertTrue(main.parse_json(
+            main.apply_approved_workspace_action(delete_action, delete_payload),
+            {},
+        )["deleted"])
         self.assertFalse((self.root / ".forge-data/nested/config.json").exists())
         with self.assertRaises(PermissionError):
             main.project_path("../outside.py")
@@ -352,7 +440,17 @@ class WorkspaceSafetyTests(unittest.IsolatedAsyncioTestCase):
             ),
             {},
         )
-        self.assertTrue(write_result["saved"])
+        self.assertTrue(write_result["approvalRequired"])
+        self.assertFalse((self.root / "tools" / "agent_tools.py").exists())
+        write_action, write_payload, _ = main.workspace_action_requiring_approval(
+            "write_file",
+            {"path": "tools/agent_tools.py", "content": "# updated tool module\n"},
+        )
+        approved_write = main.parse_json(
+            main.apply_approved_workspace_action(write_action, write_payload),
+            {},
+        )
+        self.assertTrue(approved_write["saved"])
         self.assertEqual(
             (self.root / "tools" / "agent_tools.py").read_text(encoding="utf-8"),
             "# updated tool module\n",
@@ -883,6 +981,38 @@ class WorkspaceSafetyTests(unittest.IsolatedAsyncioTestCase):
         task = main.db_one("SELECT status,pending_approval_kind,messages_json FROM tasks WHERE id=?", (task_id,))
         self.assertEqual(task["status"], "queued")
         self.assertIsNone(task["pending_approval_kind"])
+
+    async def test_critical_shell_command_runs_only_after_explicit_approval(self) -> None:
+        approval_id = "approval-critical-shell"
+        task_id = await self._create_pending_task(
+            approval_id,
+            "critical_shell_command",
+            {"command": "rm sample.txt", "cwd": "."},
+        )
+
+        async def fake_worker(*_args: object) -> None:
+            return None
+
+        with (
+            patch.object(main, "run_workspace_command", return_value={
+                "returnCode": 0,
+                "timedOut": False,
+                "stdout": "",
+                "stderr": "",
+            }) as shell_runner,
+            patch.object(main, "run_agent_task", new=fake_worker),
+        ):
+            response = await self._choose_approval(task_id, approval_id, True)
+            self.assertEqual(response.status_code, 200, response.text)
+            for _ in range(50):
+                pending = main.db_one("SELECT status FROM pending_approvals WHERE id=?", (approval_id,))
+                if pending["status"] != "processing":
+                    break
+                await asyncio.sleep(0.01)
+
+        shell_runner.assert_called_once_with("rm sample.txt", ".")
+        self.assertEqual(pending["status"], "approved")
+        self.assertTrue(self.sample.exists())
 
     async def test_blender_script_runs_only_after_explicit_approval(self) -> None:
         approval_id = "approval-blender"
