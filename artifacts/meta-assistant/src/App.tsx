@@ -854,12 +854,21 @@ function Dashboard() {
           const body = new FormData();
           body.append('file', file);
           const response = await fetch('/api/assistant/files', { method: 'POST', body, credentials: 'include' });
-          if (!response.ok) throw new Error('Upload failed');
-          const uploaded = await response.json() as AssistantFile;
+          const responseData = await response.json().catch(() => null) as ({ detail?: unknown } & Partial<AssistantFile>) | null;
+          if (!response.ok) {
+            throw new Error(
+              typeof responseData?.detail === 'string'
+                ? responseData.detail
+                : `Upload failed (${response.status}).`,
+            );
+          }
+          if (!responseData?.id) throw new Error('The server returned an invalid upload response.');
+          const uploaded = responseData as AssistantFile;
           setAttachments((current) => [...current, uploaded]);
           uploadedCount += 1;
-        } catch {
-          setAttachmentError('One or more attachments could not be uploaded. Try again from Workspace Files.');
+        } catch (error) {
+          const message = error instanceof Error ? error.message : 'Upload failed.';
+          setAttachmentError((current) => current ? `${current} ${message}` : message);
         }
       }
       if (uploadedCount) {
@@ -930,7 +939,7 @@ function Dashboard() {
         <div className="composer-bottom"><div className="composer-actions">
           <span className="composer-counter" data-testid="text-prompt-counter">{objective.length.toLocaleString()} / 12,000</span>
            <ChatModelPicker value={displayModelMode} onChange={changeModelMode} configuredLabel={settingsQuery.data ? modelDisplayName(settingsQuery.data.provider, settingsQuery.data.modelId) : 'Loading model…'} lastUsedLabel={lastUsedModel?.provider && lastUsedModel.modelId ? modelDisplayName(lastUsedModel.provider, lastUsedModel.modelId) : null} currentSessionLabel={selectedModelForDisplay ? modelDisplayName(selectedModelForDisplay.provider, selectedModelForDisplay.model) : undefined} groups={Object.entries(models).filter(([groupProvider]) => groupProvider !== 'ollama' || settingsQuery.data?.localSetupAllowed).map(([groupProvider, items]) => ({ id: groupProvider, label: groupProvider === 'gemini' ? 'Google Gemini' : groupProvider === 'anthropic' ? 'Anthropic Claude' : groupProvider === 'openrouter' ? 'OpenRouter' : groupProvider === 'ollama' ? 'Local · Ollama' : groupProvider === 'openai' ? 'OpenAI' : 'DeepSeek', items }))} benchmarkRatings={Object.fromEntries((codingBenchmarks.data?.models ?? []).map((item) => [item.modelId, { rating: item.codingScore ?? item.rating, rank: item.rank }]))} benchmarkNotice={getBenchmarkNotice(codingBenchmarks.data, codingBenchmarks.isError)} />
-          <input ref={attachmentInput} type="file" hidden multiple onChange={(event) => { void attachFiles(Array.from(event.currentTarget.files ?? [])); }} data-testid="input-task-attachment" />
+          <input ref={attachmentInput} type="file" hidden multiple accept=".pdf,.txt,.md,.csv,.json,.docx,image/png,image/jpeg,image/gif,image/webp" onChange={(event) => { void attachFiles(Array.from(event.currentTarget.files ?? [])); }} data-testid="input-task-attachment" />
           <button type="button" className="button button-quiet submit-button composer-attach" title="Attach a file" aria-label={uploadingAttachment ? 'Uploading attachment' : 'Attach a file'} onClick={() => attachmentInput.current?.click()} disabled={uploadingAttachment} data-testid="button-attach-task-file">{uploadingAttachment ? <LoaderCircle className="spin" size={12} /> : <Upload size={12} />}</button>
           {stopTargetId ? <button type="button" className="button submit-button button-stop-task" disabled={abort.isPending || stopRequestedTaskId === stopTargetId} title="Stop the active task (Escape)" aria-label="Stop active task" aria-keyshortcuts="Escape" onClick={() => requestStop(stopTargetId)} data-testid="button-stop-task"><StopCircle size={12} />{stopRequestedTaskId === stopTargetId ? 'Stopping…' : 'Stop task'}<kbd>Esc</kbd></button>
             : <button className="button button-primary submit-button" disabled={!objective.trim() || isPending || uploadingAttachment || threadBusy} title={threadBusy ? 'Wait for this chat to finish its current task, or stop it here.' : 'Send task'} data-testid="button-submit-task">{isPending ? <LoaderCircle className="spin" size={12} /> : <Send size={12} />}{isPending ? 'Sending…' : threadBusy ? 'Working' : 'Send'}</button>}

@@ -84,14 +84,25 @@ def _anthropic_messages(messages: list[dict[str, Any]]) -> tuple[str, list[dict[
             continue
         if role == "user":
             text = _text(content)
-            if converted and converted[-1]["role"] == "user":
-                existing = converted[-1]["content"]
-                if isinstance(existing, list):
-                    existing.append({"type": "text", "text": text})
-                else:
-                    converted[-1]["content"] = f"{existing}\n{text}"
-            else:
-                converted.append({"role": "user", "content": text})
+            if text:
+                append_user_block({"type": "text", "text": text})
+            for image in message.get("images") or []:
+                if not isinstance(image, dict):
+                    continue
+                mime_type = str(image.get("mime_type") or "")
+                data = image.get("data_base64")
+                if mime_type not in {"image/jpeg", "image/png", "image/gif", "image/webp"}:
+                    raise ValueError(f"Claude does not support this image type: {mime_type or 'unknown'}.")
+                if not isinstance(data, str) or not data:
+                    raise ValueError("The image attachment could not be read. Re-upload it and try again.")
+                append_user_block({
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": mime_type,
+                        "data": data,
+                    },
+                })
             continue
         if role != "assistant":
             continue

@@ -158,11 +158,25 @@ def _make_contents(messages: list[dict[str, Any]]) -> tuple[list[types.Content],
 
         if role == "user":
             text = _text_content(content)
+            parts: list[types.Part] = []
             if text:
-                contents.append(types.Content(
-                    role="user",
-                    parts=[types.Part.from_text(text=text)],
-                ))
+                parts.append(types.Part.from_text(text=text))
+            for image in message.get("images") or []:
+                if not isinstance(image, dict):
+                    continue
+                mime_type = str(image.get("mime_type") or "")
+                encoded = image.get("data_base64")
+                if mime_type not in {"image/jpeg", "image/png", "image/gif", "image/webp"}:
+                    raise ValueError(f"Gemini does not support this image type: {mime_type or 'unknown'}.")
+                if not isinstance(encoded, str) or not encoded:
+                    raise ValueError("The image attachment could not be read. Re-upload it and try again.")
+                try:
+                    image_data = base64.b64decode(encoded, validate=True)
+                except (ValueError, TypeError) as error:
+                    raise ValueError("The image attachment data is invalid. Re-upload it and try again.") from error
+                parts.append(types.Part.from_bytes(data=image_data, mime_type=mime_type))
+            if parts:
+                contents.append(types.Content(role="user", parts=parts))
 
     return contents, "\n\n".join(system_parts)
 

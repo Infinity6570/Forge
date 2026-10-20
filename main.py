@@ -124,6 +124,11 @@ NOTES = WORKSPACE / "notes"
 DATABASE = WORKSPACE / "assistant.db"
 PREVIEW_MANAGER = WorkspacePreviewManager(WORKSPACE)
 MAX_UPLOAD_BYTES = 20 * 1024 * 1024
+MAX_IMAGE_ATTACHMENTS = 30
+ANTHROPIC_IMAGE_MAX_BYTES = 5 * 1024 * 1024
+ANTHROPIC_TOTAL_IMAGE_MAX_BYTES = 20 * 1024 * 1024
+GEMINI_TOTAL_IMAGE_MAX_BYTES = 15 * 1024 * 1024
+OPENAI_TOTAL_IMAGE_MAX_BYTES = 20 * 1024 * 1024
 MAX_EXTRACTED_CHARS = 400_000
 MAX_VAULT_BACKUP_BYTES = 2 * 1024 * 1024
 VAULT_BACKUP_MAGIC = b"FORGE-VAULT-BACKUP\x00\x01"
@@ -312,7 +317,15 @@ DEFAULT_MODELS = {
     "openrouter": "deepseek/deepseek-chat",
     "ollama": "qwen2.5-coder",
 }
-ALLOWED_SUFFIXES = {".pdf", ".txt", ".md", ".csv", ".json", ".docx"}
+IMAGE_MIME_BY_SUFFIX = {
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".gif": "image/gif",
+    ".webp": "image/webp",
+}
+IMAGE_SUFFIXES = set(IMAGE_MIME_BY_SUFFIX)
+ALLOWED_SUFFIXES = {".pdf", ".txt", ".md", ".csv", ".json", ".docx"} | IMAGE_SUFFIXES
 PRIVATE_WORKSPACE_ENTRIES = {"assistant.db", "uploads", "notes", "preview-runtime", "workspace-export.zip"}
 GENERATED_WORKSPACE_ENTRIES = {"node_modules", "__pycache__", ".agent-packages", ".venv", "venv", ".pytest_cache", ".mypy_cache"}
 MAX_WORKSPACE_TEXT_BYTES = 1_000_000
@@ -1297,6 +1310,184 @@ def file_dict(row: sqlite3.Row) -> dict[str, Any]:
         "extractedText": row["extracted_text"][:60_000],
         "createdAt": row["created_at"],
     }
+
+
+def image_mime_for_upload(suffix: str, data: bytes) -> str | None:
+    """Return a supported image MIME only when the bytes match the filename type."""
+    expected = IMAGE_MIME_BY_SUFFIX.get(suffix.lower())
+    if not expected:
+        return None
+    valid = (
+        (expected == "image/png" and data.startswith(b"\x89PNG\r\n\x1a\n"))
+        or (expected == "image/jpeg" and data.startswith(b"\xff\xd8\xff"))
+        or (expected == "image/gif" and data.startswith((b"GIF87a", b"GIF89a")))
+        or (
+            expected == "image/webp"
+            and len(data) >= 12
+            and data.startswith(b"RIFF")
+            and data[8:12] == b"WEBP"
+        )
+    )
+    if not valid:
+        raise HTTPException(
+            status_code=415,
+            detail="The image data does not match its file extension. Upload a valid PNG, JPEG, GIF, or WebP image.",
+        )
+    return expected
+
+
+def selected_image_attachments(file_ids: list[str] | None) -> list[dict[str, Any]]:
+    images: list[dict[str, Any]] = []
+    for file_id in (file_ids or [])[:30]:
+        row = db_one(
+            "SELECT id,name,mime_type,size_bytes,disk_path FROM files WHERE id=?",
+            (file_id,),
+        )
+        if not row or not str(row["mime_type"]).lower().startswith("image/"):
+            continue
+        images.append({
+            "file_id": row["id"],
+            "name": row["name"],
+            "mime_type": row["mime_type"],
+            "size_bytes": int(row["size_bytes"]),
+            "path": row["disk_path"],
+        })
+    return images
+
+
+def images_from_history(messages: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
+    return [
+        image
+        for message in (messages or [])
+        for image in (message.get("images") or [])
+        if isinstance(image, dict)
+    ]
+
+
+def supports_image_input(provider: str, model: str) -> bool:
+    normalized = model.casefold().removeprefix("models/")
+    if provider == "anthropic":
+        return normalized.startswith("claude-")
+    if provider == "gemini":
+        return normalized.startswith(("gemini-", "gemma-")) and not normalized.endswith(
+            ("-tts", "-flash-tts", "-flash-lite-tts")
+        )
+    if provider == "openai":
+        return bool(re.match(
+            r"^(?:gpt-4o(?:-mini)?|gpt-4\.1(?:-mini|-nano)?|o[134](?:-mini)?)(?:$|[-.])",
+            normalized,
+        ))
+    if provider == "openrouter":
+        return bool(re.match(
+            r"^(?:openai/(?:gpt-4o(?:-mini)?|gpt-4\.1(?:-mini|-nano)?|o[134](?:-mini)?)"
+            r"|anthropic/claude-|google/gemini-)",
+            normalized,
+        ))
+    return False
+
+
+def validate_image_attachments(
+    provider: str,
+    model: str,
+    images: list[dict[str, Any]],
+) -> None:
+    if not images:
+        return
+    if not supports_image_input(provider, model):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"The selected model {model} ({provider}) can't read image attachments. "
+                "Choose a vision-capable Claude, Gemini, or supported OpenAI model, or remove the image."
+            ),
+        )
+    if len(images) > MAX_IMAGE_ATTACHMENTS:
+        raise HTTPException(
+            status_code=413,
+            detail=f"A request can include at most {MAX_IMAGE_ATTACHMENTS} images.",
+        )
+
+    uploads_root = Path(UPLOADS).resolve()
+    sizes: list[tuple[dict[str, Any], int]] = []
+    for image in images:
+        name = str(image.get("name") or "image")
+        try:
+            path = Path(str(image.get("path") or "")).resolve()
+            if not path.is_relative_to(uploads_root):
+                raise PermissionError("outside uploads")
+            size = path.stat().st_size
+        except (OSError, PermissionError, ValueError):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Image attachment “{name}” is no longer available. Re-upload it before sending.",
+            ) from None
+        if size <= 0:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Image attachment “{name}” is empty. Re-upload a valid image.",
+            )
+        sizes.append((image, size))
+
+    total_bytes = sum(size for _, size in sizes)
+    if provider == "anthropic":
+        oversized = next(
+            ((image, size) for image, size in sizes if size > ANTHROPIC_IMAGE_MAX_BYTES),
+            None,
+        )
+        if oversized:
+            raise HTTPException(
+                status_code=413,
+                detail=(
+                    f"Claude accepts images up to 5 MB each. “{oversized[0].get('name', 'image')}” "
+                    "is too large; resize it or choose another supported model."
+                ),
+            )
+        if total_bytes > ANTHROPIC_TOTAL_IMAGE_MAX_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail="The combined Claude image attachments exceed the 20 MB request limit.",
+            )
+    elif provider == "gemini" and total_bytes > GEMINI_TOTAL_IMAGE_MAX_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=(
+                "The combined image attachments are too large for Gemini's inline request limit. "
+                "Keep the total image size under 15 MB, or resize the images."
+            ),
+        )
+    elif provider in {"openai", "openrouter"} and total_bytes > OPENAI_TOTAL_IMAGE_MAX_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail="The combined image attachments exceed the 20 MB limit supported by this image request.",
+        )
+
+
+def hydrate_image_attachments(
+    messages: list[dict[str, Any]],
+    provider: str,
+    model: str,
+) -> list[dict[str, Any]]:
+    """Read validated workspace uploads only for the duration of an API request."""
+    hydrated = json.loads(json.dumps(messages, ensure_ascii=False))
+    refs = images_from_history(hydrated)
+    validate_image_attachments(provider, model, refs)
+    for message in hydrated:
+        for image in message.get("images") or []:
+            path = Path(str(image["path"])).resolve()
+            data = path.read_bytes()
+            if len(data) != int(image.get("size_bytes") or len(data)):
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Image attachment “{image.get('name', 'image')}” changed after upload. Re-upload it.",
+                )
+            if image_mime_for_upload(Path(str(image["name"])).suffix, data) != image.get("mime_type"):
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Image attachment “{image.get('name', 'image')}” is invalid. Re-upload it.",
+                )
+            image.pop("path", None)
+            image["data_base64"] = base64.b64encode(data).decode("ascii")
+    return hydrated
 
 
 def log_task(
@@ -3028,7 +3219,14 @@ async def create_completion_with_fallback(
             await on_text(None)
         request_kwargs = dict(kwargs)
         if "messages" in request_kwargs:
-            request_kwargs["messages"] = prepare_history(request_kwargs["messages"], provider)
+            request_kwargs["messages"] = prepare_history(
+                hydrate_image_attachments(
+                    request_kwargs["messages"],
+                    provider,
+                    str(request_kwargs.get("model") or model_state["model"]),
+                ),
+                provider,
+            )
         if (
             request_kwargs.get("stream")
             and provider in {"openai", "deepseek", "openrouter"}
@@ -4741,9 +4939,16 @@ async def run_agent_task(
         log_task(task_id, f"Starting with {provider} · {model_state['model']}", "info")
         if resume_messages is None:
             snippets = []
+            image_attachments = selected_image_attachments(selected_file_ids)
+            prior_history = THREADS.history(row["thread_id"], task_id, provider)
+            validate_image_attachments(
+                provider,
+                model_state["model"],
+                images_from_history(prior_history) + image_attachments,
+            )
             for file_id in selected_file_ids[:12]:
                 file_row = db_one("SELECT name, extracted_text FROM files WHERE id=?", (file_id,))
-                if file_row:
+                if file_row and not str(file_row["name"]).lower().endswith(tuple(IMAGE_SUFFIXES)):
                     snippets.append(f"--- {file_row['name']} ---\n{file_row['extracted_text'][:3_000]}")
             context = "\n\n".join(snippets)
             note_context = "\n\n".join(f"{n['title']}: {n['content'][:1000]}" for n in db_all("SELECT title,content FROM notes ORDER BY updated_at DESC LIMIT 8"))
@@ -4854,17 +5059,34 @@ async def run_agent_task(
                 "ordinary conversation history is not.\n"
                 "\nAttached documents, when present, are included in their corresponding user messages."
             )
-            history = THREADS.history(row["thread_id"], task_id, provider)
+            history = prior_history
             history_start = 1 + len(history)
             db_run("UPDATE tasks SET thread_context_start=? WHERE id=?", (history_start, task_id))
-            user_content = row["objective"] + ("\n\nAttached documents:\n" + context if context else "")
+            image_context = (
+                "\n\nAttached images: " + ", ".join(image["name"] for image in image_attachments)
+                if image_attachments else ""
+            )
+            user_content = (
+                row["objective"]
+                + ("\n\nAttached documents:\n" + context if context else "")
+                + image_context
+            )
             messages = [
                 {"role": "system", "content": system},
                 *history,
-                {"role": "user", "content": user_content},
+                {
+                    "role": "user",
+                    "content": user_content,
+                    **({"images": image_attachments} if image_attachments else {}),
+                },
             ]
         else:
             messages = resume_messages
+            validate_image_attachments(
+                provider,
+                model_state["model"],
+                images_from_history(messages),
+            )
             for message in messages:
                 if message.get("role") == "system" and isinstance(message.get("content"), str):
                     message["content"] = replace_editable_system_prompt(
@@ -5907,6 +6129,14 @@ async def create_task(body: TaskInput, request: Request) -> dict[str, Any]:
             raise HTTPException(status_code=422, detail=str(error)) from error
     elif not credential_for(provider):
         raise HTTPException(status_code=400, detail=missing_provider_key_message(provider))
+    prior_images = images_from_history(
+        THREADS.history(body.threadId, "__image_preflight__", provider)
+    )
+    validate_image_attachments(
+        provider,
+        model,
+        prior_images + selected_image_attachments(body.fileIds),
+    )
     reason = None if route_decision else classify_task_complexity(body.objective, len(body.fileIds))
     recommendation_kind = "complexity" if reason else None
     recommended_provider, recommended_model, recommended_name = (
@@ -5976,6 +6206,12 @@ async def choose_task_model(task_id: str, body: TaskModelChoiceInput) -> dict[st
             status_code=400,
             detail=missing_provider_key_message(provider or row["provider"]),
         )
+    validate_image_attachments(
+        provider,
+        model,
+        images_from_history(THREADS.history(row["thread_id"], task_id, provider))
+        + selected_image_attachments(parse_json(row["file_ids_json"], [])),
+    )
     now = utc_now()
     updated = db_run(
         "UPDATE tasks SET provider=?,model_id=?,status='queued',current_step=?,"
@@ -6025,6 +6261,12 @@ async def choose_task_fallback(task_id: str, body: TaskFallbackChoiceInput) -> d
             status_code=400,
             detail=missing_provider_key_message(provider or row["provider"]),
         )
+    validate_image_attachments(
+        provider,
+        model,
+        images_from_history(THREADS.history(row["thread_id"], task_id, provider))
+        + selected_image_attachments(parse_json(row["file_ids_json"], [])),
+    )
     db_run(
         "UPDATE tasks SET status='running',error=NULL,current_step=?,updated_at=? WHERE id=?",
         (f"Retrying failed specialist step with {model}", utc_now(), task_id),
@@ -6711,16 +6953,24 @@ async def upload_file(file: UploadFile = File(...)) -> dict[str, Any]:
     data = await file.read(MAX_UPLOAD_BYTES + 1)
     if not data or len(data) > MAX_UPLOAD_BYTES:
         raise HTTPException(status_code=413, detail="File must be between 1 byte and 20 MB.")
-    try:
-        extracted = extract_document(data, suffix)
-    except Exception as error:
-        raise HTTPException(status_code=422, detail=f"Could not extract text from this file: {error}") from error
+    image_mime = image_mime_for_upload(suffix, data)
+    if suffix in IMAGE_SUFFIXES and not image_mime:
+        raise HTTPException(status_code=415, detail="This image format is not supported.")
+    if image_mime:
+        extracted = "Image attachment. Visual content is sent only to image-capable models."
+        stored_mime = image_mime
+    else:
+        try:
+            extracted = extract_document(data, suffix)
+        except Exception as error:
+            raise HTTPException(status_code=422, detail=f"Could not extract text from this file: {error}") from error
+        stored_mime = file.content_type or "application/octet-stream"
     file_id = str(uuid.uuid4())
     disk_path = resolve_workspace_path(BASE_DIR, Path("uploads") / f"{file_id}{suffix}", allow_missing=True)
     disk_path.write_bytes(data)
     db_run(
         "INSERT INTO files(id,name,mime_type,size_bytes,extracted_text,disk_path,created_at) VALUES(?,?,?,?,?,?,?)",
-        (file_id, name[:255], file.content_type or "application/octet-stream", len(data), extracted, str(disk_path), utc_now()),
+        (file_id, name[:255], stored_mime, len(data), extracted, str(disk_path), utc_now()),
     )
     return file_dict(db_one("SELECT * FROM files WHERE id=?", (file_id,)))  # type: ignore[arg-type]
 

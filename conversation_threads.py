@@ -323,7 +323,7 @@ class ThreadStore:
                 if provider and row["provider"] != provider:
                     # Foreign provider metadata stays in SQLite, not an incompatible API request.
                     turn = {key: value for key, value in turn.items() if key in {
-                        "role", "content", "name", "tool_calls", "tool_call_id", "function_call"}}
+                        "role", "content", "name", "tool_calls", "tool_call_id", "function_call", "images"}}
                     if turn.get("tool_calls"):
                         turn["tool_calls"] = [{key: value for key, value in call.items()
                                               if key in {"id", "type", "function"}} for call in turn["tool_calls"]]

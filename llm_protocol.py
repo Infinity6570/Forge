@@ -148,6 +148,8 @@ def prepare_history(messages: list[dict[str, Any]], provider: str) -> list[dict[
     # results to functionResponse parts. Never strip Google signatures here.
     if provider in {"openai", "deepseek", "ollama", "openrouter"}:
         allowed = {"role", "content", "name", "tool_calls", "tool_call_id", "function_call", "refusal", "audio"}
+        if provider in {"openai", "openrouter"}:
+            allowed.add("images")
         if provider == "deepseek":
             allowed.add("reasoning_content")
         for index, message in enumerate(prepared):
@@ -157,6 +159,31 @@ def prepare_history(messages: list[dict[str, Any]], provider: str) -> list[dict[
                     {key: value for key, value in call.items() if key in {"id", "type", "function"}}
                     for call in message["tool_calls"]
                 ]
+        if provider in {"openai", "openrouter"}:
+            for message in prepared:
+                images = message.pop("images", [])
+                if message.get("role") != "user" or not images:
+                    continue
+                content = message.get("content")
+                parts: list[dict[str, Any]] = []
+                if isinstance(content, str) and content:
+                    parts.append({"type": "text", "text": content})
+                elif isinstance(content, list):
+                    parts.extend(content)
+                for image in images:
+                    if not isinstance(image, dict):
+                        continue
+                    mime_type = str(image.get("mime_type") or "")
+                    encoded = image.get("data_base64")
+                    if mime_type not in {"image/jpeg", "image/png", "image/gif", "image/webp"}:
+                        raise ValueError(f"The selected model does not support image type {mime_type or 'unknown'}.")
+                    if not isinstance(encoded, str) or not encoded:
+                        raise ValueError("The image attachment could not be read. Re-upload it and try again.")
+                    parts.append({
+                        "type": "image_url",
+                        "image_url": {"url": f"data:{mime_type};base64,{encoded}"},
+                    })
+                message["content"] = parts
         _match_tool_result_ids(prepared)
     return prepared
 
