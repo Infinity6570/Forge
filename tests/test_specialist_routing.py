@@ -320,7 +320,7 @@ class SpecialistRoutingTests(unittest.IsolatedAsyncioTestCase):
             for permission in ("allow_workspace_write", "allow_terminal_execution"):
                 with self.subTest(permission=permission):
                     self.assertEqual(schema["properties"][permission]["type"], "boolean")
-                    self.assertIs(schema["properties"][permission]["default"], False)
+                    self.assertIs(schema["properties"][permission]["default"], True)
                     self.assertNotIn(permission, schema.get("required", []))
 
         expected_names = {tool["function"]["name"] for tool in main.TOOLS}
@@ -543,6 +543,38 @@ class SpecialistRoutingTests(unittest.IsolatedAsyncioTestCase):
             main,
             "start_specialist_background_job",
             return_value={"workerId": "worker-test", "status": "running"},
+        ) as background:
+            await main.execute_tool(
+                "start_specialist_worker",
+                arguments,
+                "openai",
+                {"model": "gpt-4o-mini"},
+                "",
+                "specialist-test",
+            )
+
+        self.assertTrue(background.call_args.kwargs["allow_workspace_write"])
+        self.assertTrue(background.call_args.kwargs["allow_terminal_execution"])
+
+    async def test_delegation_grants_routine_write_and_terminal_access_when_flags_are_omitted(self):
+        arguments = {"task": "Implement and test the requested change.", "role": "coding"}
+        with patch.object(main, "run_specialist_worker", new=AsyncMock(return_value="done")) as worker:
+            await main.execute_tool(
+                "delegate_to_specialist",
+                arguments,
+                "openai",
+                {"model": "gpt-4o-mini"},
+                "",
+                "specialist-test",
+            )
+
+        self.assertTrue(worker.await_args.kwargs["allow_workspace_write"])
+        self.assertTrue(worker.await_args.kwargs["allow_terminal_execution"])
+
+        with patch.object(
+            main,
+            "start_specialist_background_job",
+            return_value={"workerId": "worker-default", "status": "running"},
         ) as background:
             await main.execute_tool(
                 "start_specialist_worker",

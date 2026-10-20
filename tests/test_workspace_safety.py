@@ -145,16 +145,13 @@ class WorkspaceSafetyTests(unittest.IsolatedAsyncioTestCase):
             "",
             "test-task",
         ))
-        self.assertTrue(write_result["approvalRequired"])
-        self.assertEqual(protected.read_text(encoding="utf-8"), "original()")
-
-        write_action, write_payload, _ = main.workspace_action_requiring_approval(
+        self.assertTrue(write_result["saved"])
+        self.assertEqual(protected.read_text(encoding="utf-8"), "updated()")
+        self.assertIsNone(main.workspace_action_requiring_approval(
             "write_file",
-            {"path": "main.py", "content": "updated()"},
-        )
-        protected.write_text("changed while waiting", encoding="utf-8")
-        with self.assertRaisesRegex(PermissionError, "changed while approval"):
-            main.apply_approved_workspace_action(write_action, write_payload)
+            {"path": "main.py", "content": "updated again()"},
+        ))
+        protected.write_text("original()", encoding="utf-8")
 
         delete_action, delete_payload, _ = main.workspace_action_requiring_approval(
             "delete_file",
@@ -172,6 +169,51 @@ class WorkspaceSafetyTests(unittest.IsolatedAsyncioTestCase):
         deleted = json.loads(main.apply_approved_workspace_action(delete_action, delete_payload))
         self.assertTrue(deleted["deleted"])
         self.assertFalse(protected.exists())
+
+    async def test_routine_source_writes_are_immediate_but_bootstrap_config_is_gated(self) -> None:
+        source_path = self.root / "main.py"
+        source_path.write_text("before()", encoding="utf-8")
+        result = json.loads(await main.execute_tool(
+            "write_file",
+            {"path": "main.py", "content": "after()"},
+            "gemini",
+            {"model": "test-model"},
+            "",
+            "test-task",
+        ))
+        self.assertTrue(result["saved"])
+        self.assertEqual(source_path.read_text(encoding="utf-8"), "after()")
+
+        runtime_config = self.root / ".replit"
+        runtime_config.write_text("run = 'python main.py'\n", encoding="utf-8")
+        pending = json.loads(await main.execute_tool(
+            "write_file",
+            {"path": ".replit", "content": "run = 'python other.py'\n"},
+            "gemini",
+            {"model": "test-model"},
+            "",
+            "test-task",
+        ))
+        self.assertTrue(pending["approvalRequired"])
+        self.assertEqual(runtime_config.read_text(encoding="utf-8"), "run = 'python main.py'\n")
+
+    def test_source_write_paths_are_not_misclassified_as_critical(self) -> None:
+        for path in (
+            "main.py",
+            "tools/agent_tools.py",
+            "artifacts/meta-assistant/src/App.tsx",
+            "package.json",
+            "requirements.txt",
+        ):
+            with self.subTest(path=path):
+                self.assertIsNone(main.workspace_action_requiring_approval(
+                    "write_file",
+                    {"path": path, "content": "task scoped update"},
+                ))
+        self.assertIsNotNone(main.workspace_action_requiring_approval(
+            "write_file",
+            {"path": ".replit", "content": "run = 'python main.py'\n"},
+        ))
 
     async def test_critical_recursive_shell_command_only_returns_approval_request(self) -> None:
         with patch.object(main, "run_workspace_command") as run_command:
@@ -461,17 +503,7 @@ class WorkspaceSafetyTests(unittest.IsolatedAsyncioTestCase):
             ),
             {},
         )
-        self.assertTrue(write_result["approvalRequired"])
-        self.assertFalse((self.root / "tools" / "agent_tools.py").exists())
-        write_action, write_payload, _ = main.workspace_action_requiring_approval(
-            "write_file",
-            {"path": "tools/agent_tools.py", "content": "# updated tool module\n"},
-        )
-        approved_write = main.parse_json(
-            main.apply_approved_workspace_action(write_action, write_payload),
-            {},
-        )
-        self.assertTrue(approved_write["saved"])
+        self.assertTrue(write_result["saved"])
         self.assertEqual(
             (self.root / "tools" / "agent_tools.py").read_text(encoding="utf-8"),
             "# updated tool module\n",
