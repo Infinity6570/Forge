@@ -3,6 +3,18 @@ import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectSepa
 
 export type ModelPickerGroup = { id: string; label: string; items: readonly { id: string; name: string }[] };
 export type ModelPickerBenchmark = { rating?: number | null; rank?: number | null };
+export type ModelPickerBenchmarkStatus = {
+  source?: string;
+  stale?: boolean;
+  message?: string | null;
+};
+
+export function getBenchmarkNotice(status?: ModelPickerBenchmarkStatus, failed = false): string | null {
+  if (failed) return 'BenchLM rankings are unavailable. Model list is shown without ranking badges.';
+  if (!status || (status.source === 'benchlm' && !status.stale)) return null;
+  return status.message || 'BenchLM rankings are unavailable. Model list is shown without ranking badges.';
+}
+
 type Props = {
   value: string;
   onChange: (value: string) => void;
@@ -11,9 +23,10 @@ type Props = {
   currentSessionLabel?: string;
   groups: ModelPickerGroup[];
   benchmarkRatings?: Record<string, ModelPickerBenchmark>;
+  benchmarkNotice?: string | null;
 };
 
-export function ChatModelPicker({ value, onChange, configuredLabel, lastUsedLabel, currentSessionLabel, groups, benchmarkRatings = {} }: Props) {
+export function ChatModelPicker({ value, onChange, configuredLabel, lastUsedLabel, currentSessionLabel, groups, benchmarkRatings = {}, benchmarkNotice }: Props) {
   const selectedParts = value.split('|');
   const hasListedSelection = selectedParts.length === 3 && groups.some((group) =>
     group.id === selectedParts[1] && group.items.some((item) => item.id === selectedParts[2]),
@@ -50,6 +63,9 @@ export function ChatModelPicker({ value, onChange, configuredLabel, lastUsedLabe
           </SelectItem>;
         })}
       </SelectGroup>)}
+      {benchmarkNotice && <div className="model-benchmark-notice" role="status" data-testid="status-model-benchmarks">
+        {benchmarkNotice}
+      </div>}
     </SelectContent>
   </Select>;
 }

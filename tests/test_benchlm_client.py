@@ -120,6 +120,27 @@ class BenchLMClientTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(stale["models"][0]["codingScore"], 88.0)
         self.assertIn("last successful", stale["message"])
 
+    async def test_missing_key_marks_cached_live_rankings_stale(self) -> None:
+        response = httpx.Response(
+            200,
+            json={"rankings": [{"model_id": "gpt-4o", "coding_score": 91, "rank": 2}]},
+            request=httpx.Request("GET", "https://data.benchlm.ai/v1/rankings/current"),
+        )
+        with patch("benchlm_client.httpx.AsyncClient", return_value=StubAsyncClient(response)):
+            live = await benchlm_client.fetch_benchlm_rankings(
+                surface="coding",
+                api_key="test-benchlm-key",
+            )
+            without_key = await benchlm_client.fetch_benchlm_rankings(
+                surface="coding",
+                api_key=None,
+            )
+
+        self.assertFalse(live["stale"])
+        self.assertTrue(without_key["stale"])
+        self.assertIn("No BenchLM key", without_key["message"])
+        self.assertEqual(without_key["models"], live["models"])
+
     async def test_rejects_unknown_surface(self) -> None:
         with self.assertRaisesRegex(ValueError, "Unsupported BenchLM"):
             await benchlm_client.fetch_benchlm_rankings(

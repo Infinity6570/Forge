@@ -4,17 +4,20 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import httpx
 from cryptography.fernet import Fernet
 from dotenv import dotenv_values
 
+import benchlm_client
 import main
 
 
 class LocalVaultTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
+        benchlm_client.clear_benchlm_cache()
         self.temp_dir = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp_dir.cleanup)
         root = Path(self.temp_dir.name)
@@ -152,6 +155,48 @@ class LocalVaultTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertIsNotNone(stored)
         self.assertNotIn(secret, stored["key_value"])
+        status = await self.request("GET", "/api/vault/keys")
+        self.assertEqual(status.json()["benchlm_api_key"], "configured")
+        self.assertNotIn(secret, status.text)
+
+    async def test_benchmarks_endpoint_returns_normalized_live_rows_with_configured_key(self) -> None:
+        secret = "benchlm-live-endpoint-test-key"
+        main.save_vault_values({"BENCHLM_API_KEY": secret})
+        requested = {}
+
+        class StubBenchLMClient:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, traceback):
+                return None
+
+            async def get(self, url, *, headers):
+                requested["url"] = url
+                requested["headers"] = headers
+                return httpx.Response(
+                    200,
+                    json={"rankings": [{"model_id": "gpt-4o", "provider": "openai", "score": 91.25, "rank": 2}]},
+                    request=httpx.Request("GET", url),
+                )
+
+        benchlm_http = SimpleNamespace(
+            AsyncClient=lambda **kwargs: StubBenchLMClient(),
+            HTTPError=httpx.HTTPError,
+        )
+        with patch.object(benchlm_client, "httpx", benchlm_http):
+            response = await self.request("GET", "/api/benchmarks/models?surface=coding")
+
+        self.assertEqual(response.status_code, 200, response.text)
+        payload = response.json()
+        self.assertEqual(payload["source"], "benchlm")
+        self.assertFalse(payload["stale"])
+        self.assertEqual(payload["models"][0]["modelId"], "gpt-4o")
+        self.assertEqual(payload["models"][0]["codingScore"], 91.25)
+        self.assertEqual(payload["models"][0]["rank"], 2)
+        self.assertIn("surface=coding", requested["url"])
+        self.assertEqual(requested["headers"]["Authorization"], f"Bearer {secret}")
+        self.assertNotIn(secret, response.text)
 
     async def test_benchmarks_endpoint_returns_unscored_catalog_without_a_key(self) -> None:
         response = await self.request("GET", "/api/benchmarks/models?surface=coding")

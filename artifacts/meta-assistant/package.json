@@ -8,7 +8,7 @@
     "build": "vite build --config vite.config.ts",
     "serve": "vite preview --config vite.config.ts --host 0.0.0.0",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "tsx --test src/components/telemetry-records.test.tsx",
+    "test": "tsx --test src/components/telemetry-records.test.tsx src/components/chat-model-picker.test.tsx",
     "test:browser": "python ../../tests/test_console_responsive_browser.py && python ../../tests/test_vault_recovery_browser.py"
   },
   "devDependencies": {

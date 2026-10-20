@@ -175,8 +175,6 @@ async def fetch_benchlm_rankings(
         raise ValueError("Unsupported BenchLM ranking surface.")
     now = time.monotonic()
     cached = _CACHE.get(surface)
-    if cached and now < cached["expiresAt"]:
-        return copy.deepcopy(cached["response"])
     if not api_key or not api_key.strip():
         if cached:
             response = copy.deepcopy(cached["response"])
@@ -188,6 +186,8 @@ async def fetch_benchlm_rankings(
             model_catalog=model_catalog,
             message="Add a BenchLM key in Preferences to load current rankings. Catalog models are shown without invented scores.",
         )
+    if cached and now < cached["expiresAt"]:
+        return copy.deepcopy(cached["response"])
 
     url = _build_url(
         (endpoint or os.getenv("BENCHLM_API_URL", DEFAULT_BENCHLM_ENDPOINT)).strip(),
