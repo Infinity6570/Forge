@@ -227,7 +227,10 @@ class GeminiToolHistoryTests(unittest.IsolatedAsyncioTestCase):
             self.text_stream(),
         ])
         client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
-        with patch.object(main, "create_llm_client", return_value=client):
+        with patch.object(main, "create_llm_client", return_value=client), \
+                patch.object(main, "run_task_critic", new=AsyncMock(return_value={
+                    "verdict": "pass", "findings": [], "tests": [], "summary": "",
+                })):
             await main.run_agent_task("signed", [])
         task = main.db_one("SELECT * FROM tasks WHERE id='signed'")
         self.assertEqual(task["status"], "completed")

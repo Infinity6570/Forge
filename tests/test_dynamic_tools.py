@@ -60,7 +60,7 @@ class DynamicToolTests(unittest.TestCase):
                 {"type": "object", "properties": {}},
                 "import os\ndef run(data):\n    return data\n",
             )
-        with self.assertRaisesRegex(ValueError, "double underscores"):
+        with self.assertRaisesRegex(ValueError, "dunder"):
             create_dynamic_tool(
                 self.root,
                 "unsafe_dunder",
@@ -81,7 +81,7 @@ class DynamicToolTests(unittest.TestCase):
             "def run(data):\n    total = 0\n    for item in data['items']:\n        total = total + item\n    return total\n",
         )
         values = list(range(10_001))
-        with self.assertRaisesRegex(RuntimeError, "execution-step limit|10,000"):
+        with self.assertRaisesRegex(RuntimeError, "execution-step limit|10000"):
             execute_dynamic_tool(self.root, created["name"], {"items": values})
 
     def test_dynamic_registry_ignores_corrupt_and_escaped_descriptors(self):

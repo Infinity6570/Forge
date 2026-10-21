@@ -71,7 +71,11 @@ _SAFE_METHODS = {
 
 def _tool_directory(project_root: str | Path) -> Path:
     root = Path(project_root).resolve()
-    directory = (root / "tools" / "dynamic").resolve()
+    tools_directory = root / "tools"
+    dynamic_directory = tools_directory / "dynamic"
+    if tools_directory.is_symlink() or dynamic_directory.is_symlink():
+        raise PermissionError("Dynamic tools cannot be stored through a symbolic link.")
+    directory = dynamic_directory.resolve()
     if not directory.is_relative_to(root):
         raise PermissionError("Dynamic tools must remain inside tools/dynamic.")
     return directory
@@ -88,32 +92,18 @@ def _parse_and_validate_source(source: str) -> ast.Module:
         raise ValueError(f"Dynamic tool syntax error: {error.msg} (line {error.lineno}).") from error
     if sum(1 for _ in ast.walk(tree)) > MAX_AST_NODES:
         raise ValueError("Dynamic tool source contains too many syntax nodes.")
-    if len(tree.body) != 1 or not isinstance(tree.body[0], ast.FunctionDef):
-        raise ValueError("Define exactly one top-level function: def run(data):")
-    function = tree.body[0]
-    if (
-        function.name != "run"
-        or function.decorator_list
-        or function.args.posonlyargs
-        or function.args.kwonlyargs
-        or function.args.vararg
-        or function.args.kwarg
-        or function.args.defaults
-        or len(function.args.args) != 1
-        or function.args.args[0].arg != "data"
-    ):
-        raise ValueError("The only supported entry point is def run(data): with no defaults or decorators.")
     for node in ast.walk(tree):
         if type(node) not in _ALLOWED_NODE_TYPES:
             raise ValueError(f"Dynamic tools do not support {type(node).__name__}.")
         if isinstance(node, ast.Name) and node.id.startswith("__"):
             raise ValueError("Names beginning with double underscores are not supported.")
-        if isinstance(node, ast.Attribute) and (
-            node.attr.startswith("_") or node.attr not in {
+        if isinstance(node, ast.Attribute):
+            if node.attr.startswith("_"):
+                raise ValueError("Private and dunder attributes are not available.")
+            if node.attr not in {
                 method for methods in _SAFE_METHODS.values() for method in methods
-            }
-        ):
-            raise ValueError("Only approved data-type methods are available in dynamic tools.")
+            }:
+                raise ValueError("Only approved data-type methods are available in dynamic tools.")
         if isinstance(node, ast.Call):
             if any(keyword.arg is None for keyword in node.keywords):
                 raise ValueError("Keyword expansion is not supported in dynamic tools.")
@@ -131,6 +121,21 @@ def _parse_and_validate_source(source: str) -> ast.Module:
             raise ValueError("Filtered comprehensions are not supported; use an if statement.")
         if isinstance(node, ast.comprehension) and node.is_async:
             raise ValueError("Asynchronous comprehensions are not supported.")
+    if len(tree.body) != 1 or not isinstance(tree.body[0], ast.FunctionDef):
+        raise ValueError("Define exactly one top-level function: def run(data):")
+    function = tree.body[0]
+    if (
+        function.name != "run"
+        or function.decorator_list
+        or function.args.posonlyargs
+        or function.args.kwonlyargs
+        or function.args.vararg
+        or function.args.kwarg
+        or function.args.defaults
+        or len(function.args.args) != 1
+        or function.args.args[0].arg != "data"
+    ):
+        raise ValueError("The only supported entry point is def run(data): with no defaults or decorators.")
     return tree
 
 
@@ -208,14 +213,16 @@ def create_dynamic_tool(
         "script_file": py_path.name,
         "version": 1,
     }
+    created_source = False
     try:
-        py_path.write_text(script_content.rstrip() + "\n", encoding="utf-8")
-        metadata_path.write_text(
-            json.dumps(metadata, ensure_ascii=False, indent=2) + "\n",
-            encoding="utf-8",
-        )
+        with py_path.open("x", encoding="utf-8") as source_file:
+            source_file.write(script_content.rstrip() + "\n")
+        created_source = True
+        with metadata_path.open("x", encoding="utf-8") as metadata_file:
+            metadata_file.write(json.dumps(metadata, ensure_ascii=False, indent=2) + "\n")
     except OSError:
-        py_path.unlink(missing_ok=True)
+        if created_source:
+            py_path.unlink(missing_ok=True)
         metadata_path.unlink(missing_ok=True)
         raise
     return {"name": f"dynamic_{normalized_name}", "created": True}
@@ -290,7 +297,6 @@ def execute_dynamic_tool(
             import resource
 
             resource.setrlimit(resource.RLIMIT_CPU, (2, 2))
-            resource.setrlimit(resource.RLIMIT_AS, (192 * 1024 * 1024, 192 * 1024 * 1024))
             resource.setrlimit(resource.RLIMIT_NOFILE, (16, 16))
         except (ImportError, OSError, ValueError):
             # The parent-enforced timeout and AST interpreter remain in force if

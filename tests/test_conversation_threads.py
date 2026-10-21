@@ -428,7 +428,10 @@ class ConversationTests(unittest.IsolatedAsyncioTestCase):
             extra_content={"google": {"thought_signature": "approval-signature"}})
         create = AsyncMock(side_effect=[completion(None, [call]), completion("Homepage updated.")])
         client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
-        with patch.object(main, "create_llm_client", return_value=client):
+        with patch.object(main, "create_llm_client", return_value=client), \
+                patch.object(main, "run_task_critic", new=AsyncMock(return_value={
+                    "verdict": "pass", "findings": [], "tests": [], "summary": "",
+                })):
             task = await self.send("Update the current homepage")
         sent = create.call_args.kwargs["messages"]
         self.assertEqual(sent[2]["tool_calls"][0]["extra_content"]["google"]["thought_signature"], "approval-signature")

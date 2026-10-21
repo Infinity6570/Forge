@@ -5019,6 +5019,14 @@ async def plan_task_dag(
     try:
         response = await client.chat.completions.create(**kwargs)
         completion = await collect_completion(response)
+        log_usage_ledger_entry(
+            task_id,
+            provider,
+            model,
+            completion,
+            source="dag_planner",
+            tier="reasoning",
+        )
         if not completion.choices:
             raise ValueError("The planner returned no choices.")
         message = completion.choices[0].message
@@ -5684,11 +5692,11 @@ async def run_agent_task(
                             await publish_text(None)
                             continue
                         critic_reviewed = True
-                        checks = "; ".join(report["tests"][:4])
-                        review_summary = report["summary"] or "Automated review passed."
-                        if checks:
-                            review_summary += f" Checks: {checks}"
-                        final_result += f"\n\nAutomated review: {review_summary}"
+                        review_parts = [report["summary"]] if report["summary"] else []
+                        if report["tests"]:
+                            review_parts.append("Checks: " + "; ".join(report["tests"][:4]))
+                        if review_parts:
+                            final_result += "\n\nAutomated review: " + " ".join(review_parts)
                         messages[-1]["content"] = final_result
                         await publish_text(final_result)
                 break
@@ -5868,10 +5876,11 @@ async def run_agent_task(
                         "Automated review could not verify the written changes: "
                         + "; ".join(report["findings"][:4])
                     )
-                summary = report["summary"] or "Automated review passed."
+                review_parts = [report["summary"]] if report["summary"] else []
                 if report["tests"]:
-                    summary += " Checks: " + "; ".join(report["tests"][:4])
-                final_result += f"\n\nAutomated review: {summary}"
+                    review_parts.append("Checks: " + "; ".join(report["tests"][:4]))
+                if review_parts:
+                    final_result += "\n\nAutomated review: " + " ".join(review_parts)
                 critic_reviewed = True
         for relative_path in successful_workspace_write_paths:
             written_path = project_path(relative_path)

@@ -14,3 +14,4 @@
 - [Editable system prompt boundary](editable-system-prompt.md) — the Preferences editor changes persona guidance, while fixed safety and tool rules remain outside the editable prompt.
 - [Specialist routing boundary](specialist-routing-boundary.md) — specialist delegation grants routine writes and terminal use by default; explicitly limit workers when needed, with human approval reserved for critical actions.
 - [BenchLM ranking freshness](benchlm-ranking-freshness.md) — cached rankings must be labeled stale when the key is missing or refresh fails; never present old scores as current.
+- [Agent orchestration boundaries](agent-orchestration-boundaries.md) — DAG workers inherit only task-scoped supervisor grants; dynamic helpers stay data-only, and critic findings return to the supervisor before completion.

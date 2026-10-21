@@ -75,7 +75,13 @@ class AutonomousExecutionTests(unittest.IsolatedAsyncioTestCase):
         ])
         client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
 
-        with patch.object(main, "create_llm_client", return_value=client):
+        with patch.object(main, "create_llm_client", return_value=client), \
+                patch.object(main, "run_task_critic", new=AsyncMock(return_value={
+                    "verdict": "pass",
+                    "findings": [],
+                    "tests": ["syntax check passed"],
+                    "summary": "Independent review passed.",
+                })):
             await main.run_agent_task("build-write", [])
 
         self.assertEqual(create.await_count, 3)
@@ -94,7 +100,11 @@ class AutonomousExecutionTests(unittest.IsolatedAsyncioTestCase):
         )
         task = main.db_one("SELECT status,result FROM tasks WHERE id='build-write'")
         self.assertEqual(task["status"], "completed")
-        self.assertEqual(task["result"], "The Python app was created and verified.")
+        self.assertEqual(
+            task["result"],
+            "The Python app was created and verified.\n\n"
+            "Automated review: Independent review passed. Checks: syntax check passed",
+        )
 
     async def test_build_cannot_complete_if_no_workspace_write_succeeds(self):
         self.create_task("build-no-write", "Create a website for a local bakery")
@@ -195,6 +205,106 @@ class AutonomousExecutionTests(unittest.IsolatedAsyncioTestCase):
             [json.loads(item["content"])["source"] for item in tool_results],
             ["academic_search", "delegate_to_specialist", "delegate_to_specialist", "pubmed_search"],
         )
+
+    async def test_dag_runs_ready_nodes_in_parallel_and_passes_dependencies_forward(self):
+        self.create_task("dag-workers", "Audit the code, research the evidence, and summarize")
+        nodes = main.validate_task_dag([
+            {"id": "code", "task": "Audit code", "role": "coding"},
+            {"id": "literature", "task": "Research evidence", "role": "research"},
+            {"id": "synthesis", "task": "Combine both reports", "depends_on": ["code", "literature"]},
+        ])
+        active = 0
+        peak_active = 0
+        ready = asyncio.Event()
+        dependent_prompt = ""
+
+        async def worker(prompt, _provider, _task_id, **_kwargs):
+            nonlocal active, peak_active, dependent_prompt
+            if "Combine both reports" in prompt:
+                dependent_prompt = prompt
+                return "Combined report"
+            active += 1
+            peak_active = max(peak_active, active)
+            if active == 2:
+                ready.set()
+            try:
+                await asyncio.wait_for(ready.wait(), timeout=1)
+            finally:
+                active -= 1
+            return "Independent worker result"
+
+        with patch.object(main, "run_specialist_worker", new=worker):
+            results = await main.execute_task_dag(
+                nodes,
+                "anthropic",
+                "dag-workers",
+                "Audit, research, and summarize.",
+            )
+
+        self.assertEqual(peak_active, 2)
+        self.assertIn("Independent worker result", dependent_prompt)
+        self.assertEqual([result["status"] for result in results], [
+            "completed", "completed", "completed",
+        ])
+
+    async def test_critic_feedback_returns_to_primary_model_before_completion(self):
+        self.create_task("critic-fix", "Create a Python app at critic_app.py")
+        write_call = SimpleNamespace(
+            id="critic-write",
+            type="function",
+            function=SimpleNamespace(
+                name="write_file",
+                arguments=json.dumps({
+                    "path": "critic_app.py",
+                    "content": "print('initial')\n",
+                }),
+            ),
+        )
+        create = AsyncMock(side_effect=[
+            completion(None, [write_call]),
+            completion("The initial app is ready."),
+            completion(None, [SimpleNamespace(
+                id="critic-fix-write",
+                type="function",
+                function=SimpleNamespace(
+                    name="write_file",
+                    arguments=json.dumps({
+                        "path": "critic_app.py",
+                        "content": "print('reviewed')\n",
+                    }),
+                ),
+            )]),
+            completion("The app was corrected and verified."),
+        ])
+        client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+        critic = AsyncMock(side_effect=[
+            {
+                "verdict": "revise",
+                "findings": ["The initial content is a placeholder."],
+                "tests": ["No test was run."],
+                "summary": "Correction requested.",
+            },
+            {
+                "verdict": "pass",
+                "findings": [],
+                "tests": ["Focused syntax check passed."],
+                "summary": "Review passed.",
+            },
+        ])
+        with patch.object(main, "MAX_TOOL_ROUNDS", 4), \
+                patch.object(main, "create_llm_client", return_value=client), \
+                patch.object(main, "run_task_critic", new=critic):
+            await main.run_agent_task("critic-fix", [])
+
+        self.assertEqual(create.await_count, 4)
+        self.assertIn(
+            "The independent critic found issues",
+            create.await_args_list[2].kwargs["messages"][-1]["content"],
+        )
+        self.assertEqual((main.PROJECT_DIR / "critic_app.py").read_text(encoding="utf-8"), "print('reviewed')\n")
+        task = main.db_one("SELECT status,result FROM tasks WHERE id='critic-fix'")
+        self.assertEqual(task["status"], "completed")
+        self.assertIn("Automated review: Review passed.", task["result"])
 
     async def test_supportive_persona_is_default_for_claude_and_gemini(self):
         for provider in ("anthropic", "gemini"):

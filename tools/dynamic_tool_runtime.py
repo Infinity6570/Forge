@@ -5,10 +5,15 @@ from __future__ import annotations
 import ast
 import json
 import sys
+from pathlib import Path
 from typing import Any
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from dynamic_tools import (
     MAX_LOOP_ITEMS,
+    MAX_TOOL_INPUT_BYTES,
+    MAX_TOOL_OUTPUT_BYTES,
     MAX_STEPS,
     _ALLOWED_NODE_TYPES,
     _BIN_OPS,
@@ -33,6 +38,42 @@ class _Budget:
         self.remaining -= amount
         if self.remaining < 0:
             raise RuntimeError("Dynamic tool exceeded its execution-step limit.")
+
+
+def _ensure_value_bounded(value: Any, *, max_bytes: int = 1_000_000) -> None:
+    seen: set[int] = set()
+    total = 0
+
+    def visit(item: Any, depth: int) -> None:
+        nonlocal total
+        if depth > 32:
+            raise ValueError("Dynamic tool values are limited to 32 nested levels.")
+        if item is None or type(item) in {bool, int, float}:
+            total += 32 if type(item) is not int else max(16, len(str(item)))
+        elif type(item) is str:
+            total += len(item.encode("utf-8"))
+        elif type(item) in {list, tuple, dict}:
+            identity = id(item)
+            if identity in seen:
+                raise ValueError("Dynamic tools cannot return circular data.")
+            seen.add(identity)
+            if len(item) > MAX_LOOP_ITEMS:
+                raise ValueError(f"Dynamic collections are limited to {MAX_LOOP_ITEMS} items.")
+            total += 16
+            if type(item) is dict:
+                for key, child in item.items():
+                    visit(key, depth + 1)
+                    visit(child, depth + 1)
+            else:
+                for child in item:
+                    visit(child, depth + 1)
+            seen.remove(identity)
+        else:
+            raise ValueError("Dynamic tools may only return JSON-compatible values.")
+        if total > max_bytes:
+            raise ValueError("Dynamic tool intermediate values exceed the 1 MB limit.")
+
+    visit(value, 0)
 
 
 def _safe_method(target: Any, name: str) -> Any:
@@ -65,7 +106,24 @@ def _eval(node: ast.AST, env: dict[str, Any], budget: _Budget) -> Any:
         operation = _BIN_OPS.get(type(node.op))
         if operation is None:
             raise ValueError("This arithmetic operator is not available.")
-        return operation(_eval(node.left, env, budget), _eval(node.right, env, budget))
+        left = _eval(node.left, env, budget)
+        right = _eval(node.right, env, budget)
+        if isinstance(node.op, ast.Add):
+            if type(left) is str and type(right) is str and len(left) + len(right) > MAX_TOOL_OUTPUT_BYTES:
+                raise ValueError("Dynamic string results are limited to 128 KB.")
+            if type(left) in {list, tuple} and type(left) is type(right) and len(left) + len(right) > MAX_LOOP_ITEMS:
+                raise ValueError(f"Dynamic collections are limited to {MAX_LOOP_ITEMS} items.")
+        if isinstance(node.op, ast.Mult):
+            sequence, multiplier = (left, right) if isinstance(right, int) else (right, left)
+            if type(sequence) is str and isinstance(multiplier, int):
+                if len(sequence) * max(multiplier, 0) > MAX_TOOL_OUTPUT_BYTES:
+                    raise ValueError("Dynamic string results are limited to 128 KB.")
+            if type(sequence) in {list, tuple} and isinstance(multiplier, int):
+                if len(sequence) * max(multiplier, 0) > MAX_LOOP_ITEMS:
+                    raise ValueError(f"Dynamic collections are limited to {MAX_LOOP_ITEMS} items.")
+        result = operation(left, right)
+        _ensure_value_bounded(result)
+        return result
     if isinstance(node, ast.UnaryOp):
         operation = _UNARY_OPS.get(type(node.op))
         if operation is None:
@@ -127,7 +185,14 @@ def _eval(node: ast.AST, env: dict[str, Any], budget: _Budget) -> Any:
             function = _safe_method(target, node.func.attr)
             positional = [_eval(arg, env, budget) for arg in node.args]
             named = {item.arg: _eval(item.value, env, budget) for item in node.keywords}
-            return function(*positional, **named)
+            if type(target) is list and node.func.attr in {"append", "extend"}:
+                added = positional[0] if positional else []
+                additional = len(added) if node.func.attr == "extend" and type(added) in {list, tuple} else 1
+                if len(target) + additional > MAX_LOOP_ITEMS:
+                    raise ValueError(f"Dynamic collections are limited to {MAX_LOOP_ITEMS:,} items.")
+            result = function(*positional, **named)
+            _ensure_value_bounded(target)
+            return result
         raise ValueError("Only approved built-ins and data methods may be called.")
     if isinstance(node, ast.ListComp):
         if len(node.generators) > 3:
@@ -199,11 +264,13 @@ def run(source: str, arguments: dict[str, Any]) -> Any:
     tree = _parse_and_validate_source(source)
     function = tree.body[0]
     environment: dict[str, Any] = {"data": arguments}
+    _ensure_value_bounded(arguments, max_bytes=1_000_000)
     budget = _Budget()
     try:
         for statement in function.body:
             _run_statement(statement, environment, budget)
     except _ReturnValue as returned:
+        _ensure_value_bounded(returned.value)
         return returned.value
     return None
 
