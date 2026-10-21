@@ -12,6 +12,20 @@ if (Number.isNaN(port) || port <= 0) {
 }
 
 const basePath = process.env.BASE_PATH ?? "/__mockup";
+const allowedHosts = new Set(["localhost", "127.0.0.1", ".pike.replit.dev"]);
+for (const value of [process.env.REPLIT_DEV_DOMAIN, process.env.REPLIT_DOMAINS]) {
+  for (const entry of value?.split(/[,\s]+/) ?? []) {
+    if (!entry) continue;
+    try {
+      allowedHosts.add(
+        new URL(entry.includes("://") ? entry : `http://${entry}`).hostname,
+      );
+    } catch {
+      // Ignore malformed host overrides; Vite still keeps the explicit defaults.
+    }
+  }
+}
+const viteAllowedHosts = [...allowedHosts];
 
 export default defineConfig({
   base: basePath,
@@ -33,7 +47,7 @@ export default defineConfig({
   server: {
     port,
     host: "127.0.0.1",
-    allowedHosts: ["localhost", "127.0.0.1"],
+    allowedHosts: viteAllowedHosts,
     fs: {
       strict: true,
     },
@@ -41,6 +55,6 @@ export default defineConfig({
   preview: {
     port,
     host: "127.0.0.1",
-    allowedHosts: ["localhost", "127.0.0.1"],
+    allowedHosts: viteAllowedHosts,
   },
 });
