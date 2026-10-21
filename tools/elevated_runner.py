@@ -36,10 +36,6 @@ _BLOCKED_COMMANDS = (
 )
 
 
-def is_replit_runtime() -> bool:
-    return any(os.getenv(name) for name in ("REPL_ID", "REPLIT_DEV_DOMAIN", "REPLIT_DOMAINS"))
-
-
 def is_process_elevated() -> bool:
     if os.name == "nt":
         try:
@@ -134,9 +130,6 @@ def _elevation_argv(command: str) -> list[str]:
 
 def execute_elevated_command(command: str) -> dict[str, Any]:
     command = validate_elevated_command(command)
-    if is_replit_runtime():
-        _append_audit(command, "denied", reason="Replit-managed runtime is not eligible for local elevation.")
-        raise PermissionError("Administrative execution is available only from a local exported copy.")
     if is_process_elevated():
         _append_audit(command, "denied", reason="The assistant server is already running with elevated privileges.")
         raise PermissionError("Run the assistant as a normal user; it must not start with elevated privileges.")

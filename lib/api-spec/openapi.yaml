@@ -1042,7 +1042,7 @@ components:
           items:
             $ref: "#/components/schemas/WorkspaceHtmlEntry"
         pythonPreviewsEnabled: { type: boolean }
-        localAppPreviewsEnabled: { type: boolean, description: "Whether local Python and Vite app previews are enabled; always false in Replit Cloud." }
+        localAppPreviewsEnabled: { type: boolean, description: "Whether local Python and Vite app previews are enabled." }
         pythonPreviewRuntimeLimitSeconds: { type: integer, minimum: 1 }
         apps:
           type: array

@@ -1,7 +1,7 @@
 # Run the assistant locally
 
-The local app uses a Python/FastAPI server, a local SQLite database, and the
-provider API key you configure. It does not use Replit AI Integrations.
+The app uses a Python/FastAPI server, a local SQLite database, and the provider
+API key you configure.
 
 ## First-time setup
 
@@ -36,17 +36,15 @@ provider API key you configure. It does not use Replit AI Integrations.
 
 - SQLite history and workspace files live in `workspace/`.
 - Provider keys are saved in the `.env` file for the environment running the
-  app. Local changes require a loopback connection; Replit preview changes
-  require a same-origin request. The API never returns key values, and the file
-  is excluded from Git.
+  app. Changes are allowed only over a same-host localhost connection. The API
+  never returns key values, and the file is excluded from Git.
 - OpenAI, Gemini, and OpenRouter use their standard provider APIs through an
   OpenAI-compatible client. You supply and pay for your own provider account.
 - Local app previews are disabled by default. Enable **Enable Local App Previews
   (Unrestricted Workspace Execution)** in Preferences to let the assistant start
   Flask, Streamlit, or FastAPI apps from `workspace/`. They bind to localhost,
   use a cleaned environment without provider API keys, and are stopped when the
-  Live Preview panel closes or after one hour. They are always disabled in
-  Replit Cloud.
+  Live Preview panel closes or after one hour.
 - **Running generated Python apps executes code with standard local user
   permissions.** Setting `cwd=workspace/` does not confine file access: generated
   code can read or modify files your local account can access. Enable previews
@@ -54,10 +52,9 @@ provider API key you configure. It does not use Replit AI Integrations.
 
 ## Important
 
-Do not publish or share this personal assistant as a public service. The Replit
-preview Preferences page writes keys into that Replit workspace's `.env` file;
-task history and workspace data are designed for one user, not a multi-user
-deployment.
+Do not expose this personal assistant as a public service. Preferences writes
+keys into the local `.env` file; task history and workspace data are designed
+for one user, not a multi-user deployment.
 
 ## Web search and rendered pages
 
@@ -94,4 +91,4 @@ bypass them. Search APIs are the more reliable choice for unattended research.
 
 Grounding answers, source links, search suggestions, and raw metadata are stored
 with tool messages in the current chat and remain visible under Thinking and the
-answer's Sources section after reloads. No Replit AI credits or proxy is used.
+answer's Sources section after reloads.

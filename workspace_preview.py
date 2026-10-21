@@ -47,8 +47,7 @@ class WorkspacePreviewError(ValueError):
 
 
 def local_app_previews_enabled() -> bool:
-    in_replit = any(os.getenv(name) for name in ("REPL_ID", "REPLIT_DEV_DOMAIN", "REPLIT_DOMAINS"))
-    return not in_replit and os.getenv("RUN_LOCAL_APP_PREVIEWS", "false").strip().lower() == "true"
+    return os.getenv("RUN_LOCAL_APP_PREVIEWS", "false").strip().lower() == "true"
 
 
 def resolve_workspace_path(
@@ -641,8 +640,7 @@ class WorkspacePreviewManager:
         if not local_app_previews_enabled():
             raise PermissionError(
                 "Local app previews are disabled. Enable “Enable Local App Previews "
-                "(Unrestricted Workspace Execution)” in Preferences on a local copy. They are always "
-                "disabled in Replit Cloud."
+                "(Unrestricted Workspace Execution)” in Preferences."
             )
         script = (
             resolve_workspace_vite_project(self.workspace, entry_path)

@@ -3,7 +3,7 @@
 Forge is a local-first assistant with a Python/FastAPI backend, a React/Vite
 frontend, a local SQLite database, and an optional Electron desktop window.
 Provider API keys are supplied by you and stored locally; Forge does not require
-Replit AI services.
+an account with a hosted AI proxy.
 
 ## Prerequisites
 

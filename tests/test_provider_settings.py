@@ -31,9 +31,6 @@ class ProviderSettingsTests(unittest.IsolatedAsyncioTestCase):
                 "OPENAI_API_KEY": "",
                 "GEMINI_API_KEY": "",
                 "OPENROUTER_API_KEY": "",
-                "REPL_ID": "",
-                "REPLIT_DEV_DOMAIN": "",
-                "REPLIT_DOMAINS": "",
                 "RUN_LOCAL_CODE": "false",
                 "RUN_LOCAL_APP_PREVIEWS": "false",
             },
@@ -129,18 +126,10 @@ class ProviderSettingsTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(dotenv_values(self.env_file)["AGENT_PROVIDER"], "anthropic")
         self.assertEqual(dotenv_values(self.env_file)["AGENT_MODEL"], "claude-opus-5-5")
 
-    async def test_same_origin_preview_can_write_provider_settings(self) -> None:
-        preview_origin = "https://assistant.replit.dev"
-        os.environ.update(
-            {
-                "REPL_ID": "test-repl",
-                "REPLIT_DEV_DOMAIN": "assistant.replit.dev",
-            }
-        )
-
+    async def test_same_host_local_frontend_origin_can_write_provider_settings(self) -> None:
         response = await self.put_settings(
-            base_url=preview_origin,
-            origin=preview_origin,
+            base_url="http://127.0.0.1:8000",
+            origin="http://127.0.0.1:5173",
             geminiApiKey="preview-test-gemini-key",
         )
 
@@ -148,16 +137,9 @@ class ProviderSettingsTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(dotenv_values(self.env_file)["GEMINI_API_KEY"], "preview-test-gemini-key")
         self.assertEqual(os.environ["GEMINI_API_KEY"], "preview-test-gemini-key")
 
-    async def test_untrusted_preview_origin_cannot_write_settings(self) -> None:
-        os.environ.update(
-            {
-                "REPL_ID": "test-repl",
-                "REPLIT_DEV_DOMAIN": "assistant.replit.dev",
-            }
-        )
-
+    async def test_untrusted_origin_cannot_write_settings(self) -> None:
         response = await self.put_settings(
-            base_url="https://assistant.replit.dev",
+            base_url="http://127.0.0.1:8000",
             origin="https://attacker.example",
             geminiApiKey="must-not-be-saved",
         )
@@ -191,30 +173,18 @@ class ProviderSettingsTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(os.environ["RUN_LOCAL_3D_ENGINE_TOOLS"], "true")
         self.assertTrue(response.json()["engineToolsEnabled"])
 
-    async def test_replit_cannot_enable_local_3d_engine_tools(self) -> None:
-        preview_origin = "https://assistant.replit.dev"
-        os.environ.update({
-            "REPL_ID": "test-repl",
-            "REPLIT_DEV_DOMAIN": "assistant.replit.dev",
-        })
+    async def test_remote_origin_cannot_enable_local_3d_engine_tools(self) -> None:
         response = await self.put_settings(
-            base_url=preview_origin,
-            origin=preview_origin,
+            base_url="http://127.0.0.1:8000",
+            origin="https://remote.example",
             engineToolsEnabled=True,
         )
         self.assertEqual(response.status_code, 403, response.text)
 
-    async def test_replit_cannot_enable_local_python_previews(self) -> None:
-        preview_origin = "https://assistant.replit.dev"
-        os.environ.update(
-            {
-                "REPL_ID": "test-repl",
-                "REPLIT_DEV_DOMAIN": "assistant.replit.dev",
-            }
-        )
+    async def test_remote_origin_cannot_enable_local_python_previews(self) -> None:
         response = await self.put_settings(
-            base_url=preview_origin,
-            origin=preview_origin,
+            base_url="http://127.0.0.1:8000",
+            origin="https://remote.example",
             appPreviewsEnabled=True,
         )
         self.assertEqual(response.status_code, 403)
@@ -573,8 +543,7 @@ class ProviderSettingsTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(start_task.json()["detail"], expected)
 
     async def test_new_settings_actions_reject_untrusted_origins(self) -> None:
-        os.environ.update({"REPL_ID": "test-repl", "REPLIT_DEV_DOMAIN": "assistant.replit.dev"})
-        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=main.app), base_url="https://assistant.replit.dev", headers={"Origin": "https://attacker.example"}) as client:
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=main.app), base_url="http://127.0.0.1:8000", headers={"Origin": "https://attacker.example"}) as client:
             keys = await client.put("/api/assistant/settings/keys", json={"geminiApiKey": "must-not-save"})
             model = await client.patch("/api/assistant/settings/model", json={"provider": "gemini", "modelId": "gemini-3.8-flash"})
         self.assertEqual(keys.status_code, 403)

@@ -184,18 +184,17 @@ class WorkspaceSafetyTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result["saved"])
         self.assertEqual(source_path.read_text(encoding="utf-8"), "after()")
 
-        runtime_config = self.root / ".replit"
-        runtime_config.write_text("run = 'python main.py'\n", encoding="utf-8")
+        database_config = self.workspace / "approval-test.db"
         pending = json.loads(await main.execute_tool(
             "write_file",
-            {"path": ".replit", "content": "run = 'python other.py'\n"},
+            {"path": "workspace/approval-test.db", "content": "database replacement"},
             "gemini",
             {"model": "test-model"},
             "",
             "test-task",
         ))
         self.assertTrue(pending["approvalRequired"])
-        self.assertEqual(runtime_config.read_text(encoding="utf-8"), "run = 'python main.py'\n")
+        self.assertFalse(database_config.exists())
 
     def test_source_write_paths_are_not_misclassified_as_critical(self) -> None:
         for path in (
@@ -212,7 +211,7 @@ class WorkspaceSafetyTests(unittest.IsolatedAsyncioTestCase):
                 ))
         self.assertIsNotNone(main.workspace_action_requiring_approval(
             "write_file",
-            {"path": ".replit", "content": "run = 'python main.py'\n"},
+            {"path": "workspace/approval-test.db", "content": "database replacement"},
         ))
 
     async def test_critical_recursive_shell_command_only_returns_approval_request(self) -> None:
@@ -277,10 +276,7 @@ class WorkspaceSafetyTests(unittest.IsolatedAsyncioTestCase):
 
     def test_engine_actions_are_local_opt_in_and_stage_exact_review_details(self) -> None:
         script = "import bpy\nbpy.context.scene.frame_end = 48\n"
-        with (
-            patch.object(main, "is_replit_runtime", return_value=False),
-            patch.object(main, "local_engine_tools_available", return_value=True),
-        ):
+        with patch.object(main, "local_engine_tools_available", return_value=True):
             staged = main.workspace_action_requiring_approval(
                 "run_blender_automation",
                 {"script_content": script, "render_output_path": "renders/scene.png"},
@@ -303,7 +299,6 @@ class WorkspaceSafetyTests(unittest.IsolatedAsyncioTestCase):
             "send_engine_remote_command", remote[1]
         ))
         with (
-            patch.object(main, "is_replit_runtime", return_value=False),
             patch.object(main, "local_engine_tools_available", return_value=False),
             self.assertRaises(PermissionError),
         ):
@@ -311,16 +306,6 @@ class WorkspaceSafetyTests(unittest.IsolatedAsyncioTestCase):
                 "run_blender_automation",
                 {"script_content": script},
             )
-        with (
-            patch.object(main, "is_replit_runtime", return_value=True),
-            patch.object(main, "local_engine_tools_available", return_value=True),
-            self.assertRaises(PermissionError),
-        ):
-            main.workspace_action_requiring_approval(
-                "send_engine_remote_command",
-                {"engine": "unreal", "endpoint_url": "http://localhost:30010", "payload": {}},
-            )
-
     def test_windows_npm_batch_shim_is_replaced_with_node_cli(self) -> None:
         node = self.root / "node.exe"
         npm = self.root / "npm.cmd"
@@ -536,30 +521,15 @@ class WorkspaceSafetyTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(preview["framework"], "static")
         with patch.dict(
             "os.environ",
-            {
-                "RUN_LOCAL_APP_PREVIEWS": "false",
-                "REPL_ID": "",
-                "REPLIT_DEV_DOMAIN": "",
-                "REPLIT_DOMAINS": "",
-            },
+            {"RUN_LOCAL_APP_PREVIEWS": "false"},
         ):
             with self.assertRaises(PermissionError):
                 await manager.launch("flask", "app.py")
 
-    async def test_replit_cloud_disables_python_previews_even_if_env_flag_is_true(self) -> None:
+    async def test_local_app_preview_opt_in_enables_dynamic_previews(self) -> None:
         manager = main.WorkspacePreviewManager(self.workspace)
-        with patch.dict(
-            "os.environ",
-            {
-                "RUN_LOCAL_APP_PREVIEWS": "true",
-                "REPL_ID": "test-repl",
-                "REPLIT_DEV_DOMAIN": "assistant.replit.dev",
-                "REPLIT_DOMAINS": "",
-            },
-        ):
-            self.assertFalse(manager.get_status()["pythonPreviewsEnabled"])
-            with self.assertRaises(PermissionError):
-                await manager.launch("flask", "app.py")
+        with patch.dict("os.environ", {"RUN_LOCAL_APP_PREVIEWS": "true"}):
+            self.assertTrue(manager.get_status()["pythonPreviewsEnabled"])
 
     async def test_python_preview_files_remain_confined_and_can_be_updated_directly(self) -> None:
         created = main.write_workspace_app_script(
@@ -717,9 +687,6 @@ class WorkspaceSafetyTests(unittest.IsolatedAsyncioTestCase):
             "os.environ",
             {
                 "RUN_LOCAL_APP_PREVIEWS": "true",
-                "REPL_ID": "",
-                "REPLIT_DEV_DOMAIN": "",
-                "REPLIT_DOMAINS": "",
                 "OPENAI_API_KEY": "parent-process-key-must-not-be-inherited",
             },
         ):
@@ -754,12 +721,7 @@ class WorkspaceSafetyTests(unittest.IsolatedAsyncioTestCase):
         manager = main.WorkspacePreviewManager(self.workspace)
         with patch.dict(
             "os.environ",
-            {
-                "RUN_LOCAL_APP_PREVIEWS": "true",
-                "REPL_ID": "",
-                "REPLIT_DEV_DOMAIN": "",
-                "REPLIT_DOMAINS": "",
-            },
+            {"RUN_LOCAL_APP_PREVIEWS": "true"},
         ):
             try:
                 launched = await manager.launch("streamlit", "streamlit_app.py")
@@ -786,12 +748,7 @@ class WorkspaceSafetyTests(unittest.IsolatedAsyncioTestCase):
         manager = main.WorkspacePreviewManager(self.workspace)
         with patch.dict(
             "os.environ",
-            {
-                "RUN_LOCAL_APP_PREVIEWS": "true",
-                "REPL_ID": "",
-                "REPLIT_DEV_DOMAIN": "",
-                "REPLIT_DOMAINS": "",
-            },
+            {"RUN_LOCAL_APP_PREVIEWS": "true"},
         ):
             try:
                 launched = await manager.launch("fastapi", "fastapi_app.py")
@@ -940,10 +897,7 @@ class WorkspaceSafetyTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(pending["status"], "rejected")
 
     async def test_elevated_request_is_only_staged_for_approval(self) -> None:
-        with (
-            patch.object(main, "is_replit_runtime", return_value=False),
-            patch.object(main, "is_process_elevated", return_value=False),
-        ):
+        with patch.object(main, "is_process_elevated", return_value=False):
             staged = main.workspace_action_requiring_approval(
                 "execute_elevated_command",
                 {"command": "ipconfig /flushdns"},
@@ -1008,7 +962,6 @@ class WorkspaceSafetyTests(unittest.IsolatedAsyncioTestCase):
             return None
 
         with (
-            patch.object(main, "is_replit_runtime", return_value=False),
             patch.object(main, "local_code_runner_available", return_value=True),
             patch.object(
                 main,
@@ -1084,7 +1037,6 @@ class WorkspaceSafetyTests(unittest.IsolatedAsyncioTestCase):
             return None
 
         with (
-            patch.object(main, "is_replit_runtime", return_value=False),
             patch.object(main, "local_engine_tools_available", return_value=True),
             patch.object(main, "run_blender_automation", return_value={
                 "ok": True, "returnCode": 0, "stdout": "done", "stderr": "", "renderedOutputPaths": []
@@ -1132,7 +1084,6 @@ class WorkspaceSafetyTests(unittest.IsolatedAsyncioTestCase):
             return None
 
         with (
-            patch.object(main, "is_replit_runtime", return_value=False),
             patch.object(main, "local_engine_tools_available", return_value=True),
             patch.object(
                 main,

@@ -1709,53 +1709,37 @@ def is_loopback_request(request: Request) -> bool:
     return remote_is_local and host in {"localhost", "127.0.0.1", "::1"}
 
 
-def is_replit_runtime() -> bool:
-    return any(os.getenv(name) for name in ("REPL_ID", "REPLIT_DEV_DOMAIN", "REPLIT_DOMAINS"))
-
-
 def is_local_setup_allowed(request: Request) -> bool:
-    return not is_replit_runtime() and is_loopback_request(request)
+    return is_loopback_request(request)
 
 
-def _host_name(value: str | None) -> str | None:
-    if not value:
-        return None
-    parsed = urlparse(value if "://" in value else f"//{value}")
-    return parsed.hostname.lower() if parsed.hostname else None
-
-
-def is_same_origin_preview_request(request: Request) -> bool:
-    origin = request.headers.get("origin")
-    parsed_origin = urlparse(origin or "")
-    if parsed_origin.scheme not in {"http", "https"} or not parsed_origin.hostname:
+def is_trusted_local_origin_request(request: Request) -> bool:
+    """Allow same-host local browser requests, but never remote-origin settings writes."""
+    if not is_loopback_request(request):
         return False
-    origin_host = parsed_origin.hostname.lower()
-
-    configured_domains = {
-        host
-        for name in ("REPLIT_DEV_DOMAIN", "REPLIT_DOMAINS")
-        for domain in re.split(r"[,;\s]+", os.getenv(name, ""))
-        for host in [_host_name(domain.strip())]
-        if host
-    }
-    if origin_host in configured_domains:
+    origin = request.headers.get("origin")
+    if not origin:
         return True
-    # Replit's workspace preview can present its same-origin browser context via loopback.
-    return origin_host in {"localhost", "127.0.0.1", "::1"}
+    parsed_origin = urlparse(origin)
+    parsed_host = urlparse(f"//{request.headers.get('host', '')}")
+    return (
+        parsed_origin.scheme == "http"
+        and parsed_origin.hostname is not None
+        and parsed_host.hostname is not None
+        and parsed_origin.hostname.lower() == parsed_host.hostname.lower()
+    )
 
 
 def can_manage_provider_settings(request: Request) -> bool:
-    if not is_replit_runtime():
-        return is_loopback_request(request)
-    return is_same_origin_preview_request(request)
+    return is_trusted_local_origin_request(request)
 
 
 def local_code_runner_available() -> bool:
-    return not is_replit_runtime() and os.getenv("RUN_LOCAL_CODE", "false").lower() == "true"
+    return os.getenv("RUN_LOCAL_CODE", "false").lower() == "true"
 
 
 def local_engine_tools_available() -> bool:
-    return not is_replit_runtime() and os.getenv("RUN_LOCAL_3D_ENGINE_TOOLS", "false").lower() == "true"
+    return os.getenv("RUN_LOCAL_3D_ENGINE_TOOLS", "false").lower() == "true"
 
 
 def get_settings(local_allowed: bool, provider_settings_allowed: bool) -> dict[str, Any]:
@@ -3813,7 +3797,7 @@ def _preview_request_headers(request: Request, app_id: str, prefix: str) -> dict
         name: value
         for name, value in request.headers.items()
         if name.lower() not in blocked
-        and not name.lower().startswith(("x-replit-", "replit-", "x-forwarded-"))
+        and not name.lower().startswith("x-forwarded-")
     }
     selected_cookies = _preview_cookie_for_upstream(request.headers.get("cookie", ""), app_id)
     if selected_cookies:
@@ -3919,17 +3903,14 @@ SENSITIVE_PROJECT_FILE_NAMES = frozenset({
     ".npmrc",
 })
 CRITICAL_PROJECT_FILE_NAMES = frozenset({
-    ".replit",
     "main.py",
     "package.json",
     "pnpm-lock.yaml",
     "pyproject.toml",
-    "replit.nix",
     "requirements.txt",
     "tools/agent_tools.py",
     "tools/model_client.py",
 })
-CRITICAL_PROJECT_WRITE_FILE_NAMES = frozenset({".replit", "replit.nix"})
 CRITICAL_TERMINAL_PATTERNS = (
     r"^\s*format(?:\.com|\.exe)?\b",
     r"^\s*diskpart(?:\.exe)?\b",
@@ -3956,13 +3937,10 @@ def is_critical_project_path(path_value: str | Path) -> bool:
 
 
 def is_critical_project_write_path(path_value: str | Path) -> bool:
-    """Human-gate runtime/bootstrap configuration and databases, not normal source edits."""
+    """Human-gate database writes, not ordinary project source/configuration edits."""
     target = project_path(path_value, allow_missing=True)
     relative = project_relative_path(target).casefold()
-    return (
-        relative in CRITICAL_PROJECT_WRITE_FILE_NAMES
-        or relative.endswith((".db", ".sqlite", ".sqlite3"))
-    )
+    return relative.endswith((".db", ".sqlite", ".sqlite3"))
 
 
 def is_sensitive_project_path(path_value: str | Path) -> bool:
@@ -4221,8 +4199,6 @@ def workspace_action_requiring_approval(
                 f"Run {critical_terminal_command_reason(command, cwd)} from {project_relative_path(directory)}",
             )
     if tool_name == "execute_elevated_command":
-        if is_replit_runtime():
-            raise PermissionError("Administrative execution is available only from a local exported copy.")
         if is_process_elevated():
             raise PermissionError("The assistant server must run as a normal user, not as administrator or root.")
         command = validate_elevated_command(str(arguments.get("command", "")))
@@ -4232,9 +4208,9 @@ def workspace_action_requiring_approval(
             command,
         )
     if tool_name == "run_blender_automation":
-        if is_replit_runtime() or not local_engine_tools_available():
+        if not local_engine_tools_available():
             raise PermissionError(
-                "Blender automation is disabled. Enable local Blender and Unreal tools in Preferences in a localhost copy."
+                "Blender automation is disabled. Enable local Blender and Unreal tools in Preferences."
             )
         script_content = arguments.get("script_content")
         blend_filepath = arguments.get("blend_filepath")
@@ -4264,9 +4240,9 @@ def workspace_action_requiring_approval(
             f"Run Blender Python automation with normal local-user permissions{target_summary}",
         )
     if tool_name == "send_engine_remote_command":
-        if is_replit_runtime() or not local_engine_tools_available():
+        if not local_engine_tools_available():
             raise PermissionError(
-                "Local engine commands are disabled. Enable local Blender and Unreal tools in Preferences in a localhost copy."
+                "Local engine commands are disabled. Enable local Blender and Unreal tools in Preferences."
             )
         validated = validate_engine_remote_request(
             str(arguments.get("engine", "")),
@@ -4628,8 +4604,6 @@ async def execute_tool(
         except (WorkspacePreviewError, OSError) as error:
             return json.dumps({"error": str(error)[:500]}, ensure_ascii=False)
     if name == "execute_elevated_command":
-        if is_replit_runtime():
-            return json.dumps({"error": "Administrative execution is available only from a local exported copy."})
         if is_process_elevated():
             return json.dumps({"error": "The assistant server must run as a normal user, not as administrator or root."})
         try:
@@ -4733,9 +4707,9 @@ async def execute_tool(
         except (PermissionError, TimeoutError, OSError, subprocess.SubprocessError, ValueError) as error:
             return json.dumps({"error": str(error)[:1000]}, ensure_ascii=False)
     if name in {"run_blender_automation", "send_engine_remote_command"}:
-        if is_replit_runtime() or not local_engine_tools_available():
+        if not local_engine_tools_available():
             return json.dumps({
-                "error": "Local Blender and Unreal tools are disabled. Enable them in Preferences in a localhost copy."
+                "error": "Local Blender and Unreal tools are disabled. Enable them in Preferences."
             })
         try:
             if name == "run_blender_automation":
@@ -4787,9 +4761,9 @@ TOOLS = [
     {"type": "function", "function": {"name": "write_workspace_preview_file", "description": "When the user explicitly requests a static website, write or update UTF-8 HTML, CSS, JavaScript, JSON, SVG, or font/image assets inside workspace/. Keep linked assets relative and use index.html as the entry point. Existing workspace assets may be replaced immediately for the requested build or redesign. Do not write private data, executables, or files outside workspace/.", "parameters": {"type": "object", "properties": {"path": {"type": "string", "description": "Workspace-relative web asset path, such as index.html or assets/site.css."}, "content": {"type": "string", "maxLength": 2097152}}, "required": ["path", "content"]}}},
     {"type": "function", "function": {"name": "delete_workspace_file", "description": "Delete one task-scoped regular file inside the project immediately. Protected Forge/core or secret files and broad/recursive removals pause for human approval.", "parameters": {"type": "object", "properties": {"path": {"type": "string", "description": "Project-root-relative or absolute path to one file inside the project."}}, "required": ["path"]}}},
     {"type": "function", "function": {"name": "delete_file", "description": "Delete one task-scoped regular file inside the project immediately. Protected Forge/core or secret files and broad/recursive removals pause for human approval.", "parameters": {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]}}},
-    {"type": "function", "function": {"name": "execute_elevated_command", "description": "Request one single-line administrative command for a local exported copy. This never executes immediately: it pauses for explicit task-details approval and shows the exact command. Shell chaining, redirection, inline script execution, and known destructive commands are blocked even after approval. Request elevation only when the user's task actually requires it.", "parameters": {"type": "object", "properties": {"command": {"type": "string", "maxLength": 4000, "description": "The exact single-line command that will be shown for approval."}}, "required": ["command"]}}},
+    {"type": "function", "function": {"name": "execute_elevated_command", "description": "Request one single-line administrative command. This never executes immediately: it pauses for explicit task-details approval and shows the exact command. Shell chaining, redirection, inline script execution, and known destructive commands are blocked even after approval. Request elevation only when the user's task actually requires it.", "parameters": {"type": "object", "properties": {"command": {"type": "string", "maxLength": 4000, "description": "The exact single-line command that will be shown for approval."}}, "required": ["command"]}}},
     {"type": "function", "function": {"name": "write_workspace_app_script", "description": "Create or update a Python source file for a requested Flask, Streamlit, or FastAPI app inside workspace/. Use only when the user asked for an executable Python web app; this file runs only when the local preview preference is explicitly enabled. Existing workspace scripts may be replaced immediately for the requested build or redesign.", "parameters": {"type": "object", "properties": {"path": {"type": "string", "description": "Workspace-relative Python path, such as app.py or demos/weather/app.py."}, "content": {"type": "string", "maxLength": 2097152}}, "required": ["path", "content"]}}},
-    {"type": "function", "function": {"name": "launch_workspace_app", "description": "Launch a workspace app in the Live Preview. Static HTML works in Replit and locally. Flask, Streamlit, FastAPI, and Vite child processes are local-export-only and require the user to enable “Enable Local App Previews (Unrestricted Workspace Execution)” in Preferences. They run with normal local user permissions, a cleaned environment without provider API keys, a workspace working directory, loopback binding, and automatic cleanup.", "parameters": {"type": "object", "properties": {"framework": {"type": "string", "enum": ["static", "flask", "streamlit", "fastapi", "vite"]}, "entryPath": {"type": "string", "description": "HTML file path for static previews, Python source path for Python apps, or Vite project directory/package.json, relative to workspace/."}}, "required": ["framework", "entryPath"]}}},
+    {"type": "function", "function": {"name": "launch_workspace_app", "description": "Launch a workspace app in the Live Preview. Static HTML is available by default. Flask, Streamlit, FastAPI, and Vite child processes require the user to enable “Enable Local App Previews (Unrestricted Workspace Execution)” in Preferences. They run with normal local user permissions, a cleaned environment without provider API keys, a workspace working directory, loopback binding, and automatic cleanup.", "parameters": {"type": "object", "properties": {"framework": {"type": "string", "enum": ["static", "flask", "streamlit", "fastapi", "vite"]}, "entryPath": {"type": "string", "description": "HTML file path for static previews, Python source path for Python apps, or Vite project directory/package.json, relative to workspace/."}}, "required": ["framework", "entryPath"]}}},
     {"type": "function", "function": {"name": "stop_workspace_app", "description": "Stop a Python or Vite app started by this assistant using its registered preview ID.", "parameters": {"type": "object", "properties": {"appId": {"type": "string"}}, "required": ["appId"]}}},
     {
         "type": "function",
@@ -4884,7 +4858,7 @@ TOOLS = [
     {"type": "function", "function": {"name": "get_specialist_worker_result", "description": "Check a background specialist by workerId. Returns running status or a completed structured report with summary and artifacts.", "parameters": {"type": "object", "properties": {"workerId": {"type": "string"}}, "required": ["workerId"], "additionalProperties": False}}},
     {"type": "function", "function": {"name": "run_command", "description": "Execute a shell command with the server process's normal OS permissions and environment from the project root. Commands may affect data outside the project. Potentially destructive, administrative, or irreversible commands pause for explicit human approval. Execution times out after 300 seconds.", "parameters": {"type": "object", "properties": {"command": {"type": "string"}}, "required": ["command"]}}},
     {"type": "function", "function": {"name": "run_terminal_command", "description": "Execute a shell command with the server process's normal OS permissions and environment. Potentially destructive, administrative, or irreversible commands pause for explicit human approval. Commands may affect data outside the project. The command runs in the project root (or a project-relative cwd) and times out after 300 seconds.", "parameters": {"type": "object", "properties": {"command": {"type": "string"}, "cwd": {"type": "string", "default": ".", "description": "Project-relative working directory."}}, "required": ["command"]}}},
-    {"type": "function", "function": {"name": "run_blender_automation", "description": "Prepare one Blender bpy automation run. Available only in a local exported copy when the user enables local Blender and Unreal tools. Every generated script is shown in the approval UI and must be approved before it runs with normal local-user permissions; this is not a filesystem sandbox. The script is limited to 64 KB, paths must stay inside workspace/, Blender runs in background with embedded .blend auto-execution disabled, and the process has a 10-minute timeout. Returns stdout, stderr/error trace, status, and rendered output paths.", "parameters": {"type": "object", "properties": {"script_content": {"type": "string", "maxLength": 64000, "description": "The exact Python script using Blender's bpy API; shown to the user before execution."}, "blend_filepath": {"type": "string", "description": "Optional existing .blend file path relative to workspace/."}, "render_output_path": {"type": "string", "description": "Optional new PNG, JPG, EXR, TIF, or TIFF path relative to workspace/. Existing render files are not overwritten."}}, "required": ["script_content"]}}},
+    {"type": "function", "function": {"name": "run_blender_automation", "description": "Prepare one Blender bpy automation run. Available when the user enables local Blender and Unreal tools. Every generated script is shown in the approval UI and must be approved before it runs with normal local-user permissions; this is not a filesystem sandbox. The script is limited to 64 KB, paths must stay inside workspace/, Blender runs in background with embedded .blend auto-execution disabled, and the process has a 10-minute timeout. Returns stdout, stderr/error trace, status, and rendered output paths.", "parameters": {"type": "object", "properties": {"script_content": {"type": "string", "maxLength": 64000, "description": "The exact Python script using Blender's bpy API; shown to the user before execution."}, "blend_filepath": {"type": "string", "description": "Optional existing .blend file path relative to workspace/."}, "render_output_path": {"type": "string", "description": "Optional new PNG, JPG, EXR, TIF, or TIFF path relative to workspace/. Existing render files are not overwritten."}}, "required": ["script_content"]}}},
     {"type": "function", "function": {"name": "send_engine_remote_command", "description": "Prepare one JSON command for a local Blender or Unreal Engine listener. Only localhost HTTP or WebSocket endpoints are allowed. The exact endpoint and payload are shown in the approval UI and are never sent until the user approves. Requests are limited to 32 KB and 12 seconds; HTTP redirects are not followed.", "parameters": {"type": "object", "properties": {"engine": {"type": "string", "enum": ["blender", "unreal"]}, "endpoint_url": {"type": "string", "maxLength": 2000, "description": "A local listener URL, such as http://localhost:30010/remote/object/call or ws://127.0.0.1:8765."}, "payload": {"type": "object", "additionalProperties": True}}, "required": ["engine", "endpoint_url", "payload"]}}},
 ]
 
@@ -4993,7 +4967,7 @@ async def run_agent_task(
                 "Use previews only for the user's requested app. "
                 if local_app_previews_enabled()
                 else "Dynamic Python and Vite app previews are disabled. You may create a static HTML preview, but do not "
-                "launch generated processes. The user can enable local app previews in Preferences in an exported local copy. "
+                "launch generated processes. The user can enable local app previews in Preferences. "
             )
             terminal_guidance = (
                 "Use run_command and run_terminal_command for authorized shell work. Commands execute with shell=True and the "
@@ -5014,7 +4988,7 @@ async def run_agent_task(
                 "and is not a filesystem sandbox. "
                 if local_engine_tools_available()
                 else "Local Blender and Unreal engine tools are disabled. Do not call them or claim you ran 3D automation; the "
-                "user can enable them in Preferences in an exported localhost copy. "
+                "user can enable them in Preferences. "
             )
             system = (
                 "You are the supervisor for a local personal assistant. Break down the user's objective, use tools when useful, "
@@ -6496,7 +6470,7 @@ async def complete_approved_engine_action(
     file_ids: list[str],
 ) -> None:
     try:
-        if is_replit_runtime() or not local_engine_tools_available():
+        if not local_engine_tools_available():
             raise PermissionError("Local engine tools were disabled before execution.")
         if action == "blender_automation":
             checked = validate_blender_request(
@@ -6607,7 +6581,7 @@ async def choose_task_approval(task_id: str, body: TaskApprovalInput) -> dict[st
     critical_shell_payload: dict[str, Any] | None = None
     engine_payload: dict[str, Any] | None = None
     if body.approve and approval["action"] == "terminal_command":
-        if is_replit_runtime() or not local_code_runner_available():
+        if not local_code_runner_available():
             raise HTTPException(status_code=403, detail="Local terminal commands have been disabled.")
         terminal_payload = parse_json(approval["payload_json"], {})
         try:
@@ -6633,7 +6607,7 @@ async def choose_task_approval(task_id: str, body: TaskApprovalInput) -> dict[st
         except (PermissionError, OSError, ValueError) as error:
             raise HTTPException(status_code=422, detail=str(error)) from error
     if body.approve and approval["action"] in {"blender_automation", "engine_remote_command"}:
-        if is_replit_runtime() or not local_engine_tools_available():
+        if not local_engine_tools_available():
             raise HTTPException(status_code=403, detail="Local Blender and Unreal tools have been disabled.")
         engine_payload = parse_json(approval["payload_json"], {})
         try:
@@ -7023,10 +6997,9 @@ async def delete_file(file_id: str) -> None:
 
 @app.get("/api/assistant/settings")
 async def read_settings(request: Request) -> dict[str, Any]:
-    in_replit = is_replit_runtime()
     return get_settings(
         is_local_setup_allowed(request),
-        in_replit or is_loopback_request(request),
+        is_loopback_request(request),
     )
 
 
@@ -7043,7 +7016,7 @@ async def update_system_prompt(
     if not can_manage_provider_settings(request):
         raise HTTPException(
             status_code=403,
-            detail="The system prompt can only be changed from this app's preview or a local copy.",
+        detail="The system prompt can only be changed from this app on localhost.",
         )
     if SYSTEM_PROMPT_START.strip() in body.systemPrompt or SYSTEM_PROMPT_END.strip() in body.systemPrompt:
         raise HTTPException(status_code=422, detail="The prompt contains a reserved internal delimiter.")
@@ -7055,7 +7028,7 @@ async def update_settings(body: SettingsInput, request: Request) -> dict[str, An
     if not can_manage_provider_settings(request):
         raise HTTPException(
             status_code=403,
-            detail="Provider settings can only be changed from this app's preview or a local copy.",
+        detail="Provider settings can only be changed from this app on localhost.",
         )
     local_allowed = is_local_setup_allowed(request)
     if body.appPreviewsEnabled and not local_allowed:
@@ -7131,7 +7104,7 @@ async def update_settings(body: SettingsInput, request: Request) -> dict[str, An
 @app.patch("/api/assistant/settings/model")
 async def apply_working_model(body: ModelSelectionInput, request: Request) -> dict[str, Any]:
     if not can_manage_provider_settings(request):
-        raise HTTPException(status_code=403, detail="Model settings can only be changed from this app's preview or a local copy.")
+        raise HTTPException(status_code=403, detail="Model settings can only be changed from this app on localhost.")
     local_allowed = is_local_setup_allowed(request)
     provider, model = resolve_model_provider(body.provider, body.modelId)
     if provider == "ollama" and not local_allowed:
@@ -7156,7 +7129,7 @@ async def apply_working_model(body: ModelSelectionInput, request: Request) -> di
 @app.put("/api/assistant/settings/keys")
 async def save_provider_keys(body: ProviderKeysInput, request: Request) -> dict[str, Any]:
     if not can_manage_provider_settings(request):
-        raise HTTPException(status_code=403, detail="Provider keys can only be changed from this app's preview or a local copy.")
+        raise HTTPException(status_code=403, detail="Provider keys can only be changed from this app on localhost.")
     local_allowed = is_local_setup_allowed(request)
     base_url = None
     if body.ollamaBaseUrl is not None:
@@ -7202,7 +7175,7 @@ async def read_vault_key_statuses() -> dict[str, str]:
 @app.post("/api/vault/keys")
 async def write_vault_keys(body: VaultKeysInput, request: Request) -> dict[str, str]:
     if not can_manage_provider_settings(request):
-        raise HTTPException(status_code=403, detail="API keys can only be changed from this app's preview or a local copy.")
+        raise HTTPException(status_code=403, detail="API keys can only be changed from this app on localhost.")
     base_url = None
     if body.ollamaBaseUrl is not None:
         try:
@@ -7242,7 +7215,7 @@ async def export_vault_backup(
     request: Request,
 ) -> Response:
     if not can_manage_provider_settings(request):
-        raise HTTPException(status_code=403, detail="Vault backups are only available from this app's preview or a local copy.")
+        raise HTTPException(status_code=403, detail="Vault backups are only available from this app on localhost.")
     try:
         backup = create_vault_backup(body.password)
     except VaultLockedError as error:
@@ -7267,7 +7240,7 @@ async def import_vault_backup(
     password: str = Form(..., min_length=VAULT_BACKUP_MIN_PASSWORD_LENGTH, max_length=1024),
 ) -> dict[str, Any]:
     if not can_manage_provider_settings(request):
-        raise HTTPException(status_code=403, detail="Vault backups are only available from this app's preview or a local copy.")
+        raise HTTPException(status_code=403, detail="Vault backups are only available from this app on localhost.")
     try:
         backup = await backup_file.read(MAX_VAULT_BACKUP_BYTES + 1)
     finally:
@@ -7283,10 +7256,8 @@ async def import_vault_backup(
 
 @app.patch("/api/assistant/settings/search")
 async def update_search_settings(body: SearchSettingsInput, request: Request) -> dict[str, Any]:
-    if not can_manage_provider_settings(request) or (
-        request.headers.get("origin") and not is_same_origin_preview_request(request)
-    ):
-        raise HTTPException(status_code=403, detail="Search settings can only be changed from this app's preview or a local copy.")
+    if not can_manage_provider_settings(request):
+        raise HTTPException(status_code=403, detail="Search settings can only be changed from this app on localhost.")
     for key, value in {
         "WEB_SEARCH_MODE": body.searchMode,
         "WEB_SEARCH_API_PROVIDER": body.searchApiProvider,
