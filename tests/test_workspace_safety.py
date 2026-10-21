@@ -784,9 +784,6 @@ class WorkspaceSafetyTests(unittest.IsolatedAsyncioTestCase):
             "os.environ",
             {
                 "RUN_LOCAL_APP_PREVIEWS": "true",
-                "REPL_ID": "",
-                "REPLIT_DEV_DOMAIN": "",
-                "REPLIT_DOMAINS": "",
             },
         ):
             try:

@@ -44,9 +44,6 @@ class LocalVaultTests(unittest.IsolatedAsyncioTestCase):
                 "GOLDAPI_IO_KEY": "",
                 "OILPRICEAPI_KEY": "",
                 "COMMODITY_API_KEY": "",
-                "REPL_ID": "",
-                "REPLIT_DEV_DOMAIN": "",
-                "REPLIT_DOMAINS": "",
             },
             clear=True,
         )

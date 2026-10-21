@@ -27,9 +27,6 @@ class AutoModelRoutingTests(unittest.IsolatedAsyncioTestCase):
                 "CLAUDE_API_KEY": "",
                 "DEEPSEEK_API_KEY": "",
                 "OPENROUTER_API_KEY": "",
-                "REPL_ID": "",
-                "REPLIT_DEV_DOMAIN": "",
-                "REPLIT_DOMAINS": "",
             },
             clear=True,
         )

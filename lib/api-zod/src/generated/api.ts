@@ -1268,7 +1268,7 @@ export const GetWorkspacePreviewResponse = zod.object({
   "projectModifiedAt": zod.string().describe('Nanosecond timestamp used to detect in-place HTML, CSS, and JavaScript edits.')
 })),
   "pythonPreviewsEnabled": zod.boolean(),
-  "localAppPreviewsEnabled": zod.boolean().describe('Whether local Python and Vite app previews are enabled; always false in Replit Cloud.'),
+  "localAppPreviewsEnabled": zod.boolean().describe('Whether local Python and Vite app previews are enabled.'),
   "pythonPreviewRuntimeLimitSeconds": zod.number().int().min(1),
   "apps": zod.array(zod.object({
   "id": zod.string().uuid(),
@@ -1352,7 +1352,7 @@ export const StopWorkspacePreviewAppResponse = zod.object({
   "projectModifiedAt": zod.string().describe('Nanosecond timestamp used to detect in-place HTML, CSS, and JavaScript edits.')
 })),
   "pythonPreviewsEnabled": zod.boolean(),
-  "localAppPreviewsEnabled": zod.boolean().describe('Whether local Python and Vite app previews are enabled; always false in Replit Cloud.'),
+  "localAppPreviewsEnabled": zod.boolean().describe('Whether local Python and Vite app previews are enabled.'),
   "pythonPreviewRuntimeLimitSeconds": zod.number().int().min(1),
   "apps": zod.array(zod.object({
   "id": zod.string().uuid(),
@@ -1390,7 +1390,7 @@ export const StopAllWorkspacePreviewAppsResponse = zod.object({
   "projectModifiedAt": zod.string().describe('Nanosecond timestamp used to detect in-place HTML, CSS, and JavaScript edits.')
 })),
   "pythonPreviewsEnabled": zod.boolean(),
-  "localAppPreviewsEnabled": zod.boolean().describe('Whether local Python and Vite app previews are enabled; always false in Replit Cloud.'),
+  "localAppPreviewsEnabled": zod.boolean().describe('Whether local Python and Vite app previews are enabled.'),
   "pythonPreviewRuntimeLimitSeconds": zod.number().int().min(1),
   "apps": zod.array(zod.object({
   "id": zod.string().uuid(),

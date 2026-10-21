@@ -3,9 +3,9 @@ name: Provider model availability
 description: Local-first provider boundary and verifying model catalogs without silently changing selection.
 ---
 
-The application must be portable to the user's PC and run with `python main.py` after export. Use personal provider keys from local configuration and standard provider clients, never Replit-managed AI proxies or AI credits.
+The application must be portable to the user's PC and run with `python main.py` after export. Use personal provider keys from local configuration and standard provider clients, with no dependency on hosted AI proxies or credits.
 
-**Why:** The user explicitly required 100% portability and repeated the instruction to stop relying on Replit AI Integrations.
+**Why:** The user explicitly requires a portable local application that works with their own provider accounts.
 
 **How to apply:** Keep provider calls independent of the hosting platform. Preserve masked key inputs and redacted configuration responses; never log credentials.
 

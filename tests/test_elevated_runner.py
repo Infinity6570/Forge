@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import base64
 import json
-import os
 import re
 import subprocess
 import tempfile
@@ -31,7 +30,6 @@ class ElevatedRunnerTests(unittest.TestCase):
     def test_linux_uses_pkexec_and_audits_exact_command(self) -> None:
         completed = subprocess.CompletedProcess([], 0, stdout="ok\n", stderr="")
         with (
-            patch.object(elevated_runner, "is_replit_runtime", return_value=False),
             patch.object(elevated_runner.platform, "system", return_value="Linux"),
             patch.object(elevated_runner.shutil, "which", side_effect=lambda name: "/usr/bin/pkexec" if name == "pkexec" else None),
             patch.object(elevated_runner.subprocess, "run", return_value=completed) as run,
@@ -63,7 +61,6 @@ class ElevatedRunnerTests(unittest.TestCase):
             return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")
 
         with (
-            patch.object(elevated_runner, "is_replit_runtime", return_value=False),
             patch.object(elevated_runner.platform, "system", return_value="Windows"),
             patch.object(elevated_runner.subprocess, "run", side_effect=fake_run),
         ):
@@ -73,18 +70,6 @@ class ElevatedRunnerTests(unittest.TestCase):
         self.assertFalse(captured["path"].exists())
         records = [json.loads(line) for line in self.audit_path.read_text(encoding="utf-8").splitlines()]
         self.assertEqual(records[-1]["command"], command)
-
-    def test_replit_runtime_is_refused_before_subprocess_execution(self) -> None:
-        with (
-            patch.dict(os.environ, {"REPL_ID": "test"}, clear=True),
-            patch.object(elevated_runner.subprocess, "run") as run,
-        ):
-            with self.assertRaises(PermissionError):
-                elevated_runner.execute_elevated_command("id")
-
-        run.assert_not_called()
-        record = json.loads(self.audit_path.read_text(encoding="utf-8").splitlines()[0])
-        self.assertEqual(record["event"], "denied")
 
     def test_empty_multiline_and_oversized_commands_are_rejected(self) -> None:
         for command in ("", "first\nsecond", "x" * 4001):

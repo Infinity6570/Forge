@@ -16,7 +16,7 @@ export interface WorkspacePreviewStatus {
   staticPreviewUrl: string | null;
   htmlEntries: WorkspaceHtmlEntry[];
   pythonPreviewsEnabled: boolean;
-  /** Whether local Python and Vite app previews are enabled; always false in Replit Cloud. */
+  /** Whether local Python and Vite app previews are enabled. */
   localAppPreviewsEnabled: boolean;
   /** @minimum 1 */
   pythonPreviewRuntimeLimitSeconds: number;
