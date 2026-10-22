@@ -43,6 +43,15 @@ from llm_protocol import TextCallback, assistant_turn, collect_completion, prepa
 from model_client import AnthropicChatClient
 from gemini_client import GeminiChatClient
 from benchlm_client import clear_benchlm_cache, fetch_benchlm_rankings
+from forge_doctor import run_checks as run_doctor
+from forge_resilience import call_with_transient_retry, is_transient_error
+from task_budget import (
+    configured_task_budget_usd,
+    configured_unpriced_token_ceiling,
+    evaluate_budget,
+)
+from tool_output_budget import cap_tool_output, elide_stale_tool_results
+from workspace_snapshots import snapshot_write_targets
 from usage_cost import (
     PRICING_UPDATED_AT,
     anthropic_usage_summary,
@@ -50,7 +59,7 @@ from usage_cost import (
     estimate_model_cost,
 )
 from conversation_threads import ThreadStore, thread_routers
-from history_display import display_task
+from history_display import display_task, retain_logs
 from task_text_stream import TaskTextStreamHub
 from pydantic import BaseModel, Field
 from websockets.asyncio.client import connect as websocket_connect
@@ -1511,7 +1520,8 @@ def log_task(
     message = redact_sensitive_output(message)
     message_limit = MAX_AGENT_LOG_CHARS if kind == "agent" else 2_000
     logs.append({"id": log_id, "message": message[:message_limit], "kind": kind, "timestamp": utc_now()})
-    logs = logs[-300:]
+    # Thinking summaries are exempt from this cap so they stay logged for the whole task.
+    logs = retain_logs(logs)
     if update_step:
         db_run(
             "UPDATE tasks SET logs_json=?, current_step=?, updated_at=? WHERE id=?",
@@ -2528,7 +2538,20 @@ async def run_specialist_worker(
         client: Any | None = None
         try:
             client = create_llm_client(attempt_provider)
-            for _ in range(SPECIALIST_MAX_TOOL_ROUNDS + 1):
+            for round_number in range(SPECIALIST_MAX_TOOL_ROUNDS + 1):
+                final_round = round_number == SPECIALIST_MAX_TOOL_ROUNDS
+                if final_round:
+                    # Tool rounds are used up. Ask for the written report now; otherwise a
+                    # model that keeps calling tools ends with no text and is recorded as
+                    # an "empty result", which escalates to ever more expensive tiers.
+                    messages.append({
+                        "role": "user",
+                        "content": (
+                            "The tool budget for this subtask is used up. Do not call any more tools. "
+                            "Write your final report now from the results already gathered, and state "
+                            "plainly what you could not verify."
+                        ),
+                    })
                 tools = specialist_tool_schemas(
                     read_only_tools=read_only_tools,
                     allow_workspace_write=allow_workspace_write,
@@ -2542,7 +2565,11 @@ async def run_specialist_worker(
                 if tools:
                     request["tools"] = tools
                     request["tool_choice"] = "auto"
-                response = await client.chat.completions.create(**request)
+                response = await call_with_transient_retry(
+                    lambda: client.chat.completions.create(**request),
+                    attempts=3,
+                    on_retry=lambda message: log_task(task_id, message, "warning", update_step=False),
+                )
                 completion = await collect_completion(response)
                 log_usage_ledger_entry(
                     task_id,
@@ -2563,6 +2590,10 @@ async def run_specialist_worker(
                 content = assistant_message.get("content")
                 calls = assistant_message.get("tool_calls") or []
                 if not calls:
+                    output = content.strip() if isinstance(content, str) else ""
+                    break
+                if final_round:
+                    # Ignore tool calls requested after the budget; keep any text the model gave.
                     output = content.strip() if isinstance(content, str) else ""
                     break
 
@@ -3231,7 +3262,7 @@ async def create_completion_with_fallback(
         if "messages" in request_kwargs:
             request_kwargs["messages"] = prepare_history(
                 hydrate_image_attachments(
-                    request_kwargs["messages"],
+                    elide_stale_tool_results(request_kwargs["messages"]),
                     provider,
                     str(request_kwargs.get("model") or model_state["model"]),
                 ),
@@ -3322,7 +3353,7 @@ async def create_completion_with_fallback(
                 return await request_completion()
             except Exception as error:
                 status_code = retryable_status(error)
-                if status_code not in {429, 503}:
+                if not is_transient_error(error):
                     raise
                 if attempt >= MAX_PROVIDER_ATTEMPTS - 1:
                     log_task(
@@ -5176,6 +5207,14 @@ def parse_critic_report(text: str) -> dict[str, Any]:
             "tests": [],
             "summary": "Automated review was inconclusive.",
         }
+    if isinstance(report, dict) and report.get("error") and "verdict" not in report:
+        return {
+            "verdict": "unavailable",
+            "findings": [],
+            "tests": [],
+            "summary": "",
+            "reason": str(report.get("error"))[:500],
+        }
     verdict = report.get("verdict")
     if verdict not in {"pass", "revise"}:
         verdict = "revise"
@@ -5185,12 +5224,36 @@ def parse_critic_report(text: str) -> dict[str, Any]:
         findings = [str(findings)]
     if not isinstance(tests, list):
         tests = [str(tests)]
-    return {
+    parsed = {
         "verdict": verdict,
         "findings": [str(item)[:500] for item in findings[:12]],
         "tests": [str(item)[:500] for item in tests[:12]],
         "summary": str(report.get("summary", ""))[:1_000],
     }
+    if (
+        parsed["verdict"] == "revise"
+        and not parsed["findings"]
+        and not parsed["tests"]
+        and not parsed["summary"].strip()
+    ):
+        # A "revise" that names no problem gives the primary agent nothing to correct, so
+        # looping it through repair rounds cannot help. Report the review as inconclusive.
+        return {
+            "verdict": "unavailable",
+            "findings": [],
+            "tests": [],
+            "summary": "",
+            "reason": "the reviewer asked for revisions but listed no findings, tests, or summary",
+        }
+    return parsed
+
+
+def critic_unavailable_note(report: dict[str, Any]) -> str:
+    reason = str(report.get("reason") or "the review worker returned no result")
+    return (
+        "\n\nAutomated review did not run, so these changes were not independently verified: "
+        + reason
+    )
 
 
 async def run_task_critic(
@@ -5228,12 +5291,43 @@ async def run_task_critic(
         allow_terminal_execution=True,
     )
     report = parse_critic_report(output)
+    if report["verdict"] == "unavailable":
+        log_task(task_id, "Critic could not run: " + str(report.get("reason", ""))[:300], "warning")
+        return report
     log_task(
         task_id,
         f"Critic verdict: {report['verdict']} — {report['summary'] or '; '.join(report['findings'][:2]) or 'review finished'}",
         "success" if report["verdict"] == "pass" else "warning",
     )
     return report
+
+
+_BUDGET_WARNINGS_LOGGED: dict[str, int] = {}
+
+
+def enforce_task_budget(task_id: str) -> str | None:
+    """Return a stop reason when a task exceeds its spend ceiling, else None.
+
+    Fails closed: if the ledger cannot be read, the task stops rather than running unmetered.
+    """
+    try:
+        rows = db_all(
+            "SELECT input_tokens,output_tokens,cache_write_tokens,cache_read_tokens,cost_usd,cost_known "
+            "FROM usage_ledger WHERE task_id=? ORDER BY created_at, rowid",
+            (task_id,),
+        )
+    except (sqlite3.Error, OSError) as error:
+        return f"Budget guard could not read usage for this task, so it was stopped: {redact_provider_keys(str(error))[:200]}"
+    status = evaluate_budget(
+        [dict(row) for row in rows],
+        budget_usd=configured_task_budget_usd(),
+        unpriced_token_ceiling=configured_unpriced_token_ceiling(),
+    )
+    seen = _BUDGET_WARNINGS_LOGGED.get(task_id, 0)
+    for warning in status.warnings[seen:]:
+        log_task(task_id, warning, "warning", update_step=False)
+    _BUDGET_WARNINGS_LOGGED[task_id] = len(status.warnings)
+    return status.reason
 
 
 async def run_agent_task(
@@ -5558,6 +5652,14 @@ async def run_agent_task(
             # ordinary tasks retain the configured tool-round cap.
             if iteration >= max_tool_rounds + critic_repair_rounds:
                 break
+            budget_stop = enforce_task_budget(task_id)
+            if budget_stop:
+                log_task(task_id, budget_stop, "warning")
+                db_run(
+                    "UPDATE tasks SET status='completed',error=?,current_step='Stopped by budget guard',updated_at=? WHERE id=?",
+                    (budget_stop, utc_now(), task_id),
+                )
+                return
             log_task(
                 task_id,
                 (
@@ -5666,6 +5768,12 @@ async def run_agent_task(
                             provider,
                             task_id,
                         )
+                        if report["verdict"] == "unavailable":
+                            critic_reviewed = True
+                            final_result += critic_unavailable_note(report)
+                            messages[-1]["content"] = final_result
+                            await publish_text(final_result)
+                            break
                         if report["verdict"] == "revise":
                             if critic_repair_rounds >= 2:
                                 raise RuntimeError(
@@ -5750,6 +5858,9 @@ async def run_agent_task(
                         raise ValueError("Tool inputs must be a JSON object.")
                     args = parsed_args
                     tool_log_id = log_task(task_id, tool_activity_summary(name, args), "tool")
+                    if name in WORKSPACE_WRITE_TOOL_NAMES:
+                        # Fail closed: if the pre-write snapshot cannot be made, the write does not run.
+                        snapshot_write_targets(PROJECT_DIR, task_id, [str(args.get("path", ""))])
                     output = await execute_tool(
                         name, args, provider, model_state, fallback_model, task_id
                     )
@@ -5771,7 +5882,7 @@ async def run_agent_task(
                     "name": name,
                     "args": args,
                     "log_id": tool_log_id,
-                    "output": output,
+                    "output": cap_tool_output(output, tool_name=name),
                     "failed": failed,
                 }
 
@@ -5871,7 +5982,10 @@ async def run_agent_task(
                     provider,
                     task_id,
                 )
-                if report["verdict"] != "pass":
+                if report["verdict"] == "unavailable":
+                    final_result += critic_unavailable_note(report)
+                    critic_reviewed = True
+                elif report["verdict"] != "pass":
                     raise RuntimeError(
                         "Automated review could not verify the written changes: "
                         + "; ".join(report["findings"][:4])
@@ -7381,6 +7495,12 @@ async def delete_note(note_id: str) -> None:
             raise HTTPException(status_code=403, detail="Refusing to delete a path outside the notes workspace.")
         stored_path.unlink(missing_ok=True)
     db_run("DELETE FROM notes WHERE id=?", (note_id,))
+
+
+@app.get("/api/assistant/doctor")
+async def forge_doctor_report() -> dict[str, Any]:
+    """Local health check: runtimes, database integrity, key presence (never values), pricing."""
+    return run_doctor(PROJECT_DIR, model_options=MODEL_OPTIONS)
 
 
 @app.get("/api/assistant/files")

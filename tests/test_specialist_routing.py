@@ -269,6 +269,52 @@ class SpecialistRoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(any("could not complete the subtask" in item["message"] for item in logs))
         self.assertFalse(any("escalated" in item["message"] for item in logs))
 
+    async def test_exhausted_tool_rounds_end_with_a_written_report_not_an_empty_result(self):
+        looping = [
+            completion(calls=[function_call("read_file", {"path": "a.txt"}, f"call-{i}")])
+            for i in range(main.SPECIALIST_MAX_TOOL_ROUNDS)
+        ]
+        create = AsyncMock(side_effect=[*looping, completion("Final report from gathered results.")])
+        client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+        execute = AsyncMock(return_value='{"content":"data"}')
+        with patch.object(main, "create_llm_client", return_value=client), \
+                patch.object(main, "execute_tool", new=execute):
+            result = await main.run_specialist_worker(
+                "Review the file.",
+                "openai",
+                "specialist-test",
+                role="analysis",
+                starting_tier="reasoning",
+                read_only_tools=True,
+            )
+
+        self.assertEqual(result, "Final report from gathered results.")
+        self.assertEqual(create.await_count, main.SPECIALIST_MAX_TOOL_ROUNDS + 1)
+        final_messages = create.await_args_list[-1].kwargs["messages"]
+        self.assertIn("tool budget", str(final_messages[-1]["content"]).lower())
+
+    async def test_tool_calls_requested_after_the_budget_are_not_executed(self):
+        looping = [
+            completion(calls=[function_call("read_file", {"path": "a.txt"}, f"call-{i}")])
+            for i in range(main.SPECIALIST_MAX_TOOL_ROUNDS + 1)
+        ]
+        create = AsyncMock(side_effect=looping)
+        client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+        execute = AsyncMock(return_value='{"content":"data"}')
+        with patch.object(main, "create_llm_client", return_value=client), \
+                patch.object(main, "execute_tool", new=execute):
+            result = await main.run_specialist_worker(
+                "Review the file.",
+                "openai",
+                "specialist-test",
+                role="analysis",
+                starting_tier="reasoning",
+                read_only_tools=True,
+            )
+
+        self.assertIn("could not complete", result)
+        self.assertEqual(execute.await_count, main.SPECIALIST_MAX_TOOL_ROUNDS)
+
     async def test_all_tools_are_exposed_but_ungranted_write_calls_are_not_executed(self):
         create = AsyncMock(side_effect=[
             completion(calls=[function_call("write_file", {"path": "nope.txt", "content": "blocked"})]),
