@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import ssl
 import tempfile
 import unittest
 from pathlib import Path
@@ -179,12 +180,18 @@ class AnthropicProviderRoutingTests(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_client_uses_official_async_anthropic_sdk(self) -> None:
-        with patch("model_client.anthropic.AsyncAnthropic") as sdk:
+        with patch("model_client.httpx.AsyncClient") as http_client_factory, \
+                patch("model_client.anthropic.AsyncAnthropic") as sdk:
             client = AnthropicChatClient("  sk-ant-test  ")
+        verify_context = http_client_factory.call_args.kwargs["verify"]
+        self.assertIsInstance(verify_context, ssl.SSLContext)
+        self.assertEqual(verify_context.verify_mode, ssl.CERT_REQUIRED)
+        self.assertTrue(verify_context.check_hostname)
         sdk.assert_called_once_with(
             api_key="sk-ant-test",
             timeout=90,
             max_retries=2,
+            http_client=http_client_factory.return_value,
         )
         client._sdk.close.assert_not_called()
 

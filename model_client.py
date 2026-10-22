@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import re
+import ssl
 import time
 import uuid
 from copy import deepcopy
@@ -10,6 +11,7 @@ from types import SimpleNamespace
 from typing import Any
 
 import anthropic
+import httpx
 from openai.types.chat import ChatCompletion
 
 from llm_protocol import to_wire
@@ -445,11 +447,23 @@ class AnthropicChatClient:
         resolved_key = api_key.strip()
         if not resolved_key:
             raise ValueError("An Anthropic API key is required.")
-        self._sdk = sdk_client or anthropic.AsyncAnthropic(
-            api_key=resolved_key,
-            timeout=90,
-            max_retries=2,
-        )
+        if sdk_client is None:
+            # The bundled certifi roots can be incomplete in some Linux
+            # distributions and managed runtimes. Use Python's verified system
+            # trust store instead; certificate validation remains enabled.
+            self._http_client = httpx.AsyncClient(
+                verify=ssl.create_default_context(),
+                timeout=90,
+            )
+            self._sdk = anthropic.AsyncAnthropic(
+                api_key=resolved_key,
+                timeout=90,
+                max_retries=2,
+                http_client=self._http_client,
+            )
+        else:
+            self._http_client = None
+            self._sdk = sdk_client
         self.chat = SimpleNamespace(completions=_AnthropicCompletions(self))
 
     async def close(self) -> None:
