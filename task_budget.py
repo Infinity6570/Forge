@@ -81,16 +81,26 @@ def evaluate_budget(
     )
 
 
+def context_tokens(row: dict[str, Any]) -> int:
+    """Total prompt context for one call, counting cached tokens exactly once.
+
+    Anthropic reports ``input_tokens`` as the uncached remainder, so cache reads and writes
+    are added. OpenAI, DeepSeek, and Gemini already include cached tokens in the prompt
+    count (cache_read_tokens is a subset of input_tokens), so only input_tokens is used.
+    """
+    provider = str(row.get("provider") or "").lower()
+    input_tokens = int(row.get("input_tokens") or 0)
+    if provider == "anthropic":
+        return input_tokens + int(row.get("cache_read_tokens") or 0) + int(row.get("cache_write_tokens") or 0)
+    return input_tokens
+
+
 def context_growth_warnings(rows: list[dict[str, Any]]) -> list[str]:
     """Flag rounds whose context roughly doubled, which usually signals a runaway loop."""
     warnings: list[str] = []
     previous = 0
     for index, row in enumerate(rows, start=1):
-        context = (
-            int(row.get("input_tokens") or 0)
-            + int(row.get("cache_read_tokens") or 0)
-            + int(row.get("cache_write_tokens") or 0)
-        )
+        context = context_tokens(row)
         if (
             previous > 0
             and context >= GROWTH_WARNING_MIN_CONTEXT

@@ -187,6 +187,29 @@ class SpendGuardTests(unittest.TestCase):
         self.assertIn("Model call 3", warnings[0])
 
 
+class ContextCountingTests(unittest.TestCase):
+    def test_openai_style_cached_tokens_are_not_double_counted(self):
+        from task_budget import context_tokens
+
+        row = {"provider": "deepseek", "input_tokens": 10_000, "cache_read_tokens": 9_000, "cache_write_tokens": 0}
+        self.assertEqual(context_tokens(row), 10_000)
+
+    def test_anthropic_cache_reads_and_writes_are_added(self):
+        from task_budget import context_tokens
+
+        row = {"provider": "anthropic", "input_tokens": 1_000, "cache_read_tokens": 9_000, "cache_write_tokens": 500}
+        self.assertEqual(context_tokens(row), 10_500)
+
+    def test_growth_warning_uses_the_corrected_count(self):
+        # 60k cached DeepSeek context growing to 70k is not a doubling. The old code
+        # counted cache reads twice and reported a false doubling.
+        rows = [
+            {"provider": "deepseek", "input_tokens": 60_000, "cache_read_tokens": 55_000},
+            {"provider": "deepseek", "input_tokens": 70_000, "cache_read_tokens": 65_000},
+        ]
+        self.assertEqual(context_growth_warnings(rows), [])
+
+
 class SnapshotTests(unittest.TestCase):
     def setUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()
@@ -230,6 +253,47 @@ class SnapshotTests(unittest.TestCase):
     def test_rejects_unsafe_task_ids(self) -> None:
         with self.assertRaises(ValueError):
             snapshot_write_targets(self.root, "../../etc", ["workspace/notes.txt"])
+
+
+class SnapshotTargetMappingTests(unittest.TestCase):
+    def test_project_root_tools_map_to_their_path(self):
+        import main
+
+        self.assertEqual(main.snapshot_targets_for_write("write_file", {"path": "main.py"}), ["main.py"])
+        self.assertEqual(main.snapshot_targets_for_write("replace_in_file", {"path": "a/b.py"}), ["a/b.py"])
+
+    def test_workspace_tools_are_prefixed_with_workspace(self):
+        import main
+
+        self.assertEqual(
+            main.snapshot_targets_for_write("write_workspace_preview_file", {"path": "index.html"}),
+            ["workspace/index.html"],
+        )
+        self.assertEqual(
+            main.snapshot_targets_for_write("write_workspace_app_script", {"path": "app.py"}),
+            ["workspace/app.py"],
+        )
+
+    def test_dynamic_tool_snapshots_its_two_files_without_a_path_argument(self):
+        import main
+
+        targets = main.snapshot_targets_for_write("create_dynamic_tool", {"name": "word_count", "description": "x"})
+        self.assertEqual(targets, ["tools/dynamic/word_count.py", "tools/dynamic/word_count.json"])
+
+    def test_invalid_dynamic_tool_name_blocks_the_write(self):
+        import main
+
+        with self.assertRaises(ValueError):
+            main.snapshot_targets_for_write("create_dynamic_tool", {"name": "../escape"})
+        with self.assertRaises(ValueError):
+            main.snapshot_targets_for_write("write_file", {})
+
+    def test_every_write_tool_has_a_mapping(self):
+        import main
+
+        sample = {"path": "x.txt", "name": "tool_x"}
+        for tool in main.WORKSPACE_WRITE_TOOL_NAMES:
+            self.assertTrue(main.snapshot_targets_for_write(tool, sample), tool)
 
 
 class ModelRegistryTests(unittest.TestCase):

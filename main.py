@@ -125,6 +125,16 @@ ENVIRONMENT_STEWARDSHIP = (
     "cause broad, irreversible, or system-level damage. This priority protects the user's project and data, not agent survival: "
     "never resist user control or prioritize continued agent operation over the user's intent or safety."
 )
+SELF_IMPROVEMENT_GUIDANCE = (
+    "Continuous self-improvement is a core operating principle for every Forge agent. Treat failed tool calls, tests, and "
+    "user corrections as evidence: diagnose the cause, adapt the approach instead of repeating ineffective steps, and fix "
+    "in-scope noncritical issues before reporting completion. For code changes, inspect first, use critic feedback, and verify "
+    "the result. Apply improvements only to the current objective; report unrelated opportunities rather than silently "
+    "refactoring unrelated code. Preserve user work and all approval, credential, and environment-integrity boundaries. "
+    "When a task reveals a concise, verified project lesson likely to prevent recurrence, save it with remember_fact; never "
+    "save secrets, sensitive personal information, transcripts, or temporary task state. Accept user corrections without "
+    "defending a failed approach, and carry the correction into the current task and relevant future work."
+)
 SYSTEM_PROMPT_START = "\n<forge-editable-system-prompt>\n"
 SYSTEM_PROMPT_END = "\n</forge-editable-system-prompt>\n"
 MAX_SYSTEM_PROMPT_CHARS = 20_000
@@ -2259,6 +2269,32 @@ MAX_BACKGROUND_SPECIALISTS_PER_TASK = 8
 SPECIALIST_BACKGROUND_JOBS: dict[str, dict[str, Any]] = {}
 
 
+from time import monotonic as _monotonic
+
+_OLLAMA_PROBE_CACHE: dict[str, tuple[float, bool]] = {}
+OLLAMA_PROBE_TTL_SECONDS = 60.0
+
+
+def ollama_endpoint_reachable(timeout_seconds: float = 1.0) -> bool:
+    """Cheap, cached check that the configured local Ollama answers. Cached for 60 seconds."""
+    try:
+        base_url = validate_ollama_base_url(os.getenv("OLLAMA_BASE_URL", DEFAULT_OLLAMA_BASE_URL))
+    except ValueError:
+        return False
+    now = _monotonic()
+    cached = _OLLAMA_PROBE_CACHE.get(base_url)
+    if cached and now - cached[0] < OLLAMA_PROBE_TTL_SECONDS:
+        return cached[1]
+    reachable = False
+    try:
+        response = httpx.get(f"{base_url}/models", timeout=timeout_seconds)
+        reachable = 200 <= response.status_code < 300
+    except (httpx.HTTPError, OSError, ValueError):
+        reachable = False
+    _OLLAMA_PROBE_CACHE[base_url] = (now, reachable)
+    return reachable
+
+
 def specialist_model_chain(provider: str, starting_tier: str) -> list[tuple[str, str]]:
     """Return available specialist models at or above a tier, within one provider."""
     if provider not in SPECIALIST_MODELS or provider not in MODEL_OPTIONS:
@@ -2315,6 +2351,9 @@ def specialist_route_plan(
         # Do not probe an implicit default localhost URL for every task. Ollama
         # joins arbitration when the user configured a URL or chose it directly.
         if provider == "ollama" and provider != parent_provider and not os.getenv("OLLAMA_BASE_URL", "").strip():
+            continue
+        # A configured but stopped local Ollama would fail every specialist tier first.
+        if provider == "ollama" and provider != parent_provider and not ollama_endpoint_reachable():
             continue
         try:
             configured = bool(credential_for(provider))
@@ -2527,6 +2566,7 @@ async def run_specialist_worker(
                     "do not report an approval-gated action as done. "
                     "Nested specialists do not inherit write or terminal grants. "
                     + ENVIRONMENT_STEWARDSHIP
+                    + " " + SELF_IMPROVEMENT_GUIDANCE
                     + " Return a concise report with evidence, assumptions, "
                     "and limitations. Do not provide private chain-of-thought."
                 ),
@@ -5302,6 +5342,26 @@ async def run_task_critic(
     return report
 
 
+def snapshot_targets_for_write(tool_name: str, args: dict[str, Any]) -> list[str]:
+    """Project-root-relative files a write tool may change, for the pre-write snapshot.
+
+    Workspace-scoped tools resolve paths under workspace/, so their targets are prefixed.
+    create_dynamic_tool takes no path; it writes tools/dynamic/<name>.py and .json.
+    Any path that does not resolve inside the project raises, which blocks the write.
+    """
+    if tool_name == "create_dynamic_tool":
+        name = str(args.get("name", "")).strip()
+        if not re.fullmatch(r"[a-z][a-z0-9_]{0,39}", name):
+            raise ValueError("Dynamic tool name is missing or invalid for snapshotting.")
+        return [f"tools/dynamic/{name}.py", f"tools/dynamic/{name}.json"]
+    relative = str(args.get("path", "")).strip()
+    if not relative:
+        raise ValueError("Write target path is missing.")
+    if tool_name in {"write_workspace_preview_file", "write_workspace_app_script"}:
+        return [f"workspace/{relative}"]
+    return [relative]
+
+
 _BUDGET_WARNINGS_LOGGED: dict[str, int] = {}
 
 
@@ -5312,7 +5372,7 @@ def enforce_task_budget(task_id: str) -> str | None:
     """
     try:
         rows = db_all(
-            "SELECT input_tokens,output_tokens,cache_write_tokens,cache_read_tokens,cost_usd,cost_known "
+            "SELECT provider,input_tokens,output_tokens,cache_write_tokens,cache_read_tokens,cost_usd,cost_known "
             "FROM usage_ledger WHERE task_id=? ORDER BY created_at, rowid",
             (task_id,),
         )
@@ -5326,6 +5386,8 @@ def enforce_task_budget(task_id: str) -> str | None:
     seen = _BUDGET_WARNINGS_LOGGED.get(task_id, 0)
     for warning in status.warnings[seen:]:
         log_task(task_id, warning, "warning", update_step=False)
+    if len(_BUDGET_WARNINGS_LOGGED) > 500:
+        _BUDGET_WARNINGS_LOGGED.clear()  # bound memory; worst case repeats a warning once
     _BUDGET_WARNINGS_LOGGED[task_id] = len(status.warnings)
     return status.reason
 
@@ -5475,7 +5537,8 @@ async def run_agent_task(
                 "provider credentials. "
                 "When running multiple specialists in parallel, assign non-overlapping write targets and keep concurrent "
                 "workers read-only unless their changes are independent. "
-                + ENVIRONMENT_STEWARDSHIP + " "
+                 + ENVIRONMENT_STEWARDSHIP + " "
+                 + SELF_IMPROVEMENT_GUIDANCE + " "
                 "Before finalizing, incorporate every started worker's summary and artifacts; the backend will wait for and "
                 "supply uncollected worker reports if you reach a final-answer turn first. "
                 "For literature reviews and clinical or academic paper searches, use academic_search for OpenAlex/Europe PMC discovery "
@@ -5488,8 +5551,9 @@ async def run_agent_task(
                 "Cross-chat project memory (up to five relevant saved facts, at most 3,500 characters total):\n"
                 + project_memory_context
                 + "\nWorkspace notes:\n" + (note_context or "(none)") +
-                "\nUse remember_fact only for concise, durable project facts the user wants available in future chats, "
-                "such as research protocols, clinical-work preferences, and architecture decisions. "
+                 "\nUse remember_fact for concise, durable project facts or verified lessons likely to improve future task "
+                 "quality or prevent repeat errors, such as research protocols and architecture decisions. Save them only when "
+                 "clearly useful across chats. "
                 "Use recall_memory to search saved facts when needed. Never save credentials, sensitive personal "
                 "information, whole chat transcripts, or transient task details. Saved memory is shared across chats; "
                 "ordinary conversation history is not.\n"
@@ -5860,7 +5924,7 @@ async def run_agent_task(
                     tool_log_id = log_task(task_id, tool_activity_summary(name, args), "tool")
                     if name in WORKSPACE_WRITE_TOOL_NAMES:
                         # Fail closed: if the pre-write snapshot cannot be made, the write does not run.
-                        snapshot_write_targets(PROJECT_DIR, task_id, [str(args.get("path", ""))])
+                        snapshot_write_targets(PROJECT_DIR, task_id, snapshot_targets_for_write(name, args))
                     output = await execute_tool(
                         name, args, provider, model_state, fallback_model, task_id
                     )
@@ -6579,6 +6643,57 @@ async def dashboard() -> dict[str, Any]:
         "notesCount": len(db_all("SELECT id FROM notes")),
         "filesCount": len(db_all("SELECT id FROM files")),
         "recentTasks": tasks,
+    }
+
+
+@app.get("/api/assistant/usage-daily")
+async def get_usage_daily(days: int = 30) -> dict[str, Any]:
+    """Token totals per UTC day and model, shaped like the provider console's usage view.
+
+    total_in counts each prompt once: Anthropic's input_tokens excludes cache, so cache reads
+    and writes are added; other providers' prompt counts already include cached tokens.
+    """
+    safe_days = max(1, min(int(days), 365))
+    since = (datetime.now(timezone.utc) - timedelta(days=safe_days)).strftime("%Y-%m-%d")
+    rows = db_all(
+        "SELECT substr(created_at,1,10) AS day, provider, model_id, COUNT(*) AS calls, "
+        "SUM(input_tokens) AS uncached_or_prompt_tokens, "
+        "SUM(cache_read_tokens) AS cache_read_tokens, "
+        "SUM(cache_write_tokens) AS cache_write_tokens, "
+        "SUM(output_tokens) AS output_tokens, "
+        "SUM(CASE WHEN provider='anthropic' THEN input_tokens + cache_read_tokens + cache_write_tokens "
+        "         ELSE input_tokens END) AS total_in, "
+        "SUM(CASE WHEN cost_known=1 THEN cost_usd ELSE 0 END) AS cost_usd, "
+        "SUM(CASE WHEN cost_known=0 THEN 1 ELSE 0 END) AS unknown_calls "
+        "FROM usage_ledger WHERE substr(created_at,1,10) >= ? "
+        "GROUP BY day, provider, model_id ORDER BY day DESC, total_in DESC",
+        (since,),
+    )
+    days_map: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        entry = dict(row)
+        bucket = days_map.setdefault(entry["day"], {"day": entry["day"], "totalIn": 0, "totalOut": 0, "costUsd": 0.0, "models": []})
+        bucket["totalIn"] += int(entry["total_in"] or 0)
+        bucket["totalOut"] += int(entry["output_tokens"] or 0)
+        bucket["costUsd"] = round(bucket["costUsd"] + float(entry["cost_usd"] or 0), 6)
+        bucket["models"].append({
+            "provider": entry["provider"],
+            "model": entry["model_id"],
+            "calls": int(entry["calls"] or 0),
+            "totalIn": int(entry["total_in"] or 0),
+            "uncachedOrPrompt": int(entry["uncached_or_prompt_tokens"] or 0),
+            "cacheRead": int(entry["cache_read_tokens"] or 0),
+            "cacheWrite": int(entry["cache_write_tokens"] or 0),
+            "output": int(entry["output_tokens"] or 0),
+            "costUsd": round(float(entry["cost_usd"] or 0), 6),
+            "unknownCalls": int(entry["unknown_calls"] or 0),
+        })
+    return {
+        "since": since,
+        "timezone": "UTC",
+        "pricingUpdatedAt": PRICING_UPDATED_AT,
+        "note": "Counts only calls made through Forge. Other keys and Claude Code traffic appear in the provider console but not here.",
+        "days": list(days_map.values()),
     }
 
 

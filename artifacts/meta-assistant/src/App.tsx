@@ -80,6 +80,9 @@ import { getRecentFiles, getRecentNotes, getRecentTaskLogs, timeAgo } from '@/li
 
 const queryClient = new QueryClient();
 type Page = 'home' | 'tasks' | 'workspace' | 'alarms' | 'settings';
+type UsageDailyModel = { provider: string; model: string; calls: number; totalIn: number; uncachedOrPrompt: number; cacheRead: number; cacheWrite: number; output: number; costUsd: number; unknownCalls: number };
+type UsageDailyDay = { day: string; totalIn: number; totalOut: number; costUsd: number; models: UsageDailyModel[] };
+type UsageDailyResponse = { since: string; timezone: string; pricingUpdatedAt: string; note: string; days: UsageDailyDay[] };
 type UsageLedgerResponse = {
   pricingUpdatedAt?: string;
   totals?: {
@@ -1300,6 +1303,15 @@ function SystemTelemetry() {
     },
     refetchInterval: 15_000,
   });
+  const usageDaily = useQuery<UsageDailyResponse>({
+    queryKey: ['assistant-usage-daily'],
+    queryFn: async () => {
+      const response = await fetch('/api/assistant/usage-daily?days=30', { cache: 'no-store' });
+      if (!response.ok) throw new Error(`Daily usage request failed (${response.status}).`);
+      return response.json() as Promise<UsageDailyResponse>;
+    },
+    refetchInterval: 15_000,
+  });
   const { selectedId, currentModel } = useConversations();
   const thread = useThreadHistory(selectedId);
   const messages = thread.data?.messages ?? [];
@@ -1393,6 +1405,36 @@ function SystemTelemetry() {
             </div>}
           </>}
       <p className="telemetry-footnote">Published token-rate estimates as of {usageLedger.data?.pricingUpdatedAt ?? 'the current rate table'}. Account credits, free-tier allowances, taxes, request-based tools, and Gemini cache storage are excluded.</p>
+    </section>
+
+    <section className="telemetry-section usage-daily" data-testid="section-usage-daily">
+      <div className="telemetry-section-head">
+        <span className="telemetry-section-mark"><CircleDollarSign size={14} /></span>
+        <div><span className="telemetry-kicker">DAILY TOKENS · UTC</span><h3>Tokens by day and model</h3></div>
+        <span className="telemetry-live-tag">LAST 30 DAYS</span>
+      </div>
+      {usageDaily.isLoading
+        ? <div className="telemetry-skeleton"><i /><i /></div>
+        : usageDaily.isError
+          ? <div className="telemetry-error"><span>Daily usage unavailable.</span><button type="button" onClick={() => usageDaily.refetch()}>Retry</button></div>
+          : !usageDaily.data?.days?.length
+            ? <p className="telemetry-empty">No Forge usage recorded in the last 30 days.</p>
+            : <div className="usage-daily-list" data-testid="usage-daily-list">
+              {usageDaily.data.days.map((day) => <div key={day.day} className="usage-daily-day" data-testid={`usage-daily-${day.day}`}>
+                <div className="usage-daily-head">
+                  <strong>{day.day}</strong>
+                  <span>{day.totalIn.toLocaleString()} in</span>
+                  <span>{day.totalOut.toLocaleString()} out</span>
+                  <b>{formatUsd(day.costUsd)}</b>
+                </div>
+                {day.models.map((model) => <div key={`${day.day}-${model.provider}-${model.model}`} className="usage-daily-model">
+                  <span>{model.model}</span>
+                  <small>{model.calls} calls · cache read {model.cacheRead.toLocaleString()} · cache write {model.cacheWrite.toLocaleString()} · uncached {model.uncachedOrPrompt.toLocaleString()}</small>
+                  <em>{model.totalIn.toLocaleString()}</em>
+                </div>)}
+              </div>)}
+            </div>}
+      <p className="telemetry-footnote">Counts only calls made through Forge, all cache-inclusive, UTC days. Provider console totals also include other keys and Claude Code traffic.</p>
     </section>
 
     <section className="telemetry-section context-meter">

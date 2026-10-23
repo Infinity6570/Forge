@@ -92,6 +92,10 @@ class GeminiToolHistoryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(create.await_count, 1)
         self.assertEqual(task["status"], "completed")
         self.assertEqual(task["result"], "Hi! How can I help?")
+        self.assertIn(
+            main.SELF_IMPROVEMENT_GUIDANCE,
+            create.call_args.kwargs["messages"][0]["content"],
+        )
         self.assertNotIn("All actions have completed", str(create.call_args.kwargs["messages"]))
 
     async def test_academic_abstracts_are_not_truncated_in_tool_followup(self):

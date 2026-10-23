@@ -116,6 +116,10 @@ class SpecialistRoutingTests(unittest.IsolatedAsyncioTestCase):
             [call.kwargs["model"] for call in create.await_args_list],
             ["gpt-4o-mini", "gpt-4o"],
         )
+        self.assertIn(
+            main.SELF_IMPROVEMENT_GUIDANCE,
+            create.await_args_list[0].kwargs["messages"][0]["content"],
+        )
         logs = main.task_dict(main.db_one("SELECT * FROM tasks WHERE id='specialist-test'"))["logs"]
         self.assertTrue(any("escalated from openai · fast" in item["message"] for item in logs))
         self.assertTrue(all(
@@ -268,6 +272,22 @@ class SpecialistRoutingTests(unittest.IsolatedAsyncioTestCase):
         logs = main.task_dict(main.db_one("SELECT * FROM tasks WHERE id='specialist-test'"))["logs"]
         self.assertTrue(any("could not complete the subtask" in item["message"] for item in logs))
         self.assertFalse(any("escalated" in item["message"] for item in logs))
+
+    def test_unreachable_ollama_is_skipped_by_arbitration(self):
+        main._OLLAMA_PROBE_CACHE.clear()
+        with patch.dict(os.environ, {"OLLAMA_BASE_URL": "http://localhost:11434/v1"}), \
+                patch.object(main, "ollama_endpoint_reachable", return_value=False), \
+                patch.object(main, "credential_for", side_effect=lambda provider: "k" if provider != "ollama" else "local"):
+            chain, _ = main.specialist_route_plan("anthropic", "research", "fast", "short lookup")
+        self.assertNotIn("ollama", [provider for provider, _, _ in chain])
+
+    def test_reachable_ollama_is_still_eligible(self):
+        main._OLLAMA_PROBE_CACHE.clear()
+        with patch.dict(os.environ, {"OLLAMA_BASE_URL": "http://localhost:11434/v1"}), \
+                patch.object(main, "ollama_endpoint_reachable", return_value=True), \
+                patch.object(main, "credential_for", side_effect=lambda provider: "k"):
+            chain, _ = main.specialist_route_plan("anthropic", "research", "fast", "short lookup")
+        self.assertIn("ollama", [provider for provider, _, _ in chain])
 
     async def test_exhausted_tool_rounds_end_with_a_written_report_not_an_empty_result(self):
         looping = [
