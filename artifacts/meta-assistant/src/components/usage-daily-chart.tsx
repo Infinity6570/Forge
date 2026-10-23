@@ -297,7 +297,7 @@ export function UsageDailyChart({
                           onMouseLeave={() => setHoveredRow(null)}
                           onFocus={(event) => showTooltip(event, row)}
                           onBlur={() => setHoveredRow(null)}
-                        ><title>{title}</title></rect>;
+                        />;
                       })}
                       {svg.tickIndexes.has(rowIndex) && <text
                         x={x + svg.barWidth / 2}

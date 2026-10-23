@@ -90,9 +90,16 @@ export function UsageDailyChart() {
                   const segmentHeight = value / graph.maxTotal * graph.plotHeight;
                   const y = graph.margin.top + graph.plotHeight - (accumulated + value) / graph.maxTotal * graph.plotHeight;
                   accumulated += value;
-                  return <rect key={item.key} x={x} y={y} width={graph.barWidth} height={segmentHeight} fill={item.color} rx={item.key === topSeriesKey ? 2 : 0}>
-                    <title>{`${item.label} · ${row.day} UTC · ${format(value)} input tokens`}</title>
-                  </rect>;
+                  return <rect
+                    key={item.key}
+                    x={x}
+                    y={y}
+                    width={graph.barWidth}
+                    height={segmentHeight}
+                    fill={item.color}
+                    rx={item.key === topSeriesKey ? 2 : 0}
+                    aria-label={`${item.label} · ${row.day} UTC · ${format(value)} input tokens`}
+                  />;
                 })}
                 {(rowIndex % (range === 7 ? 1 : 5) === 0 || rowIndex === data.length - 1) && <text x={x + graph.barWidth / 2} y={graph.height - 8} textAnchor="middle" fill="#4e7696" fontSize="10">
                   {new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', timeZone: 'UTC' }).format(new Date(`${row.day}T00:00:00Z`))}
