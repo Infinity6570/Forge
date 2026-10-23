@@ -68,6 +68,10 @@ const MODEL_COLORS = [
   '#979797',
 ];
 
+function usageModelKey(provider: string, model: string) {
+  return JSON.stringify([provider, model]);
+}
+
 const formatTokens = (value: number) => Math.max(0, value).toLocaleString();
 const formatUsd = (value: number) => value.toLocaleString(undefined, {
   style: 'currency',
@@ -128,6 +132,8 @@ export function UsageDailyChart({
   modelLabel,
 }: UsageDailyChartProps) {
   const [rangeDays, setRangeDays] = useState<7 | 30>(30);
+  const [selectedProviders, setSelectedProviders] = useState<Set<string>>(() => new Set());
+  const [selectedModels, setSelectedModels] = useState<Set<string>>(() => new Set());
   const chartPlotRef = useRef<HTMLDivElement>(null);
   const [hoveredRow, setHoveredRow] = useState<UsageChartRow | null>(null);
   const [tooltipPosition, setTooltipPosition] = useState({ left: 12, top: 12 });
@@ -139,35 +145,47 @@ export function UsageDailyChart({
     const filteredSource = days.filter((item) => item.day >= startDay && item.day <= lastRecordedDay);
     const totalsByModel = new Map<string, { provider: string; model: string; totalIn: number }>();
 
-    filteredSource.forEach((day) => day.models.forEach((model) => {
-      const key = `${model.provider}\u0000${model.model}`;
+    days.forEach((day) => day.models.forEach((model) => {
+      const key = usageModelKey(model.provider, model.model);
       const current = totalsByModel.get(key) ?? { provider: model.provider, model: model.model, totalIn: 0 };
       current.totalIn += model.totalIn;
       totalsByModel.set(key, current);
     }));
 
-    const modelList = [...totalsByModel.values()]
+    const availableModels = [...totalsByModel.values()]
       .sort((left, right) => right.totalIn - left.totalIn)
       .map((item, index) => ({
-        id: `model-${index}`,
+        id: usageModelKey(item.provider, item.model),
         provider: item.provider,
         model: item.model,
         label: modelLabel(item.provider, item.model),
         color: MODEL_COLORS[index % MODEL_COLORS.length],
       }));
+    const providers = [...new Set(availableModels.map((item) => item.provider))].sort((left, right) => left.localeCompare(right));
+    const modelsInRange = new Set(filteredSource.flatMap((day) => day.models.map((model) => usageModelKey(model.provider, model.model))));
+    const modelList = availableModels.filter((item) => modelsInRange.has(item.id));
+    const visibleSeries = modelList.filter((item) =>
+      (!selectedProviders.size || selectedProviders.has(item.provider))
+      && (!selectedModels.size || selectedModels.has(item.id)),
+    );
 
     const rows: UsageChartRow[] = Array.from({ length: rangeDays }, (_, index) => {
       const day = addUtcDays(startDay, index);
       const source = sourceByDay.get(day);
       const modelsBySeries: Record<string, UsageDailyModel> = {};
+      const visibleUsages = source?.models.filter((model) =>
+        (!selectedProviders.size || selectedProviders.has(model.provider))
+        && (!selectedModels.size || selectedModels.has(usageModelKey(model.provider, model.model))),
+      ) ?? [];
+      const isFiltered = selectedProviders.size > 0 || selectedModels.size > 0;
       const row: UsageChartRow = {
         day,
-        totalIn: source?.totalIn ?? 0,
-        totalOut: source?.totalOut ?? 0,
-        costUsd: source?.costUsd ?? 0,
+        totalIn: isFiltered ? visibleUsages.reduce((total, model) => total + model.totalIn, 0) : source?.totalIn ?? 0,
+        totalOut: isFiltered ? visibleUsages.reduce((total, model) => total + model.output, 0) : source?.totalOut ?? 0,
+        costUsd: isFiltered ? visibleUsages.reduce((total, model) => total + model.costUsd, 0) : source?.costUsd ?? 0,
         modelsBySeries,
       };
-      modelList.forEach((series) => {
+      visibleSeries.forEach((series) => {
         const usage = source?.models.find((model) => model.provider === series.provider && model.model === series.model);
         if (usage) modelsBySeries[series.id] = usage;
         row[series.id] = usage?.totalIn ?? 0;
@@ -177,14 +195,24 @@ export function UsageDailyChart({
 
     return {
       rows,
-      series: modelList,
+      series: visibleSeries,
+      providers,
+      models: availableModels,
+      hasSourceUsage: filteredSource.some((day) => day.totalIn > 0 || day.totalOut > 0),
       totalIn: rows.reduce((total, item) => total + item.totalIn, 0),
       totalOut: rows.reduce((total, item) => total + item.totalOut, 0),
       costUsd: rows.reduce((total, item) => total + item.costUsd, 0),
     };
-  }, [days, modelLabel, rangeDays]);
+  }, [days, modelLabel, rangeDays, selectedModels, selectedProviders]);
 
   const hasUsage = chart.totalIn > 0 || chart.totalOut > 0;
+  const activeFilterCount = selectedProviders.size + selectedModels.size;
+  const toggleSelection = (selection: Set<string>, value: string, update: (next: Set<string>) => void) => {
+    const next = new Set(selection);
+    if (next.has(value)) next.delete(value);
+    else next.add(value);
+    update(next);
+  };
   const svg = useMemo(() => {
     const width = 1000;
     const height = 292;
@@ -242,9 +270,58 @@ export function UsageDailyChart({
       ? <div className="telemetry-skeleton"><i /><i /><i /></div>
       : isError
         ? <div className="telemetry-error"><span>Daily usage unavailable.</span><button type="button" onClick={onRetry}>Retry</button></div>
-        : !hasUsage
+        : !chart.hasSourceUsage
           ? <p className="telemetry-empty">No Forge usage recorded in the last {rangeDays} days.</p>
           : <>
+            <details className="usage-chart-filters" data-testid="usage-chart-filters">
+              <summary>
+                <span>Filter usage{activeFilterCount ? ` · ${activeFilterCount} selected` : ''}</span>
+                <ChevronDown size={13} aria-hidden="true" />
+              </summary>
+              <div className="usage-chart-filter-panel">
+                <div className="usage-chart-filter-group">
+                  <div className="usage-chart-filter-heading">
+                    <strong>Providers</strong>
+                    {selectedProviders.size > 0 && <button type="button" onClick={() => setSelectedProviders(new Set())}>Clear</button>}
+                  </div>
+                  {chart.providers.map((provider) => <label key={provider}>
+                    <input
+                      type="checkbox"
+                      checked={selectedProviders.has(provider)}
+                      onChange={() => toggleSelection(selectedProviders, provider, setSelectedProviders)}
+                    />
+                    <span>{provider}</span>
+                  </label>)}
+                  {chart.providers.length === 0 && <small>No providers in this date range.</small>}
+                </div>
+                <div className="usage-chart-filter-group">
+                  <div className="usage-chart-filter-heading">
+                    <strong>Models</strong>
+                    {selectedModels.size > 0 && <button type="button" onClick={() => setSelectedModels(new Set())}>Clear</button>}
+                  </div>
+                  {chart.models.map((series) => <label key={series.id}>
+                    <input
+                      type="checkbox"
+                      checked={selectedModels.has(series.id)}
+                      onChange={() => toggleSelection(selectedModels, series.id, setSelectedModels)}
+                    />
+                    <span><i style={{ background: series.color }} />{series.label}<small>{series.provider}</small></span>
+                  </label>)}
+                  {chart.models.length === 0 && <small>No models in this date range.</small>}
+                </div>
+                {activeFilterCount > 0 && <button
+                  className="usage-chart-filter-reset"
+                  type="button"
+                  onClick={() => {
+                    setSelectedProviders(new Set());
+                    setSelectedModels(new Set());
+                  }}
+                >Reset all filters</button>}
+              </div>
+            </details>
+            {!hasUsage
+              ? <p className="telemetry-empty">No usage matches these filters. Reset filters to see all usage.</p>
+              : <>
             <div className="usage-kpi-grid" data-testid="usage-daily-summary">
               <div className="usage-kpi-card"><span>Tokens in</span><strong>{formatTokens(chart.totalIn)}</strong><small>Cache-inclusive prompt tokens</small></div>
               <div className="usage-kpi-card"><span>Tokens out</span><strong>{formatTokens(chart.totalOut)}</strong><small>Generated response tokens</small></div>
@@ -326,7 +403,12 @@ export function UsageDailyChart({
                   <tbody>{[...chart.rows].reverse().flatMap((day) => {
                     const source = days.find((item) => item.day === day.day);
                     if (!source) return [];
-                    return source.models.map((model) => <tr key={`${day.day}-${model.provider}-${model.model}`}>
+                    return source.models
+                      .filter((model) =>
+                        (!selectedProviders.size || selectedProviders.has(model.provider))
+                        && (!selectedModels.size || selectedModels.has(usageModelKey(model.provider, model.model))),
+                      )
+                      .map((model) => <tr key={`${day.day}-${model.provider}-${model.model}`}>
                       <td>{formatUtcDay(day.day, { month: 'short', day: 'numeric', year: 'numeric' })}</td>
                       <td>{modelLabel(model.provider, model.model)}</td>
                       <td>{formatTokens(model.totalIn)}</td>
@@ -338,6 +420,7 @@ export function UsageDailyChart({
                 </table>
               </div>
             </details>
+              </>}
           </>}
     <p className="telemetry-footnote">{note ?? 'Counts only calls made through Forge, cache-inclusive, in UTC. Provider console totals can include other keys and traffic.'}</p>
   </section>;

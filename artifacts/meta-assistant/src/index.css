@@ -2427,6 +2427,67 @@ html[data-theme="scifi"] :is(.button,.icon-button,.nav-link,.theme-option,.cyber
   border-color:var(--accent);
   background:var(--accent);
 }
+.usage-chart-filters { position:relative; margin:0 0 9px; }
+.usage-chart-filters > summary {
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  width:max-content;
+  min-width:150px;
+  gap:10px;
+  padding:6px 9px;
+  border:1px solid var(--border);
+  border-radius:4px;
+  color:var(--text-muted);
+  font:10px var(--font-mono);
+  cursor:pointer;
+  list-style:none;
+}
+.usage-chart-filters > summary::-webkit-details-marker { display:none; }
+.usage-chart-filters[open] > summary { border-color:var(--border-active,var(--accent)); color:var(--text-primary); }
+.usage-chart-filter-panel {
+  position:relative;
+  z-index:2;
+  display:grid;
+  grid-template-columns:repeat(2,minmax(150px,1fr));
+  gap:12px;
+  max-width:640px;
+  max-height:330px;
+  overflow:auto;
+  margin-top:5px;
+  padding:11px;
+  border:1px solid var(--border);
+  border-radius:5px;
+  background:var(--bg-panel);
+  box-shadow:0 10px 24px rgba(0,0,0,.22);
+}
+.usage-chart-filter-group { display:grid; align-content:start; gap:6px; }
+.usage-chart-filter-heading { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+.usage-chart-filter-heading strong { color:var(--text-primary); font-size:10px; }
+.usage-chart-filter-heading button,.usage-chart-filter-reset {
+  padding:3px 6px;
+  border:1px solid var(--border);
+  border-radius:3px;
+  background:transparent;
+  color:var(--accent);
+  font:9px var(--font-mono);
+  cursor:pointer;
+}
+.usage-chart-filter-group label {
+  display:flex;
+  align-items:center;
+  gap:7px;
+  min-width:0;
+  color:var(--text-muted);
+  font-size:10px;
+  cursor:pointer;
+}
+.usage-chart-filter-group label > input { accent-color:var(--accent); }
+.usage-chart-filter-group label > span { display:flex; align-items:center; min-width:0; gap:6px; }
+.usage-chart-filter-group label > span > i { width:7px; height:7px; flex:none; border-radius:2px; }
+.usage-chart-filter-group label small { overflow:hidden; color:var(--text-muted); font-size:8px; text-overflow:ellipsis; white-space:nowrap; }
+.usage-chart-filter-group > small { color:var(--text-muted); font-size:9px; }
+.usage-chart-filter-reset { grid-column:1/-1; justify-self:start; }
 .usage-kpi-grid {
   display:grid;
   grid-template-columns:repeat(3,minmax(0,1fr));
