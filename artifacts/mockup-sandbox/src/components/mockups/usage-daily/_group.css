@@ -1,0 +1,18 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700&family=Share+Tech+Mono&display=swap');
+
+:root {
+  --bg-main: #02040a;
+  --bg-panel: #050a17;
+  --bg-card: #081126;
+  --border: rgba(0, 240, 255, 0.28);
+  --accent: #00f0ff;
+  --accent-glow: rgba(0, 240, 255, 0.18);
+  --text-primary: #e2f7ff;
+  --text-muted: #4e7696;
+  --font-mono: 'Share Tech Mono', ui-monospace, monospace;
+  --app-font-sans: Manrope, sans-serif;
+}
+
+* { box-sizing: border-box; }
+html, body, #root { min-height: 100%; margin: 0; }
+body { background: var(--bg-main); color: var(--text-primary); font-family: var(--app-font-sans); }

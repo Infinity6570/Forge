@@ -16,3 +16,4 @@
 - [BenchLM ranking freshness](benchlm-ranking-freshness.md) — cached rankings must be labeled stale when the key is missing or refresh fails; never present old scores as current.
 - [Agent orchestration boundaries](agent-orchestration-boundaries.md) — DAG workers inherit only task-scoped supervisor grants; dynamic helpers stay data-only, and critic findings return to the supervisor before completion.
 - [Anthropic TLS trust store](anthropic-tls-trust-store.md) — Python certifi roots may miss the runtime CA; use a verified OS trust context for Anthropic HTTPX clients.
+- [Usage chart rendering](usage-chart-rendering.md) — Recharts triggered an invalid hook call in Forge's Vite preview; keep the embedded telemetry graph on SVG until diagnosed.
